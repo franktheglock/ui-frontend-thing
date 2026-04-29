@@ -21,14 +21,39 @@ import { cn, formatDate } from '../lib/utils'
 export function Sidebar() {
   const { sessions, currentSessionId, createSession, setCurrentSession, deleteSession, renameSession } = useChatStore()
   const { sidebarOpen, toggleSidebar, theme, setTheme } = useSettingsStore()
-  const { setSettingsOpen, setToolSelectorOpen } = useUIStore()
+  const { setSettingsOpen, setToolSelectorOpen, setSearchHighlight } = useUIStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
 
-  const filteredSessions = sessions.filter(s =>
-    s.title.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const filteredSessions = sessions.filter(s => {
+    if (!searchQuery) return true
+    const q = searchQuery.toLowerCase()
+    if (s.title.toLowerCase().includes(q)) return true
+    // Search through message content
+    return s.messages.some(m => m.content.toLowerCase().includes(q))
+  })
+
+  // For content-matched results, find the matching snippet and message ID
+  const getMatchInfo = (session: typeof sessions[0]): { snippet: string; messageId: string } | null => {
+    if (!searchQuery) return null
+    const q = searchQuery.toLowerCase()
+    if (session.title.toLowerCase().includes(q)) return null
+    for (const m of session.messages) {
+      const idx = m.content.toLowerCase().indexOf(q)
+      if (idx !== -1) {
+        const start = Math.max(0, idx - 20)
+        const end = Math.min(m.content.length, idx + searchQuery.length + 30)
+        const prefix = start > 0 ? '…' : ''
+        const suffix = end < m.content.length ? '…' : ''
+        return {
+          snippet: `${prefix}${m.content.slice(start, end).trim()}${suffix}`,
+          messageId: m.id,
+        }
+      }
+    }
+    return null
+  }
 
   const handleRename = (id: string, title: string) => {
     setEditingId(id)
@@ -96,7 +121,9 @@ export function Sidebar() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
-            {filteredSessions.map((session) => (
+            {filteredSessions.map((session) => {
+              const matchInfo = getMatchInfo(session)
+              return (
               <div
                 key={session.id}
                 className={cn(
@@ -105,9 +132,17 @@ export function Sidebar() {
                     ? 'bg-secondary text-foreground'
                     : 'hover:bg-secondary/50 text-muted-foreground hover:text-foreground'
                 )}
-                onClick={() => setCurrentSession(session.id)}
+                onClick={() => {
+                  setCurrentSession(session.id)
+                  if (searchQuery.trim()) {
+                    // Find the first message with the match for scrolling
+                    const q = searchQuery.toLowerCase()
+                    const targetMsg = session.messages.find(m => m.content.toLowerCase().includes(q))
+                    setSearchHighlight(searchQuery, targetMsg?.id ?? null)
+                  }
+                }}
               >
-                <MessageSquare className="w-3.5 h-3.5 flex-shrink-0" />
+                <MessageSquare className="w-3.5 h-3.5 flex-shrink-0 self-start mt-0.5" />
                 {editingId === session.id ? (
                   <input
                     type="text"
@@ -120,7 +155,14 @@ export function Sidebar() {
                     onClick={(e) => e.stopPropagation()}
                   />
                 ) : (
-                  <span className="flex-1 truncate">{session.title}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="block truncate">{session.title}</span>
+                    {matchInfo && (
+                      <span className="block truncate text-[11px] text-muted-foreground/70 italic mt-0.5">
+                        {matchInfo.snippet}
+                      </span>
+                    )}
+                  </div>
                 )}
                 <span className="text-xs text-muted-foreground flex-shrink-0">
                   {formatDate(session.updatedAt)}
@@ -144,7 +186,8 @@ export function Sidebar() {
                   <Trash2 className="w-3 h-3" />
                 </button>
               </div>
-            ))}
+              )
+            })}
           </div>
 
           <div className="p-3 border-t border-border space-y-1">

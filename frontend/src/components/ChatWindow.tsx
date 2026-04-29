@@ -1,17 +1,49 @@
 import React, { useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useChatStore } from '../stores/chatStore'
+import { useUIStore } from '../stores/uiStore'
 import { MessageBubble } from './MessageBubble'
 import { Bot, Wrench } from 'lucide-react'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { ThinkingBlock } from './ThinkingBlock'
 
 export function ChatWindow() {
-  const { sessions, currentSessionId, isGenerating, streamingContent, streamingThinking, activeToolCalls } = useChatStore()
+  const { sessions, currentSessionId, streaming } = useChatStore()
+  const { searchHighlight, highlightMessageId, setSearchHighlight } = useUIStore()
   const scrollRef = useRef<HTMLDivElement>(null)
   
   const currentSession = sessions.find(s => s.id === currentSessionId)
   const messages = currentSession?.messages || []
+
+  // Per-session streaming state for the CURRENT session
+  const streamState = currentSessionId ? streaming[currentSessionId] : null
+  const isCurrentStreaming = streamState?.isGenerating ?? false
+  const streamingContent = streamState?.content ?? ''
+  const streamingThinking = streamState?.thinking ?? ''
+  const activeToolCalls = streamState?.toolCalls ?? []
+
+  // Scroll to highlighted message when search highlight changes
+  useEffect(() => {
+    if (!highlightMessageId || !scrollRef.current) return
+
+    // Small delay to let the DOM update after session switch
+    const timer = setTimeout(() => {
+      const el = scrollRef.current?.querySelector(`[data-message-id="${highlightMessageId}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 100)
+
+    // Auto-clear highlight after 5 seconds
+    const clearTimer = setTimeout(() => {
+      setSearchHighlight(null)
+    }, 5000)
+
+    return () => {
+      clearTimeout(timer)
+      clearTimeout(clearTimer)
+    }
+  }, [highlightMessageId, currentSessionId, setSearchHighlight])
 
   useEffect(() => {
     const container = scrollRef.current
@@ -19,22 +51,21 @@ export function ChatWindow() {
 
     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
 
-    if (isNearBottom || isGenerating) {
-      // Use requestAnimationFrame for smoother synchronization with layout changes
+    if (isNearBottom || isCurrentStreaming) {
       requestAnimationFrame(() => {
         container.scrollTop = container.scrollHeight
       })
     }
-  }, [messages.length, streamingContent, streamingThinking, isGenerating])
+  }, [messages.length, streamingContent, streamingThinking, isCurrentStreaming])
 
   return (
     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
       <div 
         ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto scroll-smooth"
+        className="flex-1 min-h-0 overflow-y-auto"
       >
         <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
-          {messages.length === 0 && !isGenerating && (
+          {messages.length === 0 && !isCurrentStreaming && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -60,24 +91,25 @@ export function ChatWindow() {
           )}
 
           <AnimatePresence initial={false}>
-            {messages.map((message, index) => (
+            {messages.map((message, index) => {
+              const isHighlighted = highlightMessageId === message.id
+              return (
               <motion.div
                 key={message.id}
+                data-message-id={message.id}
                 initial={message.role === 'user' ? { opacity: 0, y: 10 } : false}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2 }}
+                className={isHighlighted ? 'ring-2 ring-accent/60 rounded-sm transition-all duration-500' : ''}
               >
-                <MessageBubble message={message} />
+                <MessageBubble message={message} searchHighlight={searchHighlight} />
               </motion.div>
-            ))}
+              )
+            })}
           </AnimatePresence>
 
-          {(streamingContent || streamingThinking || activeToolCalls.length > 0) && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex items-start gap-3"
-            >
+          {isCurrentStreaming && (streamingContent || streamingThinking || activeToolCalls.length > 0) && (
+            <div className="flex items-start gap-3 animate-in fade-in duration-200">
               <div className="w-7 h-7 rounded-sm bg-accent/10 flex items-center justify-center flex-shrink-0 mt-1">
                 <Bot className="w-4 h-4 text-accent" />
               </div>
@@ -88,23 +120,24 @@ export function ChatWindow() {
                 {streamingContent && (
                   <MarkdownRenderer content={streamingContent} streaming />
                 )}
-                {activeToolCalls.length > 0 && (
-                  <div className="space-y-2 w-full max-w-2xl">
-                    {activeToolCalls.map(tc => (
-                      <div key={tc.id} className="border border-border rounded-sm overflow-hidden bg-secondary/10">
-                        <div className="flex items-center gap-2 px-3 py-2 bg-secondary/40 border-b border-border text-xs font-mono text-muted-foreground">
-                          <Wrench className="w-3.5 h-3.5 text-accent animate-pulse" />
-                          <span>Executing: <span className="text-foreground">{tc.name}</span></span>
-                        </div>
-                        <div className="px-3 py-2 text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap">
-                          {typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments, null, 2)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
-            </motion.div>
+            </div>
+          )}
+
+          {/* Waiting indicator: generating but no visible text yet */}
+          {isCurrentStreaming && !streamingContent && !streamingThinking && (
+            <div className="flex items-start gap-3 animate-in fade-in duration-200">
+              <div className="w-7 h-7 rounded-sm bg-accent/10 flex items-center justify-center flex-shrink-0 mt-1">
+                <Bot className="w-4 h-4 text-accent animate-pulse" />
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            </div>
           )}
           <div className="h-px w-full overflow-anchor-auto" />
         </div>

@@ -16,6 +16,8 @@ interface UIState {
   modelSelectorOpen: boolean
   toolSelectorOpen: boolean
   searchQuery: string
+  searchHighlight: string | null
+  highlightMessageId: string | null
 
   setActiveArtifact: (artifact: Artifact | null) => void
   setArtifactPanelOpen: (open: boolean) => void
@@ -24,6 +26,7 @@ interface UIState {
   setModelSelectorOpen: (open: boolean) => void
   setToolSelectorOpen: (open: boolean) => void
   setSearchQuery: (query: string) => void
+  setSearchHighlight: (query: string | null, messageId?: string | null) => void
 }
 
 export const useUIStore = create<UIState>()((set) => ({
@@ -33,6 +36,8 @@ export const useUIStore = create<UIState>()((set) => ({
   modelSelectorOpen: false,
   toolSelectorOpen: false,
   searchQuery: '',
+  searchHighlight: null,
+  highlightMessageId: null,
 
   setActiveArtifact: (artifact) => set({ activeArtifact: artifact }),
   setArtifactPanelOpen: (open) => set({ artifactPanelOpen: open }),
@@ -41,4 +46,5 @@ export const useUIStore = create<UIState>()((set) => ({
   setModelSelectorOpen: (open) => set({ modelSelectorOpen: open }),
   setToolSelectorOpen: (open) => set({ toolSelectorOpen: open }),
   setSearchQuery: (query) => set({ searchQuery: query }),
+  setSearchHighlight: (query, messageId) => set({ searchHighlight: query, highlightMessageId: messageId ?? null }),
 }))

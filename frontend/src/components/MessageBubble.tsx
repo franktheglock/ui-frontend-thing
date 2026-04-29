@@ -14,11 +14,23 @@ import { ToolCallBlock } from './ToolCallBlock'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { cn } from '../lib/utils'
 
-interface MessageBubbleProps {
-  message: Message
+function highlightText(text: string, query: string): React.ReactNode {
+  if (!query) return text
+  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+  const parts = text.split(regex)
+  return parts.map((part, i) =>
+    regex.test(part)
+      ? <mark key={i} className="bg-accent/30 text-inherit rounded-sm px-0.5">{part}</mark>
+      : part
+  )
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+interface MessageBubbleProps {
+  message: Message
+  searchHighlight?: string | null
+}
+
+export function MessageBubble({ message, searchHighlight }: MessageBubbleProps) {
   const isUser = message.role === 'user'
   const [copied, setCopied] = useState(false)
 
@@ -80,9 +92,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             isUser ? 'bg-primary text-primary-foreground px-4 py-2.5 rounded-none' : 'text-foreground'
           )}>
             {isUser ? (
-              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              <p className="text-sm whitespace-pre-wrap">
+                {searchHighlight ? highlightText(message.content, searchHighlight) : message.content}
+              </p>
             ) : (
-              <MarkdownRenderer content={message.content} />
+              <MarkdownRenderer content={message.content} searchHighlight={searchHighlight} />
             )}
             {!isUser && (
               <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-all">

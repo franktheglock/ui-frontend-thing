@@ -72,7 +72,8 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const { currentSessionId, isGenerating, sessions } = useChatStore()
+  const { currentSessionId, streaming, sessions } = useChatStore()
+  const isCurrentGenerating = currentSessionId ? streaming[currentSessionId]?.isGenerating ?? false : false
   const currentSession = sessions.find(s => s.id === currentSessionId)
   const activeSkill = currentSession?.activeSkill
   const { selectedModel, providers } = useSettingsStore()
@@ -176,12 +177,20 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
   // --------------------------------------------------------------------------
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SpeechRecognition) return
+    if (!SpeechRecognition) {
+      console.warn('Speech Recognition not supported in this browser.')
+      return
+    }
 
     const recognition = new SpeechRecognition()
     recognition.continuous = true
     recognition.interimResults = true
     recognition.lang = 'en-US'
+
+    recognition.onstart = () => {
+      console.log('Speech recognition started')
+      setIsListening(true)
+    }
 
     recognition.onresult = (event: any) => {
       let finalTranscript = ''
@@ -194,21 +203,28 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
           interimTranscript += transcript
         }
       }
-      setInput(prev => {
-        const base = prev.replace(/\s*\.\.\.$/, '')
-        if (finalTranscript) {
-          return (base + ' ' + finalTranscript).trim()
-        }
-        return (base + ' ' + interimTranscript).trim() + '...'
-      })
+      
+      if (finalTranscript || interimTranscript) {
+        setInput(prev => {
+          const base = prev.replace(/\s*\.\.\.$/, '')
+          if (finalTranscript) {
+            return (base + ' ' + finalTranscript).trim()
+          }
+          return (base + ' ' + interimTranscript).trim() + '...'
+        })
+      }
     }
 
     recognition.onerror = (event: any) => {
       console.error('Speech recognition error:', event.error)
+      if (event.error === 'not-allowed') {
+        alert('Microphone access denied. Please check your browser permissions.')
+      }
       setIsListening(false)
     }
 
     recognition.onend = () => {
+      console.log('Speech recognition ended')
       setIsListening(false)
     }
 
@@ -222,24 +238,27 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     }
     if (isListening) {
       recognitionRef.current.stop()
-      setIsListening(false)
     } else {
       setInput(prev => prev.replace(/\s*\.\.\.$/, ''))
-      recognitionRef.current.start()
-      setIsListening(true)
+      try {
+        recognitionRef.current.start()
+      } catch (err) {
+        console.error('Failed to start recognition:', err)
+        // If it's already started, just sync the state
+        setIsListening(true)
+      }
     }
   }, [isListening])
 
   // --------------------------------------------------------------------------
   // Message sending
   // --------------------------------------------------------------------------
-  const handleSubmit = useCallback(async () => {
-    if (!input.trim() && files.length === 0) return
-    if (isGenerating) return
+  const handleSubmit = useCallback(async (overrideContent?: string) => {
+    const content = (overrideContent || input).trim()
+    if (!content && files.length === 0) return
+    if (isCurrentGenerating) return
 
     setSlashMenuOpen(false)
-
-    const content = input.trim()
     let attachments: any[] = []
 
     if (files.length > 0) {
@@ -268,7 +287,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     }
 
     await sendMessage(content, attachments)
-  }, [input, files, isGenerating, currentSessionId, sendMessage])
+  }, [input, files, isCurrentGenerating, currentSessionId, sendMessage])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!slashMenuOpen) {
@@ -299,6 +318,10 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
       if (item) {
         setInput(item.value)
         setSlashMenuOpen(false)
+        // Auto-submit slash commands like /model and /skill on selection
+        setTimeout(() => {
+          handleSubmit(item.value)
+        }, 10)
       }
     } else if (e.key === 'Escape') {
       setSlashMenuOpen(false)
@@ -337,7 +360,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     }
   }
 
-  const canSubmit = !isGenerating && !isUploading && (input.trim() || files.length > 0)
+  const canSubmit = !isCurrentGenerating && !isUploading && (input.trim() || files.length > 0)
 
   // Model display name (truncate if too long)
   const modelName = selectedModel
@@ -398,7 +421,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
               onPaste={handlePaste}
               placeholder="Ask anything (type / for commands)"
               className="flex-1 px-1.5 py-1 bg-transparent text-sm placeholder:text-muted-foreground/60 focus:outline-none resize-none min-h-[28px] max-h-[200px] overflow-y-auto leading-normal"
-              disabled={isGenerating || isUploading}
+              disabled={isCurrentGenerating || isUploading}
             />
             {slashMenuOpen && slashMenuItems.length > 0 && (
               <div className="absolute bottom-full left-0 right-0 mb-1.5 bg-popover border border-border rounded-none shadow-2xl max-h-[240px] overflow-y-auto z-[9999]">
@@ -421,6 +444,9 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                       setInput(item.value)
                       setSlashMenuOpen(false)
                       textareaRef.current?.focus()
+                      setTimeout(() => {
+                        handleSubmit(item.value)
+                      }, 10)
                     }}
                     onMouseEnter={() => setSlashMenuIndex(idx)}
                     className={cn(
@@ -492,7 +518,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
 
               {/* Send */}
               <button
-                onClick={handleSubmit}
+                onClick={() => handleSubmit()}
                 disabled={!canSubmit}
                 className={cn(
                   'p-2.5 rounded-full transition-all flex-shrink-0',

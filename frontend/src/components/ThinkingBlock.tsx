@@ -67,7 +67,10 @@ export function ThinkingBlock({ thinking, done = false }: ThinkingBlockProps) {
       <div
         ref={containerRef}
         style={{ height: done ? 0 : COLLAPSED_HEIGHT }}
-        className="overflow-hidden border-t border-border bg-secondary/30 relative transition-[height] duration-300 ease-in-out"
+        className={cn(
+          "overflow-hidden border-t border-border bg-secondary/30 relative",
+          isOpen ? "transition-[height] duration-300 ease-in-out" : ""
+        )}
       >
         <div 
           ref={contentRef}
