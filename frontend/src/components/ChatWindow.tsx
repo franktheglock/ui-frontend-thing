@@ -14,10 +14,18 @@ export function ChatWindow() {
   const messages = currentSession?.messages || []
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    const container = scrollRef.current
+    if (!container) return
+
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
+
+    if (isNearBottom || isGenerating) {
+      // Use requestAnimationFrame for smoother synchronization with layout changes
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight
+      })
     }
-  }, [messages.length, streamingContent, streamingThinking])
+  }, [messages.length, streamingContent, streamingThinking, isGenerating])
 
   return (
     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
@@ -98,6 +106,7 @@ export function ChatWindow() {
               </div>
             </motion.div>
           )}
+          <div className="h-px w-full overflow-anchor-auto" />
         </div>
       </div>
     </div>
