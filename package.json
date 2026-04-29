@@ -1,0 +1,19 @@
+{
+  "name": "ai-chat-ui",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:frontend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:server": "cd server && npm run dev",
+    "build": "cd frontend && npm run build && cd ../server && npm run build",
+    "start": "cd server && npm start",
+    "setup": "npm install && cd frontend && npm install && cd ../server && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}

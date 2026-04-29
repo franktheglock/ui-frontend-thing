@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Build outputs
+dist/
+*/dist/
+build/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Data & uploads
+data/
+uploads/
+tmp/
+output/
+
+# Python venv
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Skills (user-installed)
+skills/*/
+!skills/make-skill/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Coverage
+coverage/
+
+# SQLite databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Misc
+*.tar.gz
+*.tgz
