@@ -170,6 +170,11 @@
 
   * {
     @apply border-border;
+    overflow-anchor: none;
+  }
+
+  .overflow-anchor-auto {
+    overflow-anchor: auto !important;
   }
 
   body {
