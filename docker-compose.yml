@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  ai-chat-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3456:3456"
+    environment:
+      - NODE_ENV=production
+      - PORT=3456
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - BRAVE_API_KEY=${BRAVE_API_KEY}
+      - GOOGLE_PSE_API_KEY=${GOOGLE_PSE_API_KEY}
+      - GOOGLE_PSE_CX=${GOOGLE_PSE_CX}
+      - SEARXNG_URL=${SEARXNG_URL}
+      - DATA_DIR=/app/data
+      - SKILLS_DIR=/app/skills
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+      - ./skills:/app/skills
+    restart: unless-stopped

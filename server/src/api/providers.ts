@@ -1,0 +1,73 @@
+import { Router } from 'express'
+import { getDb } from '../db'
+import { getProvider } from '../providers'
+
+const router = Router()
+
+router.get('/', async (_req, res) => {
+  const db = await getDb()
+  const providers = await db.all('SELECT * FROM providers')
+  res.json(providers.map((p: any) => ({
+    ...p,
+    models: JSON.parse(p.models || '[]'),
+    enabled: !!p.enabled,
+    config: p.config ? JSON.parse(p.config) : undefined,
+  })))
+})
+
+router.post('/', async (req, res) => {
+  const db = await getDb()
+  const { id, name, type, baseUrl, apiKey, models, enabled, config } = req.body
+  await db.run(
+    'INSERT INTO providers (id, name, type, base_url, api_key, models, enabled, config) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    id, name, type, baseUrl || null, apiKey || null, JSON.stringify(models || []), enabled ? 1 : 0, config ? JSON.stringify(config) : null
+  )
+  res.json({ id, name, type, baseUrl, apiKey, models: models || [], enabled, config })
+})
+
+router.patch('/:id', async (req, res) => {
+  const db = await getDb()
+  const { name, baseUrl, apiKey, models, enabled, config } = req.body
+  await db.run(
+    'UPDATE providers SET name = ?, base_url = ?, api_key = ?, models = ?, enabled = ?, config = ? WHERE id = ?',
+    name, baseUrl || null, apiKey || null, JSON.stringify(models || []), enabled ? 1 : 0, config ? JSON.stringify(config) : null, req.params.id
+  )
+  res.json({ success: true })
+})
+
+router.delete('/:id', async (req, res) => {
+  const db = await getDb()
+  await db.run('DELETE FROM providers WHERE id = ?', req.params.id)
+  res.json({ success: true })
+})
+
+router.get('/:id/models', async (req, res) => {
+  const db = await getDb()
+  const provider = await db.get('SELECT * FROM providers WHERE id = ?', req.params.id) as any
+  if (!provider) return res.status(404).json({ error: 'Provider not found' })
+
+  const fallbackModels = JSON.parse(provider.models || '[]')
+
+  try {
+    const providerInstance = await getProvider(req.params.id)
+    if (!providerInstance) {
+      return res.json(fallbackModels)
+    }
+
+    // Check if provider has fetchModels method
+    if ('fetchModels' in providerInstance && typeof (providerInstance as any).fetchModels === 'function') {
+      const models = await (providerInstance as any).fetchModels()
+      if (models && models.length > 0) {
+        // Update cached models in DB
+        await db.run('UPDATE providers SET models = ? WHERE id = ?', JSON.stringify(models), req.params.id)
+        return res.json(models)
+      }
+    }
+  } catch (err: any) {
+    console.error(`[providers] Failed to fetch models for ${provider.id}:`, err.message)
+  }
+
+  res.json(fallbackModels)
+})
+
+export default router
