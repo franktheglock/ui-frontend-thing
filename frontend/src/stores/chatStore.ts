@@ -59,13 +59,20 @@ export interface ChatSession {
   activeSkill?: string // Name/path of loaded skill
 }
 
+// Per-session streaming state
+export interface SessionStreamState {
+  content: string
+  thinking: string
+  toolCalls: ToolCall[]
+  isGenerating: boolean
+}
+
 interface ChatState {
   sessions: ChatSession[]
   currentSessionId: string | null
-  isGenerating: boolean
-  streamingContent: string
-  streamingThinking: string
-  activeToolCalls: ToolCall[]
+
+  // Per-session streaming state (keyed by sessionId)
+  streaming: Record<string, SessionStreamState>
 
   loadSessions: () => Promise<void>
   createSession: () => Promise<string>
@@ -75,11 +82,15 @@ interface ChatState {
   addMessage: (sessionId: string, message: Message) => Promise<void>
   updateMessage: (sessionId: string, messageId: string, updates: Partial<Message>) => Promise<void>
   clearMessages: (sessionId: string) => void
-  setIsGenerating: (value: boolean) => void
-  appendStreamingContent: (content: string) => void
-  appendStreamingThinking: (thinking: string) => void
-  clearStreaming: () => void
-  setActiveToolCalls: (calls: ToolCall[]) => void
+
+  // Per-session streaming actions
+  startGenerating: (sessionId: string) => void
+  stopGenerating: (sessionId: string) => void
+  appendStreamingContent: (sessionId: string, content: string) => void
+  appendStreamingThinking: (sessionId: string, thinking: string) => void
+  setActiveToolCalls: (sessionId: string, calls: ToolCall[]) => void
+  clearStreaming: (sessionId: string) => void
+
   updateSessionModel: (sessionId: string, model: string, provider: string) => void
   setSessionResponseId: (sessionId: string, responseId: string) => Promise<void>
   setActiveSkill: (sessionId: string, skillName: string | undefined) => void
@@ -96,13 +107,15 @@ export function generateUUID(): string {
   })
 }
 
+// Helper to get or create a default streaming state
+function getStreamState(streaming: Record<string, SessionStreamState>, sessionId: string): SessionStreamState {
+  return streaming[sessionId] || { content: '', thinking: '', toolCalls: [], isGenerating: false }
+}
+
 export const useChatStore = create<ChatState>()((set, get) => ({
   sessions: [],
   currentSessionId: null,
-  isGenerating: false,
-  streamingContent: '',
-  streamingThinking: '',
-  activeToolCalls: [],
+  streaming: {},
 
   loadSessions: async () => {
     try {
@@ -195,8 +208,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   deleteSession: async (id) => {
     set(state => {
       const sessions = state.sessions.filter(s => s.id !== id)
+      const { [id]: _, ...remainingStreaming } = state.streaming
       return {
         sessions,
+        streaming: remainingStreaming,
         currentSessionId: state.currentSessionId === id ? (sessions[0]?.id || null) : state.currentSessionId,
       }
     })
@@ -280,13 +295,58 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     }))
   },
 
-  setIsGenerating: (value) => set({ isGenerating: value }),
-  appendStreamingContent: (content) =>
-    set(state => ({ streamingContent: state.streamingContent + content })),
-  appendStreamingThinking: (thinking) =>
-    set(state => ({ streamingThinking: state.streamingThinking + thinking })),
-  clearStreaming: () => set({ streamingContent: '', streamingThinking: '', activeToolCalls: [] }),
-  setActiveToolCalls: (calls) => set({ activeToolCalls: calls }),
+  // Per-session streaming actions
+  startGenerating: (sessionId) => set(state => ({
+    streaming: {
+      ...state.streaming,
+      [sessionId]: { content: '', thinking: '', toolCalls: [], isGenerating: true },
+    },
+  })),
+
+  stopGenerating: (sessionId) => set(state => {
+    const { [sessionId]: _, ...rest } = state.streaming
+    return { streaming: rest }
+  }),
+
+  appendStreamingContent: (sessionId, content) => set(state => {
+    const current = getStreamState(state.streaming, sessionId)
+    return {
+      streaming: {
+        ...state.streaming,
+        [sessionId]: { ...current, content: current.content + content },
+      },
+    }
+  }),
+
+  appendStreamingThinking: (sessionId, thinking) => set(state => {
+    const current = getStreamState(state.streaming, sessionId)
+    return {
+      streaming: {
+        ...state.streaming,
+        [sessionId]: { ...current, thinking: current.thinking + thinking },
+      },
+    }
+  }),
+
+  setActiveToolCalls: (sessionId, calls) => set(state => {
+    const current = getStreamState(state.streaming, sessionId)
+    return {
+      streaming: {
+        ...state.streaming,
+        [sessionId]: { ...current, toolCalls: calls },
+      },
+    }
+  }),
+
+  clearStreaming: (sessionId) => set(state => {
+    const current = getStreamState(state.streaming, sessionId)
+    return {
+      streaming: {
+        ...state.streaming,
+        [sessionId]: { ...current, content: '', thinking: '', toolCalls: [] },
+      },
+    }
+  }),
 
   updateSessionModel: (sessionId, model, provider) => {
     set(state => ({

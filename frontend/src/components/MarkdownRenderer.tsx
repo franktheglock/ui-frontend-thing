@@ -7,6 +7,7 @@ import rehypeHighlight from 'rehype-highlight'
 import { CodeBlock } from './CodeBlock'
 import { CitationPill } from './CitationPill'
 import { Message, useChatStore } from '../stores/chatStore'
+import { cn } from '../lib/utils'
 
 function extractText(node: any): string {
   if (!node) return ''
@@ -72,10 +73,20 @@ function preprocessCitations(content: string, urls: string[]): string {
 
   // --------------------------------------------------------------------------
   // PASS 1 – Replace every citation pattern with a temporary token {{CITE:N}}.
-  // Tokens are safe because they start with {{ and will NOT be matched by any
-  // bracket/paren regex in this pass.
   // --------------------------------------------------------------------------
 
+  // Helper for multi-number patterns
+  const multiToken = (match: string): string => {
+    const nums = match.match(/\d+/g)
+    return nums ? nums.map((n) => `{{CITE:${n}}}`).join(', ') : match
+  }
+
+  // 1. Prioritize Multi-number patterns (they contain commas or multiple numbers)
+  s = s.replace(/【\s*(?:[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*)?\d+(?:\s*,\s*(?:[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*)?\d+)*\s*】/g, multiToken)
+  s = s.replace(/\[\s*(?:[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*)?\d+(?:\s*,\s*(?:[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*)?\d+)*\s*\]/g, multiToken)
+  s = s.replace(/\(\s*(?:[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*)?\d+(?:\s*,\s*(?:[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*)?\d+)*\s*\)/g, multiToken)
+
+  // 2. Handle single citation patterns
   // Fullwidth brackets with source label: 【source:11】 or 【Source 11】
   s = s.replace(/【\s*[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*(\d+)\s*】/g, '{{CITE:$1}}')
 
@@ -100,21 +111,6 @@ function preprocessCitations(content: string, urls: string[]): string {
   // Standalone "source:N" at word boundary
   s = s.replace(/\b[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*(\d+)\b/g, '{{CITE:$1}}')
 
-  // Multi-number patterns – convert each number inside to its own token
-  const multiToken = (match: string): string => {
-    const nums = match.match(/\d+/g)
-    return nums ? nums.map((n) => `{{CITE:${n}}}`).join(' ') : match
-  }
-
-  // Fullwidth multi: 【source:1, source:4】 or 【1, 4】
-  s = s.replace(/【\s*(?:[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*)?\d+(?:\s*,\s*(?:[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*)?\d+)*\s*】/g, multiToken)
-
-  // ASCII multi: [source:1, source:4] or [1, 4]
-  s = s.replace(/\[\s*(?:[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*)?\d+(?:\s*,\s*(?:[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*)?\d+)*\s*\]/g, multiToken)
-
-  // Parenthesised multi: (1, 4) or (source:1, 4)
-  s = s.replace(/\(\s*(?:[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*)?\d+(?:\s*,\s*(?:[Ss][Oo][Uu][Rr][Cc][Ee]\s*[: ]\s*)?\d+)*\s*\)/g, multiToken)
-
   // --------------------------------------------------------------------------
   // PASS 2 – Convert tokens to real markdown links.
   // --------------------------------------------------------------------------
@@ -126,6 +122,7 @@ function preprocessCitations(content: string, urls: string[]): string {
 interface MarkdownRendererProps {
   content: string
   streaming?: boolean
+  searchHighlight?: string | null
 }
 
 function ImageWithLightbox({ src, alt, ...props }: any) {
@@ -185,7 +182,6 @@ function ImageWithLightbox({ src, alt, ...props }: any) {
           loading="lazy"
         />
         
-        {/* Quick actions overlay */}
         <div className={`absolute bottom-0 left-0 right-0 p-2 bg-background/90 backdrop-blur-sm border-t border-border/50 transition-transform duration-200 flex items-center justify-between gap-4 ${isHovered ? 'translate-y-0' : 'translate-y-full'}`}>
           <span className="text-[10px] font-mono uppercase tracking-tighter text-foreground/40 truncate">
             {alt || 'IMAGE_ASSET'}
@@ -231,7 +227,7 @@ function ImageWithLightbox({ src, alt, ...props }: any) {
   )
 }
 
-export function MarkdownRenderer({ content, streaming = false }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, streaming = false, searchHighlight }: MarkdownRendererProps) {
   const { sessions, currentSessionId } = useChatStore()
   const session = sessions.find(s => s.id === currentSessionId)
   const allMessages = session?.messages || []
@@ -242,76 +238,89 @@ export function MarkdownRenderer({ content, streaming = false }: MarkdownRendere
     [content, urls]
   )
 
-  // Strip parentheses that the model sometimes incorrectly wraps around code blocks
   const cleanedContent = processedContent.replace(/\(\s*(```[\s\S]*?```)\s*\)/g, '$1')
 
+  const components = React.useMemo(() => ({
+    text({ children }: any) {
+      if (!searchHighlight || typeof children !== 'string') return children
+      const query = searchHighlight.toLowerCase()
+      const parts = children.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'))
+      return (
+        <>
+          {parts.map((part, i) => 
+            part.toLowerCase() === query 
+              ? <mark key={i} className="bg-accent/30 text-inherit rounded-sm px-0.5">{part}</mark>
+              : part
+          )}
+        </>
+      )
+    },
+    a({ node, children, href, ...props }: any) {
+      const label = getChildrenText(children)
+      const citationMatch = label.match(/^\[(\d+)\]$/)
+      if (citationMatch) {
+        return <CitationPill n={citationMatch[1]} />
+      }
+      return (
+        <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+          {children}
+        </a>
+      )
+    },
+    img({ node, src, ...props }: any) {
+      let finalSrc = src
+      if (src && !src.startsWith('http') && !src.startsWith('/') && !src.startsWith('data:')) {
+        const cleanPath = src.replace(/^\.\/output\//, '').replace(/^\.\//, '').replace(/^output\//, '')
+        finalSrc = `/uploads/python-out/${cleanPath}`
+      }
+      return <ImageWithLightbox src={finalSrc} {...props} />
+    },
+    table({ children, ...props }: any) {
+      return (
+        <div className="overflow-x-auto -mx-1 px-1">
+          <table {...props}>{children}</table>
+        </div>
+      )
+    },
+    code({ node, inline, className, children, ...props }: any) {
+      const match = /language-(\w+)/.exec(className || '')
+      const language = match ? match[1] : ''
+
+      if (inline) {
+        return (
+          <code className="bg-secondary px-1.5 py-0.5 rounded-sm text-sm font-mono" {...props}>
+            {children}
+          </code>
+        )
+      }
+
+      const isPlainText = !language || language === 'text' || language === 'txt'
+      if (isPlainText) {
+        return (
+          <pre className="my-3 p-3 bg-secondary/40 border border-border/50 rounded-sm overflow-x-auto text-sm font-mono text-foreground/90 whitespace-pre-wrap">
+            {children}
+          </pre>
+        )
+      }
+
+      const rawText = node ? extractText(node) : String(children)
+
+      return (
+        <CodeBlock
+          language={language}
+          content={rawText.replace(/\n$/, '')}
+          highlighted={children}
+        />
+      )
+    },
+  }), [searchHighlight])
+
   return (
-    <div className="prose dark:prose-invert prose-sm max-w-none">
+    <div className={cn("prose prose-sm dark:prose-invert max-w-none break-words", streaming && "streaming-fade")}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex, ...(streaming ? [] : [rehypeHighlight])]}
-        components={{
-          a({ node, children, href, ...props }: any) {
-            const label = getChildrenText(children)
-            const citationMatch = label.match(/^\[(\d+)\]$/)
-            if (citationMatch) {
-              return <CitationPill n={citationMatch[1]} />
-            }
-            return (
-              <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
-                {children}
-              </a>
-            )
-          },
-          img({ node, src, ...props }: any) {
-            let finalSrc = src
-            if (src && !src.startsWith('http') && !src.startsWith('/') && !src.startsWith('data:')) {
-              // Standardize relative paths to our python output directory
-              const cleanPath = src.replace(/^\.\/output\//, '').replace(/^\.\//, '').replace(/^output\//, '')
-              finalSrc = `/uploads/python-out/${cleanPath}`
-            }
-            return <ImageWithLightbox src={finalSrc} {...props} />
-          },
-          table({ children, ...props }: any) {
-            return (
-              <div className="overflow-x-auto -mx-1 px-1">
-                <table {...props}>{children}</table>
-              </div>
-            )
-          },
-          code({ node, inline, className, children, ...props }: any) {
-            const match = /language-(\w+)/.exec(className || '')
-            const language = match ? match[1] : ''
-
-            if (inline) {
-              return (
-                <code className="bg-secondary px-1.5 py-0.5 rounded-sm text-sm font-mono" {...props}>
-                  {children}
-                </code>
-              )
-            }
-
-            // Skip full CodeBlock rendering for plain text blocks — render as a simple pre instead
-            const isPlainText = !language || language === 'text' || language === 'txt'
-            if (isPlainText) {
-              return (
-                <pre className="my-3 p-3 bg-secondary/40 border border-border/50 rounded-sm overflow-x-auto text-sm font-mono text-foreground/90 whitespace-pre-wrap">
-                  {children}
-                </pre>
-              )
-            }
-
-            const rawText = node ? extractText(node) : String(children)
-
-            return (
-              <CodeBlock
-                language={language}
-                content={rawText.replace(/\n$/, '')}
-                highlighted={children}
-              />
-            )
-          },
-        }}
+        components={components}
       >
         {cleanedContent}
       </ReactMarkdown>

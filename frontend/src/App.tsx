@@ -86,7 +86,7 @@ function ModelSync() {
 }
 
 function App() {
-  const { sessions, currentSessionId, createSession, setCurrentSession, isGenerating, loadSessions } = useChatStore()
+  const { sessions, currentSessionId, createSession, setCurrentSession, streaming, loadSessions } = useChatStore()
 
   useEffect(() => {
     loadSessions().then(() => {
@@ -100,7 +100,8 @@ function App() {
   }, [loadSessions, createSession, setCurrentSession])
 
   const currentSession = sessions.find(s => s.id === currentSessionId)
-  const isEmpty = !currentSession || (currentSession.messages.length === 0 && !isGenerating)
+  const isCurrentGenerating = currentSessionId ? streaming[currentSessionId]?.isGenerating ?? false : false
+  const isEmpty = !currentSession || (currentSession.messages.length === 0 && !isCurrentGenerating)
 
   return (
     <>
