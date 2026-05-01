@@ -32,7 +32,7 @@ export interface SettingsState {
   streamResponses: boolean
   showThinking: boolean
   showGenerationInfo: boolean
-  defaultSearchProvider: 'searxng' | 'duckduckgo' | 'brave' | 'google'
+  defaultSearchProvider: 'searxng' | 'duckduckgo' | 'brave' | 'google' | 'parallel' | 'exa' | 'tavily'
   searchConfig: Record<string, string>
   artifactsEnabled: boolean
   skillsDirectory: string
@@ -59,7 +59,7 @@ export interface SettingsState {
   setStreamResponses: (stream: boolean) => void
   setShowThinking: (show: boolean) => void
   setShowGenerationInfo: (show: boolean) => void
-  setDefaultSearchProvider: (provider: 'searxng' | 'duckduckgo' | 'brave' | 'google') => void
+  setDefaultSearchProvider: (provider: 'searxng' | 'duckduckgo' | 'brave' | 'google' | 'parallel' | 'exa' | 'tavily') => void
   setSearchConfig: (config: Record<string, string>) => void
   setArtifactsEnabled: (enabled: boolean) => void
   setSkillsDirectory: (dir: string) => void
@@ -78,7 +78,7 @@ export const useSettingsStore = create<SettingsState>()(
       systemPrompt: 'You are a highly capable AI assistant. You excel at providing helpful, clear, and accurate information. When writing code, always use appropriate markdown formatting and specify the language.\n\nYou have access to tools (like web search). When you need to look up information or use a tool, ALWAYS call the appropriate tool using the proper format. Do not guess information if you can look it up.\n\nCRITICAL CITATION RULE: When providing information from search results or external URLs, you MUST cite your sources inline using the format [source:n], where n is the 1-indexed number of the search result or URL read. This is required for EVERY fact or claim that comes from a tool result.\n\nExample: "The capital of France is Paris [source:1]. The Eiffel Tower was completed in 1889 [source:2]."\n\nFailure to include inline citations is a violation of your instructions.',
       providers: [],
       tools: [],
-      maxTokens: 32768,
+      maxTokens: 131072,
       temperature: 0.7,
       topP: 1,
       streamResponses: true,

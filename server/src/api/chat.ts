@@ -49,12 +49,16 @@ router.post('/sessions', async (req, res) => {
   const { title, model, provider, systemPrompt } = req.body
   const now = Date.now()
 
-  await db.run(
-    'INSERT INTO sessions (id, title, model, provider, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    id, title || 'New Chat', model, provider, systemPrompt || null, now, now
-  )
-
-  res.json({ id, title: title || 'New Chat', model, provider, systemPrompt, createdAt: now, updatedAt: now, messages: [] })
+  try {
+    await db.run(
+      'INSERT INTO sessions (id, title, model, provider, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      id, title || 'New Chat', model, provider, systemPrompt || null, now, now
+    )
+    res.json({ id, title: title || 'New Chat', model, provider, systemPrompt, createdAt: now, updatedAt: now, messages: [] })
+  } catch (error: any) {
+    console.error('[api/chat] Failed to create session:', error)
+    res.status(500).json({ error: 'Failed to create session' })
+  }
 })
 
 router.delete('/sessions/:id', async (req, res) => {
@@ -95,21 +99,25 @@ router.post('/sessions/:id/messages', async (req, res) => {
   const id = msgId || uuidv4()
   const timestamp = Date.now()
 
-  await db.run(
-    `INSERT INTO messages (id, session_id, role, content, thinking, tool_calls, tool_results, attachments, generation_info, timeline, timestamp)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id, req.params.id, role, content,
-    thinking || null,
-    toolCalls ? JSON.stringify(toolCalls) : null,
-    toolResults ? JSON.stringify(toolResults) : null,
-    attachments ? JSON.stringify(attachments) : null,
-    generationInfo ? JSON.stringify(generationInfo) : null,
-    timeline ? JSON.stringify(timeline) : null,
-    timestamp
-  )
-
-  await db.run('UPDATE sessions SET updated_at = ? WHERE id = ?', Date.now(), req.params.id)
-  res.json({ id, role, content, thinking, toolCalls, toolResults, attachments, generationInfo, timeline, timestamp })
+  try {
+    await db.run(
+      `INSERT INTO messages (id, session_id, role, content, thinking, tool_calls, tool_results, attachments, generation_info, timeline, timestamp)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, req.params.id, role, content,
+      thinking || null,
+      toolCalls ? JSON.stringify(toolCalls) : null,
+      toolResults ? JSON.stringify(toolResults) : null,
+      attachments ? JSON.stringify(attachments) : null,
+      generationInfo ? JSON.stringify(generationInfo) : null,
+      timeline ? JSON.stringify(timeline) : null,
+      timestamp
+    )
+    await db.run('UPDATE sessions SET updated_at = ? WHERE id = ?', Date.now(), req.params.id)
+    res.json({ id, role, content, thinking, toolCalls, toolResults, attachments, generationInfo, timeline, timestamp })
+  } catch (error: any) {
+    console.error('[api/chat] Failed to save message:', error)
+    res.status(500).json({ error: error.message || 'Failed to save message' })
+  }
 })
 
 router.patch('/sessions/:sessionId/messages/:messageId', async (req, res) => {
@@ -196,7 +204,7 @@ function getCleanErrorMessage(error: any, provider: string): string {
 }
 
 router.post('/completions', async (req, res) => {
-  const { messages, model, provider, systemPrompt, temperature, maxTokens, topP, tools, lastResponseId } = req.body
+  const { messages, model, provider, systemPrompt, temperature, maxTokens, topP, tools, lastResponseId, sessionId } = req.body
   
   try {
     const providerInstance = await getProvider(provider)
@@ -206,15 +214,21 @@ router.post('/completions', async (req, res) => {
 
     const allTools = listTools()
 
+    const dateStr = `Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`
+    const enhancedSystemPrompt = systemPrompt 
+      ? `${dateStr}\n${systemPrompt}`
+      : dateStr
+
     const stream = providerInstance.chatCompletion({
       model,
-      messages: systemPrompt ? [{ role: 'system', content: systemPrompt }, ...messages] : messages,
+      messages: [{ role: 'system', content: enhancedSystemPrompt }, ...(messages || [])],
       temperature,
       maxTokens,
       topP,
       tools: allTools.length > 0 ? allTools.map(t => ({ ...t, id: t.name })) : undefined,
       stream: true,
       lastResponseId,
+      sessionId,
     })
 
     if (req.body.stream === false) {

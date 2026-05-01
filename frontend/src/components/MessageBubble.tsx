@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { User, Bot, Copy, Check, Terminal, RotateCcw, ChevronLeft, ChevronRight, FileText, Download, ExternalLink, Activity } from 'lucide-react'
+import { User, Bot, Copy, Check, Terminal, RotateCcw, ChevronLeft, ChevronRight, FileText, Download, ExternalLink } from 'lucide-react'
 import { Message, GenerationInfo as GenInfo, Attachment } from '../stores/chatStore'
 import { ToolCallBlock } from './ToolCallBlock'
 import { MarkdownRenderer } from './MarkdownRenderer'
@@ -8,6 +8,7 @@ import { GenerationInfo } from './GenerationInfo'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { cn } from '../lib/utils'
+import { getActivitySublabel } from '../lib/toolDisplay'
 
 function AttachmentPreview({ attachment }: { attachment: Attachment }) {
   const isImage = attachment.type === 'image' || attachment.mimeType?.startsWith('image/')
@@ -127,7 +128,8 @@ export function MessageBubble({
             const start = message.timeline[0].timestamp
             const end = message.timeline[message.timeline.length - 1].timestamp
             const duration = Math.round((end - start) / 1000)
-            const label = duration > 0 ? `Thought for ${duration}s` : 'Thought for <1s'
+            const sublabel = getActivitySublabel(message.timeline, message.toolResults || [])
+            const label = duration > 0 ? `Worked for ${duration}s` : 'Worked for <1s'
             
             return (
               <button
@@ -135,10 +137,13 @@ export function MessageBubble({
                   useUIStore.getState().setActiveActivityMessageId(message.id)
                   useUIStore.getState().setActivityPanelOpen(true)
                 }}
-                className="flex items-center gap-1.5 transition-colors mb-2 text-[15px] text-muted-foreground hover:text-foreground w-fit font-medium"
+                className="transition-colors mb-2 text-[15px] text-muted-foreground hover:text-foreground w-fit font-medium"
               >
-                {label}
-                <ChevronRight className="w-4 h-4 text-muted-foreground/70" />
+                <div className="flex items-center gap-1.5">
+                  <span>{label}</span>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground/70 flex-shrink-0" />
+                </div>
+                {sublabel && <span className="text-xs text-muted-foreground/70 truncate max-w-[240px] block mt-0.5">{sublabel}</span>}
               </button>
             )
           })()

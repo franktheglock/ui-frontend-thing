@@ -51,7 +51,7 @@ export class GeminiProvider extends BaseProvider {
           systemInstruction: systemMessage ? { parts: [{ text: systemMessage.content }] } : undefined,
           generationConfig: {
             temperature: options.temperature,
-            maxOutputTokens: options.maxTokens,
+            maxOutputTokens: options.maxTokens || undefined,
             topP: options.topP,
           },
           tools: options.tools?.map(t => ({

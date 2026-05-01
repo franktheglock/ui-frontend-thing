@@ -31,6 +31,12 @@ export function GenerationInfo({ info }: GenerationInfoProps) {
         </span>
       )}
       
+      {info.totalCost !== undefined && (
+        <span className="flex items-center gap-1 text-accent font-bold">
+          ${info.totalCost < 0.0001 ? info.totalCost.toFixed(6) : info.totalCost.toFixed(4)}
+        </span>
+      )}
+      
       <span className="text-muted-foreground/50">
         {info.provider} / {info.model}
       </span>

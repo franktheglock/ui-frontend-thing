@@ -25,22 +25,25 @@ const ProviderSection = memo(function ProviderSection({
   onToggle: () => void
 }) {
   const filteredModels = useMemo(() => {
-    if (!searchQuery.trim()) return provider.models || []
+    const models = Array.from(new Set(provider.models || [])) as string[]
+    if (!searchQuery.trim()) return models
     const q = searchQuery.toLowerCase()
-    return (provider.models || []).filter((m: string) => m.toLowerCase().includes(q))
+    return models.filter((m: string) => m.toLowerCase().includes(q))
   }, [provider.models, searchQuery])
 
   if (filteredModels.length === 0 && searchQuery.trim()) return null
 
   const isSelectedProvider = selectedProvider === provider.id
-
+  
   return (
     <div className="border border-border rounded-sm overflow-hidden">
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center justify-between px-3 py-2.5 bg-secondary/50 hover:bg-secondary transition-colors"
+      <div
+        className="w-full flex items-center justify-between px-3 py-2.5 bg-secondary/50 transition-colors"
       >
-        <div className="flex items-center gap-2">
+        <button
+          onClick={onToggle}
+          className="flex-1 flex items-center gap-2 text-left"
+        >
           {isOpen ? (
             <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
           ) : (
@@ -50,12 +53,12 @@ const ProviderSection = memo(function ProviderSection({
             {provider.name}
           </h3>
           <span className="text-xs text-muted-foreground">
-            {(provider.models || []).length}
+            {filteredModels.length}
           </span>
           {isSelectedProvider && (
             <span className="text-[10px] px-1.5 py-0.5 bg-accent/10 text-accent rounded-sm">active</span>
           )}
-        </div>
+        </button>
         <button
           onClick={(e) => {
             e.stopPropagation()
@@ -65,7 +68,7 @@ const ProviderSection = memo(function ProviderSection({
         >
           <Trash2 className="w-3 h-3" />
         </button>
-      </button>
+      </div>
 
       {isOpen && (
         <div className="p-2 grid grid-cols-1 gap-1">

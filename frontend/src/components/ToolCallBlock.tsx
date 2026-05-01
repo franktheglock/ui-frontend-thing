@@ -62,7 +62,7 @@ function getToolArgs(toolCall: ToolCall): Record<string, any> {
 }
 
 function getQuery(args: Record<string, any>) {
-  return String(
+  const q = (
     args.query ?? 
     args.q ?? 
     args.search ?? 
@@ -70,9 +70,10 @@ function getQuery(args: Record<string, any>) {
     args.prompt ?? 
     args.text ?? 
     args.input ?? 
-    (Array.isArray(args.queries) ? args.queries[0] : args.queries) ??
-    ''
-  ).trim()
+    args.search_query ??
+    (Array.isArray(args.queries) ? args.queries[0] : args.queries)
+  )
+  return q ? String(q).trim() : ''
 }
 
 function getUrl(args: Record<string, any>, resultText?: string) {
@@ -197,7 +198,7 @@ export function ToolCallBlock({ toolCalls, results = [], hideHeaderIcon = false 
                             <Search className="w-3 h-3" /> Query {groupCount > 1 && `#${idx + 1}`}
                           </span>
                           <span className="font-mono text-foreground/90 bg-background/50 px-2 py-1 rounded-sm border border-border/50">
-                            {query || 'Searching...'}
+                            {query || (Object.keys(args).length > 0 ? JSON.stringify(args) : 'Searching...')}
                           </span>
                         </div>
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Brain, Code, Globe, FileText, ChevronDown, ChevronUp, CheckCircle2, AlertCircle, Clock, Search } from 'lucide-react'
+import { Brain, Code, Globe, FileText, ChevronDown, ChevronUp, CheckCircle2, AlertCircle, Search } from 'lucide-react'
 import { TimelineEvent, ToolResult } from '../stores/chatStore'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { cn } from '../lib/utils'
@@ -98,7 +98,7 @@ function parseToolArgs(value: unknown): Record<string, any> {
 }
 
 function getQuery(args: Record<string, any>) {
-  return String(
+  const q = (
     args.query ?? 
     args.q ?? 
     args.search ?? 
@@ -106,9 +106,10 @@ function getQuery(args: Record<string, any>) {
     args.prompt ?? 
     args.text ?? 
     args.input ?? 
-    (Array.isArray(args.queries) ? args.queries[0] : args.queries) ??
-    ''
-  ).trim()
+    args.search_query ??
+    (Array.isArray(args.queries) ? args.queries[0] : args.queries)
+  )
+  return q ? String(q).trim() : ''
 }
 
 function getUrl(args: Record<string, any>, resultText?: string) {
@@ -133,22 +134,28 @@ function ToolCallDetails({ event, toolResult }: { event: TimelineEvent, toolResu
     }
   }
 
-  if (!toolResult) {
-    return <div className="text-xs text-muted-foreground italic px-2">Running...</div>
-  }
-
+  const searchIcon = <Search className="w-3 h-3" />
+  
   return (
     <div className="space-y-3">
-      {(event.toolName === 'web_search' || event.toolName?.toLowerCase().includes('search')) && query && (
-        <div className="flex flex-col gap-1 text-xs">
+      {(event.toolName === 'web_search' || event.toolName?.toLowerCase().includes('search')) && (
+        <div className="flex flex-col gap-1 text-xs px-2">
           <span className="text-muted-foreground flex items-center gap-1">
-            <Search className="w-3 h-3" /> Query
+            {searchIcon} Query
           </span>
-          <span className="font-mono text-foreground/90 bg-background/50 px-2 py-1 rounded-sm border border-border/50">
-            {query}
+          <span className="font-mono text-foreground/90 bg-background/50 px-2 py-1 rounded-sm border border-border/50 break-words">
+            {query || (Object.keys(args).length > 0 ? JSON.stringify(args) : '...')}
           </span>
         </div>
       )}
+
+      {!toolResult ? (
+        <div className="text-[10px] text-muted-foreground italic px-2 flex items-center gap-1.5 pt-1">
+          <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+          Working...
+        </div>
+      ) : (
+        <>
       {(event.toolName === 'read_url' || event.toolName === 'read_browser_page') && targetUrl && (
         <div className="flex flex-col gap-1 text-xs">
           <span className="text-muted-foreground flex items-center gap-1">
@@ -157,6 +164,17 @@ function ToolCallDetails({ event, toolResult }: { event: TimelineEvent, toolResu
           <a href={targetUrl} target="_blank" rel="noopener noreferrer" className="font-mono text-accent hover:underline bg-background/50 px-2 py-1 rounded-sm border border-border/50 break-all">
             {targetUrl}
           </a>
+        </div>
+      )}
+      {/* Show raw arguments for other tools or if query is missing for search */}
+      {!(event.toolName === 'web_search' || event.toolName?.toLowerCase().includes('search')) && 
+       !(event.toolName === 'read_url' || event.toolName === 'read_browser_page') && 
+       Object.keys(args).length > 0 && (
+        <div className="flex flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">Arguments</span>
+          <div className="p-2 bg-background/50 border border-border/50 rounded-sm font-mono text-[11px] whitespace-pre-wrap break-all">
+            {JSON.stringify(args, null, 2)}
+          </div>
         </div>
       )}
       {urls.length > 0 && (
@@ -188,8 +206,10 @@ function ToolCallDetails({ event, toolResult }: { event: TimelineEvent, toolResu
         </div>
       )}
       <div className="p-2 bg-secondary/30 border border-border rounded-none text-xs font-mono whitespace-pre-wrap max-h-48 overflow-auto overflow-x-hidden break-all text-muted-foreground">
-        {resultText}
+        {resultText || (toolResult ? 'No output' : 'Running...')}
       </div>
+      </>
+      )}
     </div>
   )
 }
@@ -216,21 +236,25 @@ function ToolCallItem({ event, toolResult }: { event: TimelineEvent, toolResult?
         <button
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            "w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-none border transition-colors",
+            "w-full flex items-start gap-2 px-3 py-1.5 text-sm rounded-none border transition-colors",
             isOpen ? "bg-secondary border-border" : "bg-secondary/50 border-border hover:bg-secondary"
           )}
         >
-          {getToolIcon(event.toolName || '')}
-          <span className="font-medium truncate">{event.toolName}</span>
+          <div className="flex-shrink-0 mt-0.5">{getToolIcon(event.toolName || '')}</div>
+          <div className="flex flex-col items-start min-w-0 overflow-hidden">
+            <span className="font-medium truncate w-full">{event.toolName}</span>
+          </div>
           {toolResult && (
             <span className={cn(
-              "ml-auto text-xs px-1.5 py-0.5 rounded-none flex-shrink-0",
+              "ml-auto text-xs px-1.5 py-0.5 rounded-none flex-shrink-0 mt-0.5",
               isError ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"
             )}>
               {isError ? 'Error' : 'Done'}
             </span>
           )}
-          {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />}
+          <div className="flex-shrink-0 mt-0.5">
+            {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+          </div>
         </button>
         {isOpen && (
           <div className="mt-2">
@@ -248,6 +272,8 @@ function ToolCallGroupItem({ events, toolResults }: { events: TimelineEvent[], t
   const hasError = events.some(event => toolResults.find(result => result.toolCallId === event.toolCallId)?.result.startsWith('Error:'))
   const names = Array.from(new Set(events.map(event => getToolLabel(event.toolName || ''))))
   const label = names.length === 1 ? names[0] : 'tools'
+  const runningEvent = events.find(e => !toolResults.some(r => r.toolCallId === e.toolCallId))
+  const groupDisplay = !allDone && runningEvent?.display ? runningEvent.display : undefined
 
   return (
     <div className="relative flex gap-3 min-w-0">
@@ -267,24 +293,28 @@ function ToolCallGroupItem({ events, toolResults }: { events: TimelineEvent[], t
         <button
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            "w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-none border transition-colors",
+            "w-full flex items-start gap-2 px-3 py-1.5 text-sm rounded-none border transition-colors",
             isOpen ? "bg-secondary border-border" : "bg-secondary/50 border-border hover:bg-secondary"
           )}
         >
-          {getToolIcon(events[0]?.toolName || '')}
-          <span className="font-medium truncate">{label}</span>
-          <span className="text-[10px] font-bold bg-accent text-accent-foreground px-1 rounded-sm">
+          <div className="flex-shrink-0 mt-0.5">{getToolIcon(events[0]?.toolName || '')}</div>
+          <div className="flex flex-col items-start min-w-0 overflow-hidden">
+            <span className="font-medium truncate w-full">{label}</span>
+          </div>
+          <span className="text-[10px] font-bold bg-accent text-accent-foreground px-1 rounded-sm flex-shrink-0 mt-0.5">
             X{events.length}
           </span>
           <span className={cn(
-            "ml-auto text-xs px-1.5 py-0.5 rounded-none flex-shrink-0",
+            "ml-auto text-xs px-1.5 py-0.5 rounded-none flex-shrink-0 mt-0.5",
             allDone
               ? hasError ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"
               : "bg-accent/10 text-accent"
           )}>
             {allDone ? (hasError ? 'Error' : 'Done') : 'Running'}
           </span>
-          {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />}
+          <div className="flex-shrink-0 mt-0.5">
+            {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+          </div>
         </button>
         {isOpen && (
           <div className="mt-2 space-y-4">
@@ -309,7 +339,7 @@ function ToolCallGroupItem({ events, toolResults }: { events: TimelineEvent[], t
 }
 
 export function TimelineView({ events, toolResults = [], isStreaming }: TimelineViewProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const [isOpen] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -366,14 +396,14 @@ export function TimelineView({ events, toolResults = [], isStreaming }: Timeline
           const event = item
           if (event.type === 'thinking') {
             return (
-              <div key={`${event.timestamp}-${idx}`} className="flex gap-3 min-w-0 relative">
+              <div key={`${event.timestamp}-${idx}`} className="flex gap-3 min-w-0 relative overflow-hidden">
                 <div className="flex flex-col items-center flex-shrink-0 z-10">
                   <div className="w-6 h-6 rounded-full bg-accent/10 border border-border flex items-center justify-center">
                     <Brain className="w-3 h-3 text-accent" />
                   </div>
                 </div>
-                <div className="flex-1 min-w-0 overflow-x-hidden bg-secondary/20 border border-border/50 rounded-sm px-3 py-2">
-                  <div className="text-sm text-muted-foreground break-words">
+                <div className="flex-1 min-w-0 bg-secondary/20 border border-border/50 rounded-sm px-3 py-2 max-w-full">
+                  <div className="text-sm text-muted-foreground break-words overflow-x-hidden">
                     <MarkdownRenderer content={event.content} />
                   </div>
                 </div>

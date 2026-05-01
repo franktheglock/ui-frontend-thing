@@ -10,6 +10,7 @@ import { ThinkingBlock } from './ThinkingBlock'
 import { ToolCallBlock } from './ToolCallBlock'
 import { useChat } from '../hooks/useChat'
 import { cn } from '../lib/utils'
+import { getActivitySublabel } from '../lib/toolDisplay'
 
 type RenderItem = 
   | { type: 'message', message: Message, aggregatedGenInfo?: GenInfo, onRegenerate?: () => void, versionInfo?: { current: number, total: number, onPrev: () => void, onNext: () => void } }
@@ -316,7 +317,8 @@ export function ChatWindow() {
                           const isDoneThinking = lastEvent?.type === 'content'
                           const end = isDoneThinking ? lastEvent.timestamp : Date.now()
                           const duration = Math.round((end - start) / 1000)
-                          const label = duration > 0 ? `Thinking for ${duration}s` : 'Thinking...'
+                          const sublabel = !isDoneThinking ? getActivitySublabel(streamState.timeline, streamState.toolResults || []) : undefined
+                          const label = duration > 0 ? `Working for ${duration}s` : 'Working...'
                           
                           return (
                             <button
@@ -324,13 +326,15 @@ export function ChatWindow() {
                                 useUIStore.getState().setActiveActivityMessageId('streaming')
                                 useUIStore.getState().setActivityPanelOpen(true)
                               }}
-                              className={cn(
-                                "flex items-center gap-1.5 transition-colors mb-2 text-[15px] w-fit font-medium",
-                                isDoneThinking ? "text-muted-foreground hover:text-foreground" : "text-muted-foreground hover:text-foreground animate-pulse"
-                              )}
+                              className="transition-colors mb-2 text-[15px] w-fit font-medium"
                             >
-                              {isDoneThinking ? `Thought for ${duration}s` : label}
-                              <ChevronRight className="w-4 h-4 text-muted-foreground/70" />
+                              <div className="flex items-center gap-1.5">
+                                <span className={cn(
+                                  isDoneThinking ? "text-muted-foreground hover:text-foreground" : "text-muted-foreground hover:text-foreground animate-pulse"
+                                )}>{isDoneThinking ? `Worked for ${duration}s` : label}</span>
+                                <ChevronRight className="w-4 h-4 text-muted-foreground/70 flex-shrink-0" />
+                              </div>
+                              {sublabel && <span className="text-xs text-muted-foreground/70 truncate max-w-[240px] block mt-0.5">{sublabel}</span>}
                             </button>
                           )
                         })()}

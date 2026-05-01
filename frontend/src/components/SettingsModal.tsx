@@ -270,12 +270,15 @@ export function SettingsModal() {
                       <label className="text-sm font-medium">Max Tokens</label>
                       <LocalInput
                         type="number"
-                        min={1}
-                        max={128000}
+                        min={0}
+                        max={1000000}
                         value={maxTokens}
-                        onChange={(val: string) => setMaxTokens(parseInt(val))}
+                        onChange={(val: string) => setMaxTokens(parseInt(val) || 0)}
                         className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                       />
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Set to 0 for Auto/Model Maximum.
+                      </p>
                     </div>
                   </div>
 
@@ -362,6 +365,9 @@ export function SettingsModal() {
                       <option value="duckduckgo">DuckDuckGo</option>
                       <option value="brave">Brave Search</option>
                       <option value="google">Google PSE</option>
+                      <option value="parallel">Parallel Search</option>
+                      <option value="exa">Exa</option>
+                      <option value="tavily">Tavily</option>
                     </select>
                   </div>
 
@@ -394,6 +400,27 @@ export function SettingsModal() {
                         placeholder="Google PSE CX"
                         value={searchConfig.googleCx || ''}
                         onChange={(val: string) => setSearchConfig({ ...searchConfig, googleCx: val })}
+                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <LocalInput
+                        type="password"
+                        placeholder="Parallel API Key"
+                        value={searchConfig.parallelApiKey || ''}
+                        onChange={(val: string) => setSearchConfig({ ...searchConfig, parallelApiKey: val })}
+                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <LocalInput
+                        type="password"
+                        placeholder="Exa API Key"
+                        value={searchConfig.exaApiKey || ''}
+                        onChange={(val: string) => setSearchConfig({ ...searchConfig, exaApiKey: val })}
+                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <LocalInput
+                        type="password"
+                        placeholder="Tavily API Key"
+                        value={searchConfig.tavilyApiKey || ''}
+                        onChange={(val: string) => setSearchConfig({ ...searchConfig, tavilyApiKey: val })}
                         className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                       />
                     </div>
