@@ -57,15 +57,20 @@ export class OpenAICompatibleProvider extends BaseProvider {
       if (chunk.toolCalls) {
         for (const tc of chunk.toolCalls) {
           const index = tc.index ?? 0
+          const newArgs = tc.function?.arguments || tc.arguments || ''
+          const newName = tc.function?.name || tc.name || ''
           if (!accumulatedToolCalls[index]) {
             accumulatedToolCalls[index] = { 
               id: tc.id || `call_${index}`, 
-              name: tc.function?.name || '', 
-              arguments: tc.function?.arguments || '' 
+              name: newName, 
+              arguments: newArgs
             }
           } else {
-            if (tc.function?.arguments) {
-              accumulatedToolCalls[index].arguments += tc.function.arguments
+            if (tc.id && !accumulatedToolCalls[index].id) accumulatedToolCalls[index].id = tc.id
+            if (newName) accumulatedToolCalls[index].name = newName
+            if (newArgs) {
+              const existing = accumulatedToolCalls[index].arguments || ''
+              accumulatedToolCalls[index].arguments = existing + newArgs
             }
           }
         }

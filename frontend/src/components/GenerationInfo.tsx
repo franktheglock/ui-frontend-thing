@@ -1,4 +1,3 @@
-import React from 'react'
 import { Zap, Clock, Hash } from 'lucide-react'
 import { GenerationInfo as GenerationInfoType } from '../stores/chatStore'
 import { formatTokensPerSecond, formatDuration } from '../lib/utils'
@@ -12,7 +11,7 @@ export function GenerationInfo({ info }: GenerationInfoProps) {
   if (tokens === 0) return null
 
   return (
-    <div className="flex items-center gap-3 text-xs text-muted-foreground py-1">
+    <div className="inline-flex items-center gap-3 text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
       <span className="flex items-center gap-1">
         <Hash className="w-3 h-3" />
         {info.tokensUsed || info.completionTokens || 0} tokens

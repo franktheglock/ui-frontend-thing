@@ -184,7 +184,6 @@ export function ToolsModal() {
   }
 
   const searchProviders = [
-    { id: 'duckduckgo' as const, name: 'DuckDuckGo', description: 'No API key needed' },
     { id: 'searxng' as const, name: 'SearXNG', description: 'Self-hosted meta search' },
     { id: 'brave' as const, name: 'Brave', description: 'API key required' },
     { id: 'google' as const, name: 'Google', description: 'API key required' },
@@ -270,7 +269,7 @@ export function ToolsModal() {
                     onClick={() => setDefaultSearchProvider(sp.id)}
                     className={cn(
                       'p-3 text-left border rounded-sm transition-all',
-                      defaultSearchProvider === sp.id
+                      (defaultSearchProvider === 'duckduckgo' ? 'searxng' : defaultSearchProvider) === sp.id
                         ? 'border-accent bg-accent/10 text-foreground'
                         : 'border-border bg-secondary/20 text-muted-foreground hover:border-accent/50'
                     )}
@@ -289,7 +288,7 @@ export function ToolsModal() {
                     type="text"
                     value={searchConfig.searxngUrl || ''}
                     onChange={e => setSearchConfig({ ...searchConfig, searxngUrl: e.target.value })}
-                    placeholder="http://localhost:8080"
+                    placeholder="http://192.168.1.70:8888"
                     className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
                   />
                 </label>

@@ -46,6 +46,8 @@ export function SettingsModal() {
     defaultSearchProvider,
     searchConfig,
     artifactsEnabled,
+    toolDisplayMode,
+    maxToolTurns,
     setSystemPrompt,
     setTemperature,
     setMaxTokens,
@@ -56,6 +58,8 @@ export function SettingsModal() {
     setDefaultSearchProvider,
     setSearchConfig,
     setArtifactsEnabled,
+    setToolDisplayMode,
+    setMaxToolTurns,
     providers,
     updateProvider,
     removeProvider,
@@ -326,6 +330,22 @@ export function SettingsModal() {
                       <span className="text-sm">Enable code artifacts</span>
                     </label>
                   </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Tool Display Mode</label>
+                    <select
+                      value={toolDisplayMode}
+                      onChange={(e) => setToolDisplayMode(e.target.value as any)}
+                      className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      <option value="individual">Individual (Default)</option>
+                      <option value="grouped">Grouped by Type</option>
+                      <option value="timeline">Timeline</option>
+                    </select>
+                    <p className="text-xs text-muted-foreground">
+                      How tool calls are visualized in the chat history.
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -338,8 +358,8 @@ export function SettingsModal() {
                       onChange={(e) => setDefaultSearchProvider(e.target.value as any)}
                       className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                     >
-                      <option value="duckduckgo">DuckDuckGo</option>
                       <option value="searxng">SearxNG</option>
+                      <option value="duckduckgo">DuckDuckGo</option>
                       <option value="brave">Brave Search</option>
                       <option value="google">Google PSE</option>
                     </select>
@@ -350,7 +370,7 @@ export function SettingsModal() {
                     <div className="space-y-2">
                       <LocalInput
                         type="text"
-                        placeholder="SearxNG URL"
+                        placeholder="http://192.168.1.70:8888"
                         value={searchConfig.searxngUrl || ''}
                         onChange={(val: string) => setSearchConfig({ ...searchConfig, searxngUrl: val })}
                         className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
@@ -377,6 +397,24 @@ export function SettingsModal() {
                         className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                       />
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Tool Turn Limit</label>
+                    <LocalInput
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={String(maxToolTurns ?? 0)}
+                      onChange={(val: string) => {
+                        const parsed = Number.parseInt(val, 10)
+                        setMaxToolTurns(Number.isFinite(parsed) && parsed > 0 ? parsed : 0)
+                      }}
+                      className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Maximum consecutive tool-call rounds before stopping. Set to 0 for unlimited.
+                    </p>
                   </div>
                 </div>
               )}

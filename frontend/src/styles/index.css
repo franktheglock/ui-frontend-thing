@@ -236,3 +236,20 @@
 .katex-display {
   margin: 1em 0 !important;
 }
+
+/* Force inline code to stay inline in prose */
+.prose code:not(pre code) {
+  display: inline !important;
+  margin: 0 !important;
+  padding: 0.1em 0.3em !important;
+  border-radius: 0.25rem !important;
+  background-color: hsl(var(--secondary)) !important;
+  color: inherit !important;
+  font-size: 0.875em !important;
+  vertical-align: baseline !important;
+}
+
+.prose pre {
+  margin-top: 0.75rem !important;
+  margin-bottom: 0.75rem !important;
+}

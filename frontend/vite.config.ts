@@ -24,5 +24,17 @@ export default defineConfig({
         changeOrigin: true,
       }
     }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'framer-motion': ['framer-motion'],
+          'markdown': ['react-markdown', 'remark-gfm', 'remark-math', 'rehype-katex'],
+          'ui-vendor': ['lucide-react', 'zustand']
+        }
+      }
+    }
   }
 })

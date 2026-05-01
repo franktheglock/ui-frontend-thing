@@ -42,11 +42,34 @@ export class OpenAIProvider extends BaseProvider {
 
     let promptTokens = 0
     let completionTokens = 0
+    let accumulatedToolCalls: any[] = []
 
     for await (const chunk of this.streamResponse(response)) {
       if (chunk.generationInfo) {
         promptTokens = chunk.generationInfo.promptTokens || promptTokens
         completionTokens = chunk.generationInfo.completionTokens || completionTokens
+      }
+      if (chunk.toolCalls) {
+        for (const tc of chunk.toolCalls) {
+          const index = tc.index ?? 0
+          const newArgs = tc.function?.arguments || tc.arguments || ''
+          const newName = tc.function?.name || tc.name || ''
+          if (!accumulatedToolCalls[index]) {
+            accumulatedToolCalls[index] = { 
+              id: tc.id || `call_${index}`, 
+              name: newName, 
+              arguments: newArgs
+            }
+          } else {
+            if (tc.id && !accumulatedToolCalls[index].id) accumulatedToolCalls[index].id = tc.id
+            if (newName) accumulatedToolCalls[index].name = newName
+            if (newArgs) {
+              const existing = accumulatedToolCalls[index].arguments || ''
+              accumulatedToolCalls[index].arguments = existing + newArgs
+            }
+          }
+        }
+        chunk.toolCalls = accumulatedToolCalls.filter(Boolean)
       }
       yield chunk
     }
@@ -87,18 +110,40 @@ export class OpenAIProvider extends BaseProvider {
   }
 
   private formatMessages(messages: ChatMessage[]): any[] {
-    return messages.map(m => ({
-      role: m.role,
-      content: m.content,
-      ...(m.attachments ? {
-        content: [
+    return messages.map(m => {
+      const msg: any = {
+        role: m.role,
+        content: m.content || null,
+      }
+
+      if (m.role === 'assistant' && m.toolCalls) {
+        msg.tool_calls = m.toolCalls.map(tc => ({
+          id: tc.id,
+          type: 'function',
+          function: {
+            name: tc.name,
+            arguments: typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments),
+          },
+        }))
+      }
+
+      if (m.role === 'tool' && m.toolResults) {
+        // OpenAI expects one message per tool result, but our DB might group them.
+        // For simplicity, we use the first tool result's ID.
+        msg.tool_call_id = m.toolResults[0]?.toolCallId
+      }
+
+      if (m.attachments && m.attachments.length > 0) {
+        msg.content = [
           { type: 'text', text: m.content },
           ...m.attachments.map(a => ({
             type: 'image_url',
             image_url: { url: a.url.startsWith('http') ? a.url : `http://localhost:3456${a.url}` },
           })),
-        ],
-      } : {}),
-    }))
+        ]
+      }
+
+      return msg
+    })
   }
 }

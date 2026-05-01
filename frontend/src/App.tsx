@@ -1,9 +1,10 @@
-import React, { useEffect } from 'react'
+import { useEffect } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { SidebarToggle } from './components/SidebarToggle'
 import { ChatWindow } from './components/ChatWindow'
 import { MessageInput } from './components/MessageInput'
 import { ArtifactPanel } from './components/ArtifactPanel'
+import { ActivityPanel } from './components/ActivityPanel'
 import { SettingsModal } from './components/SettingsModal'
 import { ToolsModal } from './components/ToolsModal'
 import { ModelSelector } from './components/ModelSelector'
@@ -31,7 +32,7 @@ function ThemeSync() {
 }
 
 function ModelSync() {
-  const { providers, selectedModel, selectedProvider, setProviders, setSelectedModel, setSelectedProvider } = useSettingsStore()
+  const { selectedModel, selectedProvider, setProviders, setSelectedModel, setSelectedProvider } = useSettingsStore()
 
   useEffect(() => {
     let cancelled = false
@@ -119,6 +120,7 @@ function App() {
           <MessageInput isLanding={isEmpty} />
         </main>
 
+        <ActivityPanel />
         <ArtifactPanel />
         <SettingsModal />
         <ToolsModal />

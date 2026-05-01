@@ -1,7 +1,8 @@
-import React, { useState, useMemo, memo } from 'react'
+import { useState, useMemo, memo } from 'react'
 import { X, Cpu, Check, Plus, Trash2, ChevronDown, ChevronRight, Search } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
+import { useChatStore } from '../stores/chatStore'
 import { cn } from '../lib/utils'
 
 const ProviderSection = memo(function ProviderSection({
@@ -130,6 +131,19 @@ export function ModelSelector() {
   const handleSelect = (providerId: string, model: string) => {
     setSelectedProvider(providerId)
     setSelectedModel(model)
+    
+    // Also update the current session if we have one
+    const { currentSessionId, updateSessionModel } = useChatStore.getState()
+    if (currentSessionId) {
+      updateSessionModel(currentSessionId, model, providerId)
+      // Sync to server
+      fetch(`/api/chat/sessions/${currentSessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, provider: providerId }),
+      }).catch(err => console.error('Failed to sync session model switch:', err))
+    }
+
     setModelSelectorOpen(false)
     setSearchQuery('')
   }

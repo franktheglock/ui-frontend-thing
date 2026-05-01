@@ -1,5 +1,4 @@
 import React, { useState } from 'react'
-import { motion } from 'framer-motion'
 import { Copy, Check, Code, ExternalLink, Eye } from 'lucide-react'
 import { useUIStore } from '../stores/uiStore'
 import { generateUUID } from '../stores/chatStore'

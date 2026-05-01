@@ -12,6 +12,8 @@ export interface Artifact {
 interface UIState {
   activeArtifact: Artifact | null
   artifactPanelOpen: boolean
+  activeActivityMessageId: string | null
+  activityPanelOpen: boolean
   settingsOpen: boolean
   modelSelectorOpen: boolean
   toolSelectorOpen: boolean
@@ -22,6 +24,9 @@ interface UIState {
   setActiveArtifact: (artifact: Artifact | null) => void
   setArtifactPanelOpen: (open: boolean) => void
   toggleArtifactPanel: () => void
+  setActiveActivityMessageId: (id: string | null) => void
+  setActivityPanelOpen: (open: boolean) => void
+  toggleActivityPanel: () => void
   setSettingsOpen: (open: boolean) => void
   setModelSelectorOpen: (open: boolean) => void
   setToolSelectorOpen: (open: boolean) => void
@@ -32,6 +37,8 @@ interface UIState {
 export const useUIStore = create<UIState>()((set) => ({
   activeArtifact: null,
   artifactPanelOpen: false,
+  activeActivityMessageId: null,
+  activityPanelOpen: false,
   settingsOpen: false,
   modelSelectorOpen: false,
   toolSelectorOpen: false,
@@ -42,6 +49,9 @@ export const useUIStore = create<UIState>()((set) => ({
   setActiveArtifact: (artifact) => set({ activeArtifact: artifact }),
   setArtifactPanelOpen: (open) => set({ artifactPanelOpen: open }),
   toggleArtifactPanel: () => set(state => ({ artifactPanelOpen: !state.artifactPanelOpen })),
+  setActiveActivityMessageId: (id) => set({ activeActivityMessageId: id }),
+  setActivityPanelOpen: (open) => set({ activityPanelOpen: open }),
+  toggleActivityPanel: () => set(state => ({ activityPanelOpen: !state.activityPanelOpen })),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setModelSelectorOpen: (open) => set({ modelSelectorOpen: open }),
   setToolSelectorOpen: (open) => set({ toolSelectorOpen: open }),

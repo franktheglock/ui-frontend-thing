@@ -1,4 +1,5 @@
 import { BaseProvider, CompletionOptions, CompletionChunk } from './base'
+import { safeJsonParse } from '../utils/json'
 
 export class GeminiProvider extends BaseProvider {
   id = 'gemini'
@@ -19,10 +20,34 @@ export class GeminiProvider extends BaseProvider {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: userMessages.map(m => ({
-            role: m.role === 'user' ? 'user' : 'model',
-            parts: [{ text: m.content }],
-          })),
+          contents: userMessages.map(m => {
+            const role = m.role === 'user' ? 'user' : 'model'
+            const parts: any[] = [{ text: m.content || '' }]
+
+            if (m.role === 'assistant' && m.toolCalls) {
+              m.toolCalls.forEach(tc => {
+                parts.push({
+                  functionCall: {
+                    name: tc.name,
+                    args: typeof tc.arguments === 'string' ? safeJsonParse(tc.arguments) : tc.arguments,
+                  }
+                })
+              })
+            }
+
+            if (m.role === 'tool' && m.toolResults) {
+              m.toolResults.forEach(tr => {
+                parts.push({
+                  functionResponse: {
+                    name: tr.name,
+                    response: { result: tr.result }
+                  }
+                })
+              })
+            }
+
+            return { role, parts }
+          }),
           systemInstruction: systemMessage ? { parts: [{ text: systemMessage.content }] } : undefined,
           generationConfig: {
             temperature: options.temperature,
