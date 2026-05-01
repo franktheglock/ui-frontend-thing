@@ -4,10 +4,11 @@ import { useChatStore, Message, ToolCall, ToolResult, GenerationInfo as GenInfo 
 import { useUIStore } from '../stores/uiStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { MessageBubble } from './MessageBubble'
-import { Bot, Globe, Terminal, Link2, ChevronDown, ChevronRight } from 'lucide-react'
+import { Globe, Terminal, Link2, ChevronDown, ChevronRight, Wrench, Copy } from 'lucide-react'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { ThinkingBlock } from './ThinkingBlock'
 import { ToolCallBlock } from './ToolCallBlock'
+import { GenerationInfo } from './GenerationInfo'
 import { useChat } from '../hooks/useChat'
 import { cn } from '../lib/utils'
 import { getActivitySublabel } from '../lib/toolDisplay'
@@ -16,12 +17,12 @@ import { getProviderIcon } from '../lib/providerIcons'
 type RenderItem = 
   | { type: 'message', message: Message, aggregatedGenInfo?: GenInfo, onRegenerate?: () => void, versionInfo?: { current: number, total: number, onPrev: () => void, onNext: () => void } }
   | { type: 'aggregated_tools', toolType: string, calls: ToolCall[], results: ToolResult[], turnId: number, isFirstInTurn: boolean, key: string }
-  | { type: 'streaming_preview', content: string, thinking: string, activeCalls: ToolCall[], activeToolResults: ToolResult[] }
+  | { type: 'streaming_preview', content: string, thinking: string, activeCalls: ToolCall[], activeToolResults: ToolResult[], generationInfo?: GenInfo }
 
 export function ChatWindow() {
   const { sessions, currentSessionId, streaming } = useChatStore()
   const { searchHighlight, highlightMessageId, setSearchHighlight } = useUIStore()
-  const { toolDisplayMode } = useSettingsStore()
+  const { toolDisplayMode, selectedProvider, selectedModel } = useSettingsStore()
   const { regenerateMessage } = useChat()
   const [autoScroll, setAutoScroll] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -161,7 +162,7 @@ export function ChatWindow() {
             const isLast = idx === filtered.length - 1
             items.push({ 
               type: 'message', 
-              message: { ...msg, generationInfo: undefined },
+              message: { ...msg },
               aggregatedGenInfo: (isLast && lastGenInfo) ? {
                 ...lastGenInfo,
                 promptTokens: totalPromptTokens,
@@ -188,20 +189,34 @@ export function ChatWindow() {
         if (isActuallyStreamingThisTurn) {
           const hasVisibleStream = streamingContent || streamingThinking || activeToolCalls.length > 0
           if (hasVisibleStream) {
-            items.push({ type: 'streaming_preview', content: streamingContent, thinking: streamingThinking, activeCalls: [], activeToolResults })
+            items.push({ 
+              type: 'streaming_preview', 
+              content: streamingContent, 
+              thinking: streamingThinking, 
+              activeCalls: [], 
+              activeToolResults,
+              generationInfo: currentSessionId ? streaming[currentSessionId]?.generationInfo : undefined
+            })
           }
         }
       } else {
         // Individual tool mode (standard)
         assistantMessages.forEach(msg => items.push({ type: 'message', message: msg }))
         if (isActuallyStreamingThisTurn) {
-          items.push({ type: 'streaming_preview', content: streamingContent, thinking: streamingThinking, activeCalls: activeToolCalls, activeToolResults: activeToolResults })
+          items.push({ 
+            type: 'streaming_preview', 
+            content: streamingContent, 
+            thinking: streamingThinking, 
+            activeCalls: activeToolCalls, 
+            activeToolResults: activeToolResults,
+            generationInfo: currentSessionId ? streaming[currentSessionId]?.generationInfo : undefined
+          })
         }
       }
     })
 
     return items
-  }, [messages, isCurrentStreaming, streamingContent, streamingThinking, activeToolCalls, activeToolResults, toolDisplayMode, turnVersions, regenerateMessage])
+  }, [messages, isCurrentStreaming, currentSessionId, streaming, streamingContent, streamingThinking, activeToolCalls, activeToolResults, toolDisplayMode, turnVersions, regenerateMessage])
 
   useEffect(() => {
     if (!highlightMessageId || !scrollRef.current) return
@@ -237,14 +252,14 @@ export function ChatWindow() {
       case 'search': return <Globe className="w-4 h-4 text-accent" />
       case 'browse': return <Link2 className="w-4 h-4 text-accent" />
       case 'code': return <Terminal className="w-4 h-4 text-accent" />
-      default: return <Bot className="w-4 h-4 text-accent" />
+      default: return <Wrench className="w-4 h-4 text-accent" />
     }
   }
 
   return (
     <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+        <div className="max-w-4xl mx-auto px-6 pt-24 pb-32">
           {renderItems.length === 0 && !isCurrentStreaming && (() => {
             const { selectedProvider, selectedModel } = useSettingsStore.getState()
             const ProviderIcon = getProviderIcon(`${selectedProvider}/${selectedModel}`)
@@ -287,6 +302,7 @@ export function ChatWindow() {
                       aggregatedGenInfo={item.aggregatedGenInfo}
                       onRegenerate={item.onRegenerate}
                       versionInfo={item.versionInfo}
+                      sessionId={currentSessionId || undefined}
                     />
                   </motion.div>
                 )
@@ -295,7 +311,7 @@ export function ChatWindow() {
               if (item.type === 'aggregated_tools') {
                 return (
                   <div key={item.key} className="flex items-start gap-3">
-                    <div className="w-7 h-7 rounded-sm bg-accent/10 flex items-center justify-center flex-shrink-0 mt-1">
+                    <div className="w-7 h-7 rounded-sm flex items-center justify-center flex-shrink-0 mt-1">
                       {getToolIcon(item.toolType)}
                     </div>
                     <div className="flex-1">
@@ -308,9 +324,12 @@ export function ChatWindow() {
               if (item.type === 'streaming_preview') {
                 if (toolDisplayMode === 'timeline' && streamState?.timeline && streamState.timeline.length > 0) {
                   return (
-                    <div key="streaming" className="flex items-start gap-3 animate-in fade-in duration-200">
-                      <div className="w-7 h-7 rounded-sm bg-accent/10 flex items-center justify-center flex-shrink-0 mt-1">
-                        <Bot className="w-4 h-4 text-accent" />
+                    <div key="streaming" className="group flex items-start gap-3 animate-in fade-in duration-200">
+                      <div className="w-10 h-10 rounded-sm flex items-center justify-center flex-shrink-0 mt-1">
+                      {(() => {
+                        const Icon = getProviderIcon(`${currentSession?.provider || selectedProvider}/${currentSession?.model || selectedModel}`)
+                        return <Icon size={32} className="text-accent" />
+                      })()}
                       </div>
                       <div className="flex-1 space-y-2 min-w-0">
                         {(() => {
@@ -319,7 +338,7 @@ export function ChatWindow() {
                           const isDoneThinking = lastEvent?.type === 'content'
                           const end = isDoneThinking ? lastEvent.timestamp : Date.now()
                           const duration = Math.round((end - start) / 1000)
-                          const sublabel = !isDoneThinking ? getActivitySublabel(streamState.timeline, streamState.toolResults || []) : undefined
+                          const sublabel = getActivitySublabel(streamState.timeline, streamState.toolResults || [])
                           const label = duration > 0 ? `Working for ${duration}s` : 'Working...'
                           
                           return (
@@ -336,24 +355,70 @@ export function ChatWindow() {
                                 )}>{isDoneThinking ? `Worked for ${duration}s` : label}</span>
                                 <ChevronRight className="w-4 h-4 text-muted-foreground/70 flex-shrink-0" />
                               </div>
-                              {sublabel && <span className="text-xs text-muted-foreground/70 truncate max-w-[240px] block mt-0.5">{sublabel}</span>}
+                              {sublabel && (
+                                <span 
+                                  className={cn(
+                                    "text-xs text-muted-foreground/70 block mt-0.5 max-w-[240px] whitespace-nowrap overflow-hidden",
+                                    sublabel.type === 'thinking' ? "flex justify-end [mask-image:linear-gradient(to_right,transparent,black_20%)]" : "truncate"
+                                  )}
+                                >
+                                  {sublabel.text}
+                                </span>
+                              )}
                             </button>
                           )
                         })()}
                         {item.content && <MarkdownRenderer content={item.content} streaming />}
+                        {(item.generationInfo || (item.content && !isCurrentStreaming)) && (
+                          <div className="flex items-center gap-4 mt-2">
+                            {item.generationInfo && <GenerationInfo info={item.generationInfo} />}
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(item.content || '')
+                                  alert('Content copied to clipboard')
+                                }}
+                                title="Copy content"
+                                className="p-1 hover:bg-secondary rounded-none transition-all text-muted-foreground/40 hover:text-accent"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )
                 }
                 return (
-                  <div key="streaming" className="flex items-start gap-3 animate-in fade-in duration-200">
-                    <div className="w-7 h-7 rounded-sm bg-accent/10 flex items-center justify-center flex-shrink-0 mt-1">
-                      <Bot className="w-4 h-4 text-accent" />
+                  <div key="streaming" className="group flex items-start gap-3 animate-in fade-in duration-200">
+                    <div className="w-10 h-10 rounded-sm flex items-center justify-center flex-shrink-0 mt-1">
+                      {(() => {
+                        const Icon = getProviderIcon(`${currentSession?.provider || selectedProvider}/${currentSession?.model || selectedModel}`)
+                        return <Icon size={32} className="text-accent" />
+                      })()}
                     </div>
                     <div className="flex-1 space-y-2 min-w-0">
-                      {item.thinking && item.activeCalls.length === 0 && <ThinkingBlock thinking={item.thinking} done={!!item.content} />}
+                      {item.thinking && <ThinkingBlock thinking={item.thinking} done={!!item.content} />}
                       {item.activeCalls.length > 0 && <div className="space-y-2 mb-2"><ToolCallBlock toolCalls={item.activeCalls} results={item.activeToolResults} /></div>}
                       {item.content && <MarkdownRenderer content={item.content} streaming />}
+                      {(item.generationInfo || (item.content && !isCurrentStreaming)) && (
+                        <div className="flex items-center gap-4 mt-2">
+                          {item.generationInfo && <GenerationInfo info={item.generationInfo} />}
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(item.content || '')
+                                alert('Content copied to clipboard')
+                              }}
+                              title="Copy content"
+                              className="p-1 hover:bg-secondary rounded-none transition-all text-muted-foreground/40 hover:text-accent"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -368,8 +433,11 @@ export function ChatWindow() {
             if (isCurrentStreaming && isWaitingAfterUser && !streamingContent && !streamingThinking && activeToolCalls.length === 0) {
               return (
                 <div className="flex items-start gap-3 animate-in fade-in duration-200">
-                  <div className="w-7 h-7 rounded-sm bg-accent/10 flex items-center justify-center flex-shrink-0 mt-1">
-                    <Bot className="w-4 h-4 text-accent animate-pulse" />
+                  <div className="w-10 h-10 rounded-sm flex items-center justify-center flex-shrink-0 mt-1">
+                    {(() => {
+                      const Icon = getProviderIcon(`${currentSession?.provider || selectedProvider}/${currentSession?.model || selectedModel}`)
+                      return <Icon size={32} className="text-accent animate-pulse" />
+                    })()}
                   </div>
                   <div className="flex gap-1 mt-3">
                     <div className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0ms' }} />

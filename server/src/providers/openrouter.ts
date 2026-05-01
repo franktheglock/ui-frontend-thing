@@ -82,36 +82,8 @@ export class OpenRouterProvider extends OpenAICompatibleProvider {
     }
 
     let totalCost: number | undefined
-    if (responseId && this.apiKey) {
-      console.log(`[OpenRouter] Starting cost polling for ${responseId}...`)
-      // Poll with retries as OpenRouter can take a moment to calculate final cost
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          await new Promise(resolve => setTimeout(resolve, 2000 * attempt))
-          const statsRes = await fetch(`https://openrouter.ai/api/v1/generation?id=${responseId}`, {
-            headers: { 'Authorization': `Bearer ${this.apiKey}` }
-          })
-          
-          if (statsRes.ok) {
-            const stats = await statsRes.json() as any
-            if (stats.data && stats.data.total_cost !== undefined) {
-              totalCost = stats.data.total_cost
-              console.log(`[OpenRouter] Cost found (attempt ${attempt}): $${totalCost}`)
-              break
-            } else {
-              console.log(`[OpenRouter] Attempt ${attempt}: Cost not yet available in response.`)
-            }
-          } else {
-            console.error(`[OpenRouter] Attempt ${attempt}: API error ${statsRes.status}`)
-          }
-        } catch (err) {
-          console.error(`[OpenRouter] Attempt ${attempt}: Polling failed`, err)
-        }
-      }
-    } else {
-      console.warn(`[OpenRouter] Skipping cost poll: Missing responseId (${responseId}) or apiKey`)
-    }
 
+    // Yield final tokens and responseId immediately to end the stream fast
     yield {
       done: true,
       generationInfo: {

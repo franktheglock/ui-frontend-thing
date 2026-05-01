@@ -82,9 +82,8 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
   const { sendMessage } = useChat()
 
   const sessionStats = useMemo(() => {
-    if (!currentSession) return { cost: 0, input: 0, output: 0, total: 0 }
+    if (!currentSession) return { cost: 0, input: 0, output: 0, total: 0, isGathering: false }
     
-    // Sum from finished messages
     const stats = currentSession.messages.reduce((acc, m) => {
       const info = m.generationInfo
       if (!info) return acc
@@ -93,16 +92,17 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
         input: acc.input + (info.promptTokens || 0),
         output: acc.output + (info.completionTokens || 0),
         total: acc.total + (info.tokensUsed || info.completionTokens || 0),
+        isGathering: acc.isGathering || !!info.isGatheringCost
       }
-    }, { cost: 0, input: 0, output: 0, total: 0 })
+    }, { cost: 0, input: 0, output: 0, total: 0, isGathering: false })
 
-    // Add current streaming stats if any
     const activeInfo = currentSessionId ? streaming[currentSessionId]?.generationInfo : null
     if (activeInfo) {
       stats.cost += activeInfo.totalCost || 0
       stats.input += activeInfo.promptTokens || 0
       stats.output += activeInfo.completionTokens || 0
       stats.total += activeInfo.tokensUsed || activeInfo.completionTokens || 0
+      if (activeInfo.isGatheringCost) stats.isGathering = true
     }
 
     return stats
@@ -611,7 +611,9 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                           </div>
                           <div className="flex justify-between items-center pt-1 border-t border-border mt-1">
                             <span className="text-[10px] font-bold uppercase text-accent">Total Cost</span>
-                            <span className="text-[12px] font-mono font-bold text-accent">${sessionStats.cost.toFixed(6)}</span>
+                            <span className="text-[12px] font-mono font-bold text-accent">
+                              {sessionStats.isGathering ? 'Gathering cost...' : `$${sessionStats.cost.toFixed(6)}`}
+                            </span>
                           </div>
                         </div>
                         {/* Tooltip Arrow */}

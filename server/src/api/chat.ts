@@ -163,6 +163,47 @@ router.patch('/sessions/:sessionId/messages/:messageId', async (req, res) => {
   res.json({ success: true })
 })
 
+router.get('/messages/:id/poll-cost', async (req, res) => {
+  const db = await getDb()
+  const { provider, responseId } = req.query
+  const { id } = req.params
+
+  if (!provider || !responseId) {
+    return res.status(400).json({ error: 'Missing provider or responseId' })
+  }
+
+  try {
+    const providerInstance = await getProvider(provider as string)
+    if (!providerInstance || provider !== 'openrouter') {
+      return res.status(400).json({ error: 'Invalid provider for cost polling' })
+    }
+
+    // Single poll attempt
+    const statsRes = await fetch(`https://openrouter.ai/api/v1/generation?id=${responseId}`, {
+      headers: { 'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}` }
+    })
+    
+    if (statsRes.ok) {
+      const stats = await statsRes.json() as any
+      const foundCost = stats.data?.total_cost
+      if (foundCost !== undefined && foundCost !== null) {
+        // Update DB
+        const msg = await db.get('SELECT generation_info FROM messages WHERE id = ?', id)
+        if (msg) {
+          const info = JSON.parse(msg.generation_info || '{}')
+          info.totalCost = foundCost
+          info.isGatheringCost = false
+          await db.run('UPDATE messages SET generation_info = ? WHERE id = ?', JSON.stringify(info), id)
+        }
+        return res.json({ cost: foundCost })
+      }
+    }
+    res.json({ cost: null })
+  } catch (error: any) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 function getErrorStatusCode(errorMessage: string): number {
   const msg = errorMessage.toLowerCase()
   if (msg.includes('api key') || msg.includes('unauthorized') || msg.includes('authentication') || msg.includes('invalid_key')) {
