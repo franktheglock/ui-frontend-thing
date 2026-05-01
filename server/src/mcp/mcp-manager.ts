@@ -103,6 +103,34 @@ class MCPManager {
     this.servers.delete(id)
   }
 
+  async replaceAllServers(newConfigs: Record<string, any>): Promise<void> {
+    // Stop all current servers
+    for (const id of this.servers.keys()) {
+      await this.disconnectServer(id)
+    }
+
+    const db = await getDb()
+    await db.run('DELETE FROM mcp_servers')
+    this.servers.clear()
+
+    for (const [name, config] of Object.entries(newConfigs)) {
+      const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-')
+      const fullConfig: MCPServerConfig = {
+        id,
+        name,
+        transport: config.url ? 'sse' : 'stdio',
+        command: config.command,
+        args: config.args,
+        url: config.url,
+        env: config.env,
+        enabled: true,
+        autoConnect: true,
+      }
+      await this.addServer(fullConfig)
+      this.connectServer(id).catch(() => {})
+    }
+  }
+
   async connectServer(id: string): Promise<void> {
     const server = this.servers.get(id)
     if (!server) throw new Error(`MCP server ${id} not found`)
@@ -179,7 +207,7 @@ class MCPManager {
     const result = await server.client.listTools()
 
     server.tools = (result.tools || []).map((t: any) => ({
-      name: `mcp:${id}:${t.name}`,
+      name: `mcp_${server.config.id}_${t.name}`.replace(/:/g, '_'),
       description: t.description || '',
       parameters: t.inputSchema || { type: 'object', properties: {} },
       serverId: id,
@@ -201,14 +229,29 @@ class MCPManager {
   }
 
   async callTool(namespacedName: string, args: Record<string, unknown>): Promise<string> {
-    // Parse "mcp:serverId:toolName"
-    const parts = namespacedName.split(':')
-    if (parts.length < 3 || parts[0] !== 'mcp') {
+    // Handle both "mcp:id:name" and "mcp_id_name"
+    let parts: string[] = []
+    if (namespacedName.startsWith('mcp:')) {
+      parts = namespacedName.split(':')
+    } else if (namespacedName.startsWith('mcp_')) {
+      // This is trickier because server IDs or tool names might contain underscores.
+      // But since we know our format is mcp_serverId_toolName, and we slugify serverId...
+      // Let's try to find the server match.
+      for (const serverId of this.servers.keys()) {
+        const prefix = `mcp_${serverId}_`
+        if (namespacedName.startsWith(prefix)) {
+          parts = ['mcp', serverId, namespacedName.slice(prefix.length)]
+          break
+        }
+      }
+    }
+
+    if (parts.length < 3) {
       throw new Error(`Invalid MCP tool name: ${namespacedName}`)
     }
 
     const serverId = parts[1]
-    const toolName = parts.slice(2).join(':') // Handle tool names with colons
+    const toolName = parts[2]
 
     const server = this.servers.get(serverId)
     if (!server?.client) {
@@ -253,7 +296,21 @@ class MCPManager {
   }
 
   isMCPTool(name: string): boolean {
-    return name.startsWith('mcp:')
+    return name.startsWith('mcp:') || name.startsWith('mcp_')
+  }
+
+  getFullConfig(): Record<string, any> {
+    const config: Record<string, any> = { mcpServers: {} }
+    for (const server of this.servers.values()) {
+      const s = server.config
+      config.mcpServers[s.name] = {
+        command: s.command,
+        args: s.args,
+        url: s.url,
+        env: s.env,
+      }
+    }
+    return config
   }
 }
 

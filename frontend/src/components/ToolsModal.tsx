@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   X, Wrench, Search, Globe, ToggleLeft, ToggleRight,
-  Plus, Trash2, Plug, Unplug, ChevronDown, ChevronRight, Loader2, AlertCircle
+  Plus, Trash2, Plug, Unplug, ChevronDown, ChevronRight, Loader2, AlertCircle,
+  FileCode, Terminal as TerminalIcon, Sparkles, LayoutList, FileSearch, PenTool
 } from 'lucide-react'
 import { useUIStore } from '../stores/uiStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { cn } from '../lib/utils'
+import { useToolStore } from '../stores/toolStore'
 
 interface BackendTool {
   name: string
@@ -46,6 +48,7 @@ export function ToolsModal() {
     searchConfig,
     setSearchConfig,
   } = useSettingsStore()
+  const { setAvailableTools, toggleTool: toggleToolStore } = useToolStore()
 
   const [backendTools, setBackendTools] = useState<BackendTool[]>([])
   const [mcpServers, setMcpServers] = useState<MCPServer[]>([])
@@ -60,6 +63,8 @@ export function ToolsModal() {
   const [newCommand, setNewCommand] = useState('')
   const [newArgs, setNewArgs] = useState('')
   const [newUrl, setNewUrl] = useState('')
+  const [showConfigEditor, setShowConfigEditor] = useState(false)
+  const [rawConfig, setRawConfig] = useState('')
 
   const refresh = () => {
     fetch('/api/tools')
@@ -68,10 +73,10 @@ export function ToolsModal() {
         if (Array.isArray(data)) {
           // Filter out MCP tools (they show under their server)
           setBackendTools(data.filter((t: any) => !t.name?.startsWith('mcp:')))
-          // Sync local tool configs
-          for (const bt of data) {
-            if (!bt.name?.startsWith('mcp:') && !tools.find(t => t.name === bt.name)) {
-              addTool({ id: bt.name, name: bt.name, enabled: true, config: {} })
+          // Sync all tool configs (including MCP tools from already connected servers)
+          for (const t of data) {
+            if (!tools.find(tc => tc.name === t.name)) {
+              addTool({ id: t.name, name: t.name, enabled: true, config: {} })
             }
           }
         }
@@ -162,25 +167,64 @@ export function ToolsModal() {
     } catch {}
   }
 
+  const handleOpenConfigEditor = async () => {
+    try {
+      const res = await fetch('/api/mcp/config')
+      const data = await res.json()
+      setRawConfig(JSON.stringify(data, null, 2))
+      setShowConfigEditor(true)
+    } catch (err: any) {
+      alert('Failed to load config: ' + err.message)
+    }
+  }
+
+  const handleSaveConfig = async () => {
+    try {
+      const parsed = JSON.parse(rawConfig)
+      setActionLoading('config')
+      const res = await fetch('/api/mcp/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsed),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      setShowConfigEditor(false)
+      refresh()
+    } catch (err: any) {
+      alert('Failed to save config: ' + err.message)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   if (!toolSelectorOpen) return null
 
   const isToolEnabled = (name: string) => {
     const t = tools.find(t => t.name === name)
-    return t ? t.enabled : true
+    if (t) return t.enabled
+    return true // Default to enabled
   }
 
   const toggleTool = (name: string) => {
     const t = tools.find(t => t.name === name)
+    const newState = t ? !t.enabled : false // If it was enabled (default), now it's disabled
     if (t) {
-      updateTool(t.id, { enabled: !t.enabled })
+      updateTool(t.id, { enabled: newState })
     } else {
-      addTool({ id: name, name, enabled: false, config: {} })
+      addTool({ id: name, name, enabled: newState, config: {} })
     }
+    toggleToolStore(name)
   }
 
   const toolIcons: Record<string, React.ReactNode> = {
     web_search: <Search className="w-4 h-4" />,
     read_url: <Globe className="w-4 h-4" />,
+    python: <FileCode className="w-4 h-4" />,
+    terminal: <TerminalIcon className="w-4 h-4" />,
+    code_edit: <PenTool className="w-4 h-4" />,
+    list_skills: <LayoutList className="w-4 h-4" />,
+    read_skill: <FileSearch className="w-4 h-4" />,
+    make_skill: <Sparkles className="w-4 h-4" />,
   }
 
   const searchProviders = [
@@ -223,12 +267,20 @@ export function ToolsModal() {
               <Wrench className="w-5 h-5 text-accent" />
               <h2 className="text-lg font-display font-semibold">Tools & MCP</h2>
             </div>
-            <button
-              onClick={() => setToolSelectorOpen(false)}
-              className="p-1.5 hover:bg-secondary rounded-sm transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleOpenConfigEditor}
+                className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground hover:text-accent transition-colors px-2 py-1 border border-border rounded-sm mr-2"
+              >
+                Edit Config
+              </button>
+              <button
+                onClick={() => setToolSelectorOpen(false)}
+                className="p-1.5 hover:bg-secondary rounded-sm transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {/* Content */}
@@ -243,7 +295,7 @@ export function ToolsModal() {
                     className="flex items-center justify-between p-3 bg-secondary/30 border border-border rounded-sm"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-sm bg-accent/10 flex items-center justify-center text-accent">
+                      <div className="w-10 h-10 rounded-sm bg-accent/10 flex items-center justify-center text-accent flex-shrink-0">
                         {toolIcons[bt.name] || <Wrench className="w-4 h-4" />}
                       </div>
                       <div>
@@ -562,6 +614,59 @@ export function ToolsModal() {
             </div>
           </div>
         </motion.div>
+
+        {/* Config Editor Modal */}
+        <AnimatePresence>
+          {showConfigEditor && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60"
+              onClick={() => setShowConfigEditor(false)}
+            >
+              <div 
+                className="bg-card border border-border rounded-sm shadow-3xl w-full max-w-2xl flex flex-col h-[70vh]"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                  <h3 className="text-sm font-semibold uppercase tracking-wider">Edit mcp.json</h3>
+                  <button onClick={() => setShowConfigEditor(false)}>
+                    <X className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+                  </button>
+                </div>
+                <div className="flex-1 p-4">
+                  <textarea
+                    value={rawConfig}
+                    onChange={e => setRawConfig(e.target.value)}
+                    className="w-full h-full bg-secondary/50 font-mono text-xs p-4 rounded-sm border border-border focus:outline-none focus:border-accent resize-none"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="px-4 py-3 border-t border-border flex justify-between items-center bg-secondary/20">
+                  <p className="text-[10px] text-muted-foreground">
+                    Format: {"{ \"mcpServers\": { \"name\": { \"command\": \"...\", \"args\": [] } } }"}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowConfigEditor(false)}
+                      className="px-4 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveConfig}
+                      disabled={actionLoading === 'config'}
+                      className="px-4 py-2 text-xs bg-accent text-accent-foreground rounded-sm hover:bg-accent/90 transition-all font-bold flex items-center gap-2"
+                    >
+                      {actionLoading === 'config' ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save Config'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </AnimatePresence>
   )

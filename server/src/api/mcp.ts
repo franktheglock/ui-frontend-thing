@@ -28,7 +28,7 @@ router.post('/servers', async (req, res) => {
     }
 
     const config = {
-      id: uuidv4().slice(0, 8),
+      id: name.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 16),
       name,
       transport,
       command: command || undefined,
@@ -103,6 +103,25 @@ router.get('/servers/:id/tools', (req, res) => {
 router.get('/tools', (_req, res) => {
   const tools = mcpManager.getAllTools()
   res.json(tools)
+})
+
+// Get full mcp.json config
+router.get('/config', (_req, res) => {
+  res.json(mcpManager.getFullConfig())
+})
+
+// Update full mcp.json config
+router.post('/config', async (req, res) => {
+  try {
+    const { mcpServers } = req.body
+    if (!mcpServers || typeof mcpServers !== 'object') {
+      return res.status(400).json({ error: 'Invalid config format. Expected { mcpServers: { ... } }' })
+    }
+    await mcpManager.replaceAllServers(mcpServers)
+    res.json({ success: true })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 export default router
