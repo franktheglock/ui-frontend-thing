@@ -176,7 +176,7 @@ export function useChat() {
             maxTokens,
             topP,
             stream: streamResponses,
-            tools: tools.filter(t => t.enabled).map(t => t.name),
+            disabledTools: tools.filter(t => !t.enabled).map(t => t.name),
             sessionId: sessionId,
           }),
         })

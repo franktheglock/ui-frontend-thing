@@ -204,15 +204,16 @@ function getCleanErrorMessage(error: any, provider: string): string {
 }
 
 router.post('/completions', async (req, res) => {
-  const { messages, model, provider, systemPrompt, temperature, maxTokens, topP, tools, lastResponseId, sessionId } = req.body
+    const { messages, model, provider, systemPrompt, temperature, maxTokens, topP, disabledTools, lastResponseId, sessionId } = req.body
+    
+    try {
+      const providerInstance = await getProvider(provider)
+      if (!providerInstance) {
+        return res.status(404).json({ error: `Provider "${provider}" not found or disabled` })
+      }
   
-  try {
-    const providerInstance = await getProvider(provider)
-    if (!providerInstance) {
-      return res.status(404).json({ error: `Provider "${provider}" not found or disabled` })
-    }
-
-    const allTools = listTools()
+      const disabledToolNames = Array.isArray(disabledTools) ? (disabledTools as string[]) : []
+      const allTools = listTools().filter(t => !disabledToolNames.includes(t.name))
 
     const dateStr = `Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`
     const enhancedSystemPrompt = systemPrompt 
