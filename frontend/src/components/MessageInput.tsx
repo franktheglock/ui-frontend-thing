@@ -1,11 +1,11 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Send, Plus, X, Loader2, Mic, Zap, Hash } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { Send, Plus, X, Loader2, Mic, Zap } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { useChat } from '../hooks/useChat'
 import { cn } from '../lib/utils'
+import { getProviderIcon } from '../lib/providerIcons'
 
 function FilePreview({ file, onRemove }: { file: File, onRemove: () => void }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -77,7 +77,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
   const isCurrentGenerating = currentSessionId ? streaming[currentSessionId]?.isGenerating ?? false : false
   const currentSession = sessions.find(s => s.id === currentSessionId)
   const activeSkill = currentSession?.activeSkill
-  const { selectedModel, providers } = useSettingsStore()
+  const { selectedModel, selectedProvider, providers } = useSettingsStore()
   const { setModelSelectorOpen } = useUIStore()
   const { sendMessage } = useChat()
 
@@ -147,11 +147,21 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
           const modelName = m.toLowerCase()
           const qualifiedModel = `${p.id}/${m}`.toLowerCase()
           
-          const matches = !query || 
-            modelName.includes(query) || 
-            qualifiedModel.includes(query) ||
-            providerId.includes(query) ||
-            providerName.includes(query)
+          let matches = !query
+          if (query) {
+            const lowerQuery = query.toLowerCase()
+            // If query ends in /, treat as strict provider filter
+            if (lowerQuery.endsWith('/')) {
+              const pFilter = lowerQuery.slice(0, -1)
+              matches = providerId === pFilter || providerName.includes(pFilter)
+            } else {
+              matches = modelName.includes(lowerQuery) || 
+                        qualifiedModel.includes(lowerQuery) ||
+                        providerId.includes(lowerQuery) ||
+                        providerName.includes(lowerQuery) ||
+                        (lowerQuery.includes(' ') && qualifiedModel.includes(lowerQuery.replace(' ', '/')))
+            }
+          }
 
           if (matches) {
             const uniqueKey = `${p.id}:${m}`
@@ -489,6 +499,10 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                       </>
                     ) : item.meta ? (
                       <>
+                        {(() => {
+                          const Icon = getProviderIcon(item.value.split(' ')[1])
+                          return <Icon size={14} className="flex-shrink-0 opacity-60" />
+                        })()}
                         <span className="flex-1 truncate">{item.label}</span>
                         <span className="text-[10px] text-muted-foreground">{item.meta}</span>
                       </>
@@ -525,7 +539,10 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                 onClick={() => setModelSelectorOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary/60 text-xs text-muted-foreground hover:text-foreground transition-colors border border-border/40"
               >
-                <Zap className="w-3 h-3" />
+                {(() => {
+                  const Icon = getProviderIcon(`${selectedProvider}/${selectedModel}`)
+                  return <Icon size={12} className="text-accent/80" />
+                })()}
                 <span className="truncate max-w-[100px]">{modelName}</span>
               </button>
 

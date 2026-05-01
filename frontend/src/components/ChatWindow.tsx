@@ -11,6 +11,7 @@ import { ToolCallBlock } from './ToolCallBlock'
 import { useChat } from '../hooks/useChat'
 import { cn } from '../lib/utils'
 import { getActivitySublabel } from '../lib/toolDisplay'
+import { getProviderIcon } from '../lib/providerIcons'
 
 type RenderItem = 
   | { type: 'message', message: Message, aggregatedGenInfo?: GenInfo, onRegenerate?: () => void, versionInfo?: { current: number, total: number, onPrev: () => void, onNext: () => void } }
@@ -244,28 +245,29 @@ export function ChatWindow() {
     <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
-          {renderItems.length === 0 && !isCurrentStreaming && (
+          {renderItems.length === 0 && !isCurrentStreaming && (() => {
+            const { selectedProvider, selectedModel } = useSettingsStore.getState()
+            const ProviderIcon = getProviderIcon(`${selectedProvider}/${selectedModel}`)
+            return (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-8 pt-[15vh]"
             >
               <div className="relative group">
-                <div className="absolute -inset-4 bg-accent/20 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                <div className="relative w-24 h-24 rounded-full border-2 border-accent/20 flex items-center justify-center bg-background/50 backdrop-blur-sm">
-                  <div className="w-16 h-16 rounded-full border-4 border-accent flex items-center justify-center">
-                    <div className="w-8 h-8 bg-accent rounded-full animate-pulse" />
-                  </div>
+                <div className="absolute -inset-8 bg-accent/10 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+                <div className="relative flex items-center justify-center transform group-hover:scale-105 transition-transform duration-500">
+                  <ProviderIcon size={112} />
                 </div>
               </div>
               <div className="space-y-2">
                 <h1 className="text-4xl font-display font-bold tracking-tight bg-gradient-to-br from-foreground to-foreground/50 bg-clip-text text-transparent">
-                  What do you want to know?
+                  What's on your mind?
                 </h1>
-                <p className="text-muted-foreground text-lg">Ask anything or start a new project.</p>
+                <p className="text-muted-foreground text-lg">Search the web, run code, or just chat.</p>
               </div>
             </motion.div>
-          )}
+          )})()}
 
           <AnimatePresence initial={false}>
             {renderItems.map((item) => {

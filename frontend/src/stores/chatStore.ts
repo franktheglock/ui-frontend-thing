@@ -86,6 +86,7 @@ export interface SessionStreamState {
   toolResults?: ToolResult[]
   isGenerating: boolean
   timeline: TimelineEvent[]
+  generationInfo?: GenerationInfo
 }
 
 interface ChatState {
@@ -113,6 +114,7 @@ interface ChatState {
   setActiveToolCalls: (sessionId: string, calls: ToolCall[]) => void
   setActiveToolResults: (sessionId: string, results: ToolResult[]) => void
   addToolResult: (sessionId: string, result: ToolResult) => void
+  setStreamingGenerationInfo: (sessionId: string, info: GenerationInfo) => void
   clearStreaming: (sessionId: string) => void
 
   updateSessionModel: (sessionId: string, model: string, provider: string) => void
@@ -445,6 +447,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       streaming: {
         ...state.streaming,
         [sessionId]: { ...current, timeline: newTimeline },
+      },
+    }
+  }),
+  
+  setStreamingGenerationInfo: (sessionId, info) => set(state => {
+    const current = getStreamState(state.streaming, sessionId)
+    return {
+      streaming: {
+        ...state.streaming,
+        [sessionId]: { ...current, generationInfo: info },
       },
     }
   }),

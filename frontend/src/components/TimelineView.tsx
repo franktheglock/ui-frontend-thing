@@ -272,8 +272,6 @@ function ToolCallGroupItem({ events, toolResults }: { events: TimelineEvent[], t
   const hasError = events.some(event => toolResults.find(result => result.toolCallId === event.toolCallId)?.result.startsWith('Error:'))
   const names = Array.from(new Set(events.map(event => getToolLabel(event.toolName || ''))))
   const label = names.length === 1 ? names[0] : 'tools'
-  const runningEvent = events.find(e => !toolResults.some(r => r.toolCallId === e.toolCallId))
-  const groupDisplay = !allDone && runningEvent?.display ? runningEvent.display : undefined
 
   return (
     <div className="relative flex gap-3 min-w-0">
