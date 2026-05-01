@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MessageSquare,
@@ -10,7 +10,6 @@ import {
   Wrench,
   Zap,
   Pencil,
-  Moon,
   Sun,
 } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
@@ -101,7 +100,10 @@ export function Sidebar() {
 
           <div className="p-3 space-y-2">
             <button
-              onClick={async () => createSession()}
+              onClick={async () => {
+                const { selectedModel, selectedProvider } = useSettingsStore.getState()
+                await createSession(selectedModel, selectedProvider)
+              }}
               className="w-full flex items-center gap-2 px-3 py-2 bg-accent text-accent-foreground rounded-none hover:bg-accent/90 transition-colors font-medium text-sm"
             >
               <Plus className="w-4 h-4" />

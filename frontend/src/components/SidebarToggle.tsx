@@ -1,4 +1,3 @@
-import React from 'react'
 import { motion } from 'framer-motion'
 import { PanelLeft } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'

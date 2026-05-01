@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { ChevronDown, ChevronUp, Brain } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { MarkdownRenderer } from './MarkdownRenderer'

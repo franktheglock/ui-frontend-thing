@@ -100,6 +100,12 @@ export async function getDb(): Promise<Database<sqlite3.Database, sqlite3.Statem
     await dbInstance.run('ALTER TABLE sessions ADD COLUMN last_response_id TEXT')
   }
 
+  // Migrate: add timeline to messages
+  const messageCols = await dbInstance.all(`PRAGMA table_info(messages)`)
+  if (!messageCols.some((c: any) => c.name === 'timeline')) {
+    await dbInstance.run('ALTER TABLE messages ADD COLUMN timeline TEXT')
+  }
+
   // Seed default providers if empty
   const providerCount = await dbInstance.get('SELECT COUNT(*) as count FROM providers')
   if (providerCount && (providerCount as any).count === 0) {

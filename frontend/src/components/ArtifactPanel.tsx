@@ -1,8 +1,6 @@
-import React from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Code, ExternalLink } from 'lucide-react'
 import { useUIStore } from '../stores/uiStore'
-import { cn } from '../lib/utils'
 
 export function ArtifactPanel() {
   const { activeArtifact, artifactPanelOpen, setArtifactPanelOpen, setActiveArtifact } = useUIStore()

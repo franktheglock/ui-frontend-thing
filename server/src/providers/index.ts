@@ -9,7 +9,7 @@ import { LMStudioProvider } from './lmstudio'
 import { NimProvider } from './nvidia'
 import { getDb } from '../db'
 
-const providerMap: Record<string, typeof BaseProvider> = {
+const providerMap: Record<string, new (options: any) => BaseProvider> = {
   openai: OpenAIProvider,
   anthropic: AnthropicProvider,
   ollama: OllamaProvider,
@@ -34,7 +34,7 @@ export async function getProvider(id: string): Promise<BaseProvider | null> {
   }) as BaseProvider
 }
 
-export function registerProvider(type: string, provider: typeof BaseProvider) {
+export function registerProvider(type: string, provider: new (options: any) => BaseProvider) {
   providerMap[type] = provider
 }
 

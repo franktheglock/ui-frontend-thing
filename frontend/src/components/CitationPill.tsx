@@ -1,40 +1,14 @@
-import { useChatStore } from '../stores/chatStore'
 import { cn } from '../lib/utils'
 
 interface CitationPillProps {
   n: string
+  urls?: string[]
 }
 
-export function CitationPill({ n }: CitationPillProps) {
-  const { sessions, currentSessionId } = useChatStore()
+export function CitationPill({ n, urls: providedUrls }: CitationPillProps) {
   const sourceIndex = parseInt(n, 10)
 
-  // Extract all URLs from ALL tool results in the session in order
-  const urls: string[] = []
-  const session = sessions.find(s => s.id === currentSessionId)
-  const targetMessages = session?.messages || []
-
-  for (const msg of targetMessages) {
-    if (msg.toolResults) {
-      for (const result of msg.toolResults) {
-        const resultText = typeof result.result === 'string' ? result.result : JSON.stringify(result.result)
-        const urlRegex = /URL:\s*(https?:\/\/[^\s]+)/g
-        let match
-        while ((match = urlRegex.exec(resultText)) !== null) {
-          urls.push(match[1])
-        }
-
-        // Fallback for read_url results that don't contain a URL line (legacy format)
-        if (!/URL:\s*(https?:\/\/[^\s]+)/.test(resultText) && (result.name === 'read_url' || result.name === 'read_browser_page')) {
-          const toolCall = msg.toolCalls?.find(tc => tc.id === result.toolCallId)
-          if (toolCall) {
-            const args = typeof toolCall.arguments === 'string' ? JSON.parse(toolCall.arguments) : toolCall.arguments
-            if (args.url) urls.push(args.url)
-          }
-        }
-      }
-    }
-  }
+  const urls: string[] = providedUrls || []
 
   const targetUrl = urls[sourceIndex - 1]
 

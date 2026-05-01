@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { getDb } from '../db'
 import { getProvider } from '../providers'
 import { executeTool, listTools } from '../tools'
+import { safeJsonParse } from '../utils/json'
 
 const router = Router()
 
@@ -37,6 +38,7 @@ router.get('/sessions/:id', async (req, res) => {
       toolResults: m.tool_results ? JSON.parse(m.tool_results) : undefined,
       attachments: m.attachments ? JSON.parse(m.attachments) : undefined,
       generationInfo: m.generation_info ? JSON.parse(m.generation_info) : undefined,
+      timeline: m.timeline ? JSON.parse(m.timeline) : undefined,
     })),
   })
 })
@@ -89,29 +91,30 @@ router.patch('/sessions/:id', async (req, res) => {
 
 router.post('/sessions/:id/messages', async (req, res) => {
   const db = await getDb()
-  const { id: msgId, role, content, thinking, toolCalls, toolResults, attachments, generationInfo } = req.body
+  const { id: msgId, role, content, thinking, toolCalls, toolResults, attachments, generationInfo, timeline } = req.body
   const id = msgId || uuidv4()
   const timestamp = Date.now()
 
   await db.run(
-    `INSERT INTO messages (id, session_id, role, content, thinking, tool_calls, tool_results, attachments, generation_info, timestamp)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO messages (id, session_id, role, content, thinking, tool_calls, tool_results, attachments, generation_info, timeline, timestamp)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id, req.params.id, role, content,
     thinking || null,
     toolCalls ? JSON.stringify(toolCalls) : null,
     toolResults ? JSON.stringify(toolResults) : null,
     attachments ? JSON.stringify(attachments) : null,
     generationInfo ? JSON.stringify(generationInfo) : null,
+    timeline ? JSON.stringify(timeline) : null,
     timestamp
   )
 
   await db.run('UPDATE sessions SET updated_at = ? WHERE id = ?', Date.now(), req.params.id)
-  res.json({ id, role, content, thinking, toolCalls, toolResults, attachments, generationInfo, timestamp })
+  res.json({ id, role, content, thinking, toolCalls, toolResults, attachments, generationInfo, timeline, timestamp })
 })
 
 router.patch('/sessions/:sessionId/messages/:messageId', async (req, res) => {
   const db = await getDb()
-  const { thinking, toolCalls, toolResults, attachments, generationInfo, content } = req.body
+  const { thinking, toolCalls, toolResults, attachments, generationInfo, content, timeline } = req.body
   const updates: string[] = []
   const values: any[] = []
 
@@ -138,6 +141,10 @@ router.patch('/sessions/:sessionId/messages/:messageId', async (req, res) => {
   if (generationInfo !== undefined) {
     updates.push('generation_info = ?')
     values.push(JSON.stringify(generationInfo))
+  }
+  if (timeline !== undefined) {
+    updates.push('timeline = ?')
+    values.push(JSON.stringify(timeline))
   }
   if (updates.length === 0) {
     return res.json({ success: true })
@@ -210,28 +217,62 @@ router.post('/completions', async (req, res) => {
       lastResponseId,
     })
 
+    if (req.body.stream === false) {
+      let fullContent = ''
+      let fullThinking = ''
+      let lastResponseId = ''
+      let lastGenInfo = undefined
+
+      for await (const chunk of stream) {
+        if (chunk.content) fullContent += chunk.content
+        if (chunk.thinking) fullThinking += chunk.thinking
+        if (chunk.responseId) lastResponseId = chunk.responseId
+        if (chunk.generationInfo) lastGenInfo = chunk.generationInfo
+      }
+      return res.json({ content: fullContent, thinking: fullThinking, responseId: lastResponseId, generationInfo: lastGenInfo })
+    }
+
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
     res.setHeader('Connection', 'keep-alive')
 
+    let headersSent = false
     for await (const chunk of stream) {
-      res.write(`data: ${JSON.stringify(chunk)}\n\n`)
+      if (!headersSent) {
+        headersSent = true
+      }
+      try {
+        res.write(`data: ${JSON.stringify(chunk)}\n\n`)
+      } catch {
+        break
+      }
     }
 
-    res.write('data: [DONE]\n\n')
-    res.end()
+    if (headersSent && !res.writableEnded) {
+      res.write('data: [DONE]\n\n')
+      res.end()
+    }
   } catch (error: any) {
     console.error(`[chat] ${provider} error:`, error.message)
-    const cleanMessage = getCleanErrorMessage(error, provider)
-    const statusCode = getErrorStatusCode(cleanMessage)
-    res.status(statusCode).json({ error: cleanMessage })
+    if (!res.headersSent) {
+      const cleanMessage = getCleanErrorMessage(error, provider)
+      const statusCode = getErrorStatusCode(cleanMessage)
+      res.status(statusCode).json({ error: cleanMessage })
+    } else {
+      // Stream already started, send error as SSE event
+      try {
+        res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`)
+        res.write('data: [DONE]\n\n')
+        res.end()
+      } catch {}
+    }
   }
 })
 
 router.post('/tool-call', async (req, res) => {
   const { name, arguments: args } = req.body
   try {
-    const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args
+    const parsedArgs = typeof args === 'string' ? safeJsonParse(args) : args
     const result = await executeTool(name, parsedArgs)
     res.json({ result })
   } catch (error: any) {

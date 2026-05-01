@@ -1,5 +1,14 @@
 import { create } from 'zustand'
 
+export interface TimelineEvent {
+  type: 'thinking' | 'tool_call' | 'tool_result' | 'content'
+  content: string
+  toolCallId?: string
+  toolName?: string
+  toolArgs?: Record<string, unknown>
+  timestamp: number
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant' | 'system' | 'tool'
@@ -11,6 +20,12 @@ export interface Message {
   generationInfo?: GenerationInfo
   timestamp: number
   responseId?: string
+  timeline?: TimelineEvent[]
+  metadata?: {
+    version?: number
+    active?: boolean
+    turnId?: string
+  }
 }
 
 export interface ToolCall {
@@ -64,7 +79,9 @@ export interface SessionStreamState {
   content: string
   thinking: string
   toolCalls: ToolCall[]
+  toolResults?: ToolResult[]
   isGenerating: boolean
+  timeline: TimelineEvent[]
 }
 
 interface ChatState {
@@ -75,7 +92,7 @@ interface ChatState {
   streaming: Record<string, SessionStreamState>
 
   loadSessions: () => Promise<void>
-  createSession: () => Promise<string>
+  createSession: (model?: string, provider?: string) => Promise<string>
   setCurrentSession: (id: string) => void
   deleteSession: (id: string) => Promise<void>
   renameSession: (id: string, title: string) => Promise<void>
@@ -87,8 +104,11 @@ interface ChatState {
   startGenerating: (sessionId: string) => void
   stopGenerating: (sessionId: string) => void
   appendStreamingContent: (sessionId: string, content: string) => void
+  setStreamingContent: (sessionId: string, content: string) => void
   appendStreamingThinking: (sessionId: string, thinking: string) => void
   setActiveToolCalls: (sessionId: string, calls: ToolCall[]) => void
+  setActiveToolResults: (sessionId: string, results: ToolResult[]) => void
+  addToolResult: (sessionId: string, result: ToolResult) => void
   clearStreaming: (sessionId: string) => void
 
   updateSessionModel: (sessionId: string, model: string, provider: string) => void
@@ -109,7 +129,7 @@ export function generateUUID(): string {
 
 // Helper to get or create a default streaming state
 function getStreamState(streaming: Record<string, SessionStreamState>, sessionId: string): SessionStreamState {
-  return streaming[sessionId] || { content: '', thinking: '', toolCalls: [], isGenerating: false }
+  return streaming[sessionId] || { content: '', thinking: '', toolCalls: [], toolResults: [], isGenerating: false, timeline: [] }
 }
 
 export const useChatStore = create<ChatState>()((set, get) => ({
@@ -148,6 +168,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                 toolResults: m.toolResults,
                 attachments: m.attachments,
                 generationInfo: m.generationInfo,
+                timeline: m.timeline,
                 timestamp: m.timestamp,
                 responseId: m.responseId,
               })),
@@ -164,14 +185,17 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     }
   },
 
-  createSession: async () => {
+  createSession: async (model?: string, provider?: string) => {
     const id = generateUUID()
+    
+    // If no model/provider passed, try to inherit from current session or use placeholders
+    // We avoid 'openai' / 'gpt-4o' hardcoded strings here to prevent accidental fallbacks
     const session: ChatSession = {
       id,
       title: 'New Chat',
       messages: [],
-      model: get().sessions.find(s => s.id === get().currentSessionId)?.model || 'gpt-4o',
-      provider: get().sessions.find(s => s.id === get().currentSessionId)?.provider || 'openai',
+      model: model || get().sessions.find(s => s.id === get().currentSessionId)?.model || '',
+      provider: provider || get().sessions.find(s => s.id === get().currentSessionId)?.provider || '',
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
@@ -299,7 +323,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   startGenerating: (sessionId) => set(state => ({
     streaming: {
       ...state.streaming,
-      [sessionId]: { content: '', thinking: '', toolCalls: [], isGenerating: true },
+      [sessionId]: { content: '', thinking: '', toolCalls: [], toolResults: [], isGenerating: true, timeline: [] },
     },
   })),
 
@@ -310,30 +334,106 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   appendStreamingContent: (sessionId, content) => set(state => {
     const current = getStreamState(state.streaming, sessionId)
+    const newTimeline = [...current.timeline]
+    const lastEvent = newTimeline[newTimeline.length - 1]
+    if (!lastEvent || lastEvent.type !== 'content') {
+      newTimeline.push({ type: 'content', content: '', timestamp: Date.now() })
+    }
     return {
       streaming: {
         ...state.streaming,
-        [sessionId]: { ...current, content: current.content + content },
+        [sessionId]: { ...current, content: current.content + content, timeline: newTimeline },
+      },
+    }
+  }),
+
+  setStreamingContent: (sessionId, content) => set(state => {
+    const current = getStreamState(state.streaming, sessionId)
+    return {
+      streaming: {
+        ...state.streaming,
+        [sessionId]: { ...current, content },
       },
     }
   }),
 
   appendStreamingThinking: (sessionId, thinking) => set(state => {
     const current = getStreamState(state.streaming, sessionId)
+    const newTimeline = [...current.timeline]
+    const lastEvent = newTimeline[newTimeline.length - 1]
+    if (lastEvent && lastEvent.type === 'thinking') {
+      lastEvent.content += thinking
+    } else {
+      newTimeline.push({ type: 'thinking', content: thinking, timestamp: Date.now() })
+    }
     return {
       streaming: {
         ...state.streaming,
-        [sessionId]: { ...current, thinking: current.thinking + thinking },
+        [sessionId]: { ...current, thinking: current.thinking + thinking, timeline: newTimeline },
       },
     }
   }),
 
   setActiveToolCalls: (sessionId, calls) => set(state => {
     const current = getStreamState(state.streaming, sessionId)
+    const newTimeline = [...current.timeline]
+    // Add tool call events for new calls
+    for (const call of calls) {
+      if (!newTimeline.find(e => e.type === 'tool_call' && e.toolCallId === call.id)) {
+        newTimeline.push({
+          type: 'tool_call',
+          content: '',
+          toolCallId: call.id,
+          toolName: call.name,
+          toolArgs: call.arguments,
+          timestamp: Date.now(),
+        })
+      }
+    }
     return {
       streaming: {
         ...state.streaming,
-        [sessionId]: { ...current, toolCalls: calls },
+        [sessionId]: { ...current, toolCalls: calls, timeline: newTimeline },
+      },
+    }
+  }),
+
+  setActiveToolResults: (sessionId, results) => set(state => {
+    const current = getStreamState(state.streaming, sessionId)
+    const newTimeline = [...current.timeline]
+    for (const result of results) {
+      if (!newTimeline.find(e => e.type === 'tool_result' && e.toolCallId === result.toolCallId)) {
+        newTimeline.push({
+          type: 'tool_result',
+          content: result.result,
+          toolCallId: result.toolCallId,
+          toolName: result.name,
+          timestamp: Date.now(),
+        })
+      }
+    }
+    return {
+      streaming: {
+        ...state.streaming,
+        [sessionId]: { ...current, toolResults: results, timeline: newTimeline },
+      },
+    }
+  }),
+
+  addToolResult: (sessionId, result: ToolResult) => set(state => {
+    const current = getStreamState(state.streaming, sessionId)
+    const newTimeline = [...current.timeline]
+    newTimeline.push({
+      type: 'tool_result',
+      content: result.result,
+      toolCallId: result.toolCallId,
+      toolName: result.name,
+      timestamp: Date.now(),
+    })
+    return {
+      streaming: {
+        ...state.streaming,
+        [sessionId]: { ...current, timeline: newTimeline },
       },
     }
   }),
@@ -343,7 +443,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     return {
       streaming: {
         ...state.streaming,
-        [sessionId]: { ...current, content: '', thinking: '', toolCalls: [] },
+        [sessionId]: { ...current, content: '', thinking: '', toolCalls: [], timeline: [] },
       },
     }
   }),

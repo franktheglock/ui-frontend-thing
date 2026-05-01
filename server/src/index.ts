@@ -12,18 +12,33 @@ import mcpRoutes from './api/mcp'
 import { getDb } from './db'
 import { mcpManager } from './mcp/mcp-manager'
 
-dotenv.config()
+const envPaths = new Set([
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), '..', '.env'),
+  path.resolve(__dirname, '..', '..', '.env'),
+])
+
+for (const envPath of envPaths) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath })
+  }
+}
 
 async function main() {
   // Initialize database
   await getDb()
 
   const app = express()
-  const PORT = process.env.PORT || 3456
+  const PORT = parseInt(process.env.PORT || '3456', 10)
 
   app.use(cors())
   app.use(express.json({ limit: '50mb' }))
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')))
+  app.use('/workspace', express.static(path.join(process.cwd(), 'workspace')))
+
+  // Ensure workspace directory exists
+  const workspaceDir = path.join(process.cwd(), 'workspace')
+  if (!fs.existsSync(workspaceDir)) fs.mkdirSync(workspaceDir, { recursive: true })
 
   app.use('/api/chat', chatRoutes)
   app.use('/api/providers', providerRoutes)

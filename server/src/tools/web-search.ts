@@ -1,6 +1,8 @@
 import { BaseTool } from './base'
 import * as duckDuckGo from 'duck-duck-scrape'
 
+const SEARCH_TIMEOUT_MS = 15000
+
 export class WebSearchTool extends BaseTool {
   id = 'web_search'
   name = 'web_search'
@@ -22,7 +24,8 @@ export class WebSearchTool extends BaseTool {
 
   async execute(args: Record<string, unknown>): Promise<string> {
     const query = args.query as string
-    const provider = (args.provider as string) || 'duckduckgo'
+    const requestedProvider = (args.provider as string) || 'searxng'
+    const provider = requestedProvider
     const numResults = (args.num_results as number) || 5
     const config = (args.searchConfig as Record<string, string>) || {}
     const startIndex = (args.startIndex as number) || 0
@@ -38,7 +41,7 @@ export class WebSearchTool extends BaseTool {
         case 'google':
           return await this.searchGoogle(query, numResults, config, startIndex)
         default:
-          return await this.searchDuckDuckGo(query, numResults, startIndex)
+          return await this.searchSearxNG(query, numResults, config, startIndex)
       }
     } catch (error: any) {
       return `Search error: ${error.message}`
@@ -51,18 +54,57 @@ export class WebSearchTool extends BaseTool {
     })
 
     const topResults = results.results.slice(0, numResults)
+    if (topResults.length === 0) return 'No results found for this query.'
+
     return topResults.map((r, i) => 
       `${i + 1 + startIndex}. ${r.title}\n   ${r.description}\n   URL: ${r.url}`
     ).join('\n\n')
   }
 
   private async searchSearxNG(query: string, numResults: number, config: Record<string, string>, startIndex: number): Promise<string> {
-    let baseUrl = config.searxngUrl || process.env.SEARXNG_URL || 'http://localhost:8080'
+    let baseUrl = config.searxngUrl || process.env.SEARXNG_URL || 'http://192.168.1.70:8888'
     baseUrl = baseUrl.replace(/\/$/, '')
-    const response = await fetch(`${baseUrl}/search?q=${encodeURIComponent(query)}&format=json&safesearch=0`)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS)
+
+    let response: Response
+    try {
+      response = await fetch(`${baseUrl}/search?q=${encodeURIComponent(query)}&format=json&safesearch=0&engines=bing,brave,duckduckgo,yahoo,wikipedia`, {
+        signal: controller.signal,
+      })
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        throw new Error(`SearXNG request timed out after ${SEARCH_TIMEOUT_MS / 1000}s at ${baseUrl}`)
+      }
+      throw error
+    } finally {
+      clearTimeout(timeout)
+    }
+
+    if (!response.ok) {
+      throw new Error(`SearXNG request failed (${response.status} ${response.statusText}) at ${baseUrl}`)
+    }
     const data = await response.json() as any
 
-    const results = (data.results || []).slice(0, numResults)
+    const infoboxResults = (data.infoboxes || []).flatMap((box: any) =>
+      (box.urls || []).map((url: any) => ({
+        title: url.title || box.infobox,
+        content: box.content || '',
+        url: url.url,
+      }))
+    )
+    const answerResults = (data.answers || []).map((answer: any) => ({
+      title: answer.answer || 'SearXNG answer',
+      content: answer.answer || '',
+      url: answer.url,
+    }))
+    const results = [...(data.results || []), ...infoboxResults, ...answerResults]
+      .filter((r: any) => r.url)
+      .slice(0, numResults)
+    if (results.length === 0) {
+      return 'No results found for this query.'
+    }
+    
     return results.map((r: any, i: number) =>
       `${i + 1 + startIndex}. ${r.title}\n   ${r.content || r.abstract || ''}\n   URL: ${r.url}`
     ).join('\n\n')
@@ -81,6 +123,8 @@ export class WebSearchTool extends BaseTool {
     const data = await response.json() as any
 
     const results = (data.web?.results || []).slice(0, numResults)
+    if (results.length === 0) return 'No results found for this query.'
+
     return results.map((r: any, i: number) =>
       `${i + 1 + startIndex}. ${r.title}\n   ${r.description}\n   URL: ${r.url}`
     ).join('\n\n')
@@ -97,6 +141,8 @@ export class WebSearchTool extends BaseTool {
     const data = await response.json() as any
 
     const results = (data.items || []).slice(0, numResults)
+    if (results.length === 0) return 'No results found for this query.'
+
     return results.map((r: any, i: number) =>
       `${i + 1 + startIndex}. ${r.title}\n   ${r.snippet}\n   URL: ${r.link}`
     ).join('\n\n')

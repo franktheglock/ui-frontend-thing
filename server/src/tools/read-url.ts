@@ -17,16 +17,27 @@ export class ReadURLTool extends BaseTool {
   }
 
   async execute(args: Record<string, unknown>): Promise<string> {
-    const url = args.url as string
+    let url = args.url as string
+    if (!url) {
+      return 'Error: url parameter is required.'
+    }
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://' + url
+    }
     const startIndex = (args.startIndex as number) || 0
     const sourceNum = startIndex + 1
 
     try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 15000)
+
       const response = await fetch(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         },
+        signal: controller.signal
       })
+      clearTimeout(timeoutId)
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)

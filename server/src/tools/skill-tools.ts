@@ -43,37 +43,28 @@ async function findSkills(): Promise<Array<{ name: string; path: string; content
   return skills
 }
 
-export class SearchSkillsTool extends BaseTool {
-  id = 'search_skills'
-  name = 'search_skills'
-  description = 'Search through installed skills to find relevant SKILL.md files by name or content. Returns a list of matching skills with their paths and descriptions.'
+export class ListSkillsTool extends BaseTool {
+  id = 'list_skills'
+  name = 'list_skills'
+  description = 'List all installed skills with their names, paths, and brief descriptions. Use this to discover what skills are available before reading one with `read_skill`.'
   parameters = {
     type: 'object',
-    properties: {
-      query: {
-        type: 'string',
-        description: 'Search query to match against skill names and content',
-      },
-    },
-    required: ['query'],
+    properties: {},
+    required: [],
   }
 
-  async execute(args: Record<string, unknown>): Promise<string> {
-    const query = (args.query as string).toLowerCase()
+  async execute(_args: Record<string, unknown>): Promise<string> {
     const skills = await findSkills()
 
-    const matches = skills.filter(s =>
-      s.name.toLowerCase().includes(query) ||
-      s.content.toLowerCase().includes(query)
-    )
-
-    if (matches.length === 0) {
-      return `No skills found matching "${args.query}".`
+    if (skills.length === 0) {
+      return 'No skills installed.'
     }
 
-    return matches.map(s =>
-      `## ${s.name}\nPath: ${s.path}\n${s.content.slice(0, 500)}${s.content.length > 500 ? '...' : ''}`
-    ).join('\n\n---\n\n')
+    return skills.map(s => {
+      const descMatch = s.content.match(/^---[\s\S]*?description:\s*(.+?)\s*$/m)
+      const desc = descMatch ? descMatch[1].trim() : 'No description'
+      return `**${s.name}** (path: \`${s.path}\`)\n${desc}`
+    }).join('\n\n')
   }
 }
 
@@ -117,7 +108,7 @@ export class ReadSkillTool extends BaseTool {
 export class MakeSkillTool extends BaseTool {
   id = 'make_skill'
   name = 'make_skill'
-  description = 'Create a new skill by writing a SKILL.md file. The skill will be saved in the skills directory and immediately available. Use kebab-case for the skill name.'
+  description = 'Create a new skill or edit an existing one by writing the full SKILL.md file. The skill will be saved in the skills directory and immediately available. To edit an existing skill, use the exact same name. Use kebab-case for the skill name.'
   parameters = {
     type: 'object',
     properties: {

@@ -1,17 +1,18 @@
 import { BaseTool } from './base'
 import { WebSearchTool } from './web-search'
 import { ReadURLTool } from './read-url'
-import { PythonTool } from './python'
+import { PythonTool, CodeEditTool } from './python'
 import { TerminalTool } from './terminal'
-import { SearchSkillsTool, ReadSkillTool, MakeSkillTool } from './skill-tools'
+import { ListSkillsTool, ReadSkillTool, MakeSkillTool } from './skill-tools'
 import { mcpManager } from '../mcp/mcp-manager'
 
 const tools: BaseTool[] = [
   new WebSearchTool(),
   new ReadURLTool(),
   new PythonTool(),
+  new CodeEditTool(),
   new TerminalTool(),
-  new SearchSkillsTool(),
+  new ListSkillsTool(),
   new ReadSkillTool(),
   new MakeSkillTool(),
 ]

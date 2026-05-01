@@ -228,11 +228,29 @@ function ImageWithLightbox({ src, alt, ...props }: any) {
 }
 
 export function MarkdownRenderer({ content, streaming = false, searchHighlight }: MarkdownRendererProps) {
-  const { sessions, currentSessionId } = useChatStore()
+  const { sessions, currentSessionId, streaming: liveStreaming } = useChatStore()
   const session = sessions.find(s => s.id === currentSessionId)
   const allMessages = session?.messages || []
+  const liveState = currentSessionId ? liveStreaming[currentSessionId] : null
 
-  const urls = React.useMemo(() => getCitationUrls(allMessages), [allMessages])
+  const urls = React.useMemo(() => {
+    const sessionUrls = getCitationUrls(allMessages)
+    if (!streaming || !liveState) return sessionUrls
+
+    const liveUrls = getCitationUrls([
+      ...allMessages,
+      {
+        id: '__stream__',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        toolCalls: liveState.toolCalls,
+        toolResults: liveState.toolResults,
+      } as Message
+    ])
+
+    return [...sessionUrls, ...liveUrls]
+  }, [allMessages, liveState, streaming])
   const processedContent = React.useMemo(
     () => preprocessCitations(content, urls),
     [content, urls]
@@ -259,7 +277,7 @@ export function MarkdownRenderer({ content, streaming = false, searchHighlight }
       const label = getChildrenText(children)
       const citationMatch = label.match(/^\[(\d+)\]$/)
       if (citationMatch) {
-        return <CitationPill n={citationMatch[1]} />
+        return <CitationPill n={citationMatch[1]} urls={urls} />
       }
       return (
         <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
@@ -282,35 +300,44 @@ export function MarkdownRenderer({ content, streaming = false, searchHighlight }
         </div>
       )
     },
-    code({ node, inline, className, children, ...props }: any) {
-      const match = /language-(\w+)/.exec(className || '')
-      const language = match ? match[1] : ''
+    pre({ children, ...props }: any) {
+      const codeChild = React.Children.toArray(children).find(
+        (child) => React.isValidElement(child) && child.props.node?.tagName === 'code'
+      ) as React.ReactElement | undefined
 
-      if (inline) {
+      if (codeChild) {
+        const childProps = codeChild.props as any
+        const match = /language-(\w+)/.exec(childProps.className || '')
+        const language = match ? match[1] : ''
+        
+        const rawText = childProps.node ? extractText(childProps.node) : getChildrenText(childProps.children)
+        
+        const isPlainText = !language || language === 'text' || language === 'txt'
+        if (isPlainText) {
+          return (
+            <pre className="my-0 p-3 bg-secondary/40 border border-border/50 rounded-sm overflow-x-auto text-sm font-mono text-foreground/90 whitespace-pre-wrap" {...props}>
+              {childProps.children}
+            </pre>
+          )
+        }
+
         return (
-          <code className="bg-secondary px-1.5 py-0.5 rounded-sm text-sm font-mono" {...props}>
-            {children}
-          </code>
+          <CodeBlock
+            language={language}
+            content={rawText.replace(/\n$/, '')}
+            highlighted={childProps.children}
+          />
         )
       }
-
-      const isPlainText = !language || language === 'text' || language === 'txt'
-      if (isPlainText) {
-        return (
-          <pre className="my-3 p-3 bg-secondary/40 border border-border/50 rounded-sm overflow-x-auto text-sm font-mono text-foreground/90 whitespace-pre-wrap">
-            {children}
-          </pre>
-        )
-      }
-
-      const rawText = node ? extractText(node) : String(children)
-
+      return <pre {...props}>{children}</pre>
+    },
+    code({ node, className, children, ...props }: any) {
+      // Since block code is intercepted by the `pre` renderer above, 
+      // anything that renders here is inline code (or will have this wrapper discarded by `pre`).
       return (
-        <CodeBlock
-          language={language}
-          content={rawText.replace(/\n$/, '')}
-          highlighted={children}
-        />
+        <code className={cn("!inline-block bg-secondary/60 px-1.5 py-0.5 rounded-sm text-[0.85em] font-mono align-baseline break-words", className)} {...props}>
+          {children}
+        </code>
       )
     },
   }), [searchHighlight])
@@ -319,7 +346,7 @@ export function MarkdownRenderer({ content, streaming = false, searchHighlight }
     <div className={cn("prose prose-sm dark:prose-invert max-w-none break-words", streaming && "streaming-fade")}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex, ...(streaming ? [] : [rehypeHighlight])]}
+        rehypePlugins={[[rehypeKatex, { strict: false }], ...(streaming ? [] : [rehypeHighlight])]}
         components={components}
       >
         {cleanedContent}
