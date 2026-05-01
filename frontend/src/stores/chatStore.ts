@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { getToolDisplay } from '../lib/toolDisplay'
 
 export interface TimelineEvent {
   type: 'thinking' | 'tool_call' | 'tool_result' | 'content'
@@ -6,6 +7,7 @@ export interface TimelineEvent {
   toolCallId?: string
   toolName?: string
   toolArgs?: Record<string, unknown>
+  display?: string
   timestamp: number
 }
 
@@ -32,6 +34,7 @@ export interface ToolCall {
   id: string
   name: string
   arguments: Record<string, unknown>
+  display?: string
 }
 
 export interface ToolResult {
@@ -58,6 +61,7 @@ export interface GenerationInfo {
   totalDuration?: number
   loadDuration?: number
   promptEvalDuration?: number
+  totalCost?: number
   evalDuration?: number
 }
 
@@ -377,15 +381,22 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   setActiveToolCalls: (sessionId, calls) => set(state => {
     const current = getStreamState(state.streaming, sessionId)
     const newTimeline = [...current.timeline]
-    // Add tool call events for new calls
+    // Add or update tool call events
     for (const call of calls) {
-      if (!newTimeline.find(e => e.type === 'tool_call' && e.toolCallId === call.id)) {
+      const display = call.display || getToolDisplay(call.name, call.arguments)
+      const existing = newTimeline.find(e => e.type === 'tool_call' && e.toolCallId === call.id)
+      if (existing) {
+        existing.toolName = call.name
+        existing.toolArgs = call.arguments
+        existing.display = display
+      } else {
         newTimeline.push({
           type: 'tool_call',
           content: '',
           toolCallId: call.id,
           toolName: call.name,
           toolArgs: call.arguments,
+          display,
           timestamp: Date.now(),
         })
       }

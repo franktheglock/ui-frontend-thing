@@ -21,7 +21,7 @@ export class NimProvider extends OpenAICompatibleProvider {
         model: options.model,
         messages: this.formatMessages(options.messages),
         temperature: options.temperature,
-        max_tokens: options.maxTokens,
+        max_tokens: options.maxTokens || undefined,
         top_p: options.topP,
         tools: options.tools?.map(t => ({
           type: 'function',

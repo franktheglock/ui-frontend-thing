@@ -40,6 +40,12 @@ export class WebSearchTool extends BaseTool {
           return await this.searchBrave(query, numResults, config, startIndex)
         case 'google':
           return await this.searchGoogle(query, numResults, config, startIndex)
+        case 'parallel':
+          return await this.searchParallel(query, numResults, config, startIndex)
+        case 'exa':
+          return await this.searchExa(query, numResults, config, startIndex)
+        case 'tavily':
+          return await this.searchTavily(query, numResults, config, startIndex)
         default:
           return await this.searchSearxNG(query, numResults, config, startIndex)
       }
@@ -145,6 +151,79 @@ export class WebSearchTool extends BaseTool {
 
     return results.map((r: any, i: number) =>
       `${i + 1 + startIndex}. ${r.title}\n   ${r.snippet}\n   URL: ${r.link}`
+    ).join('\n\n')
+  }
+
+  private async searchParallel(query: string, numResults: number, config: Record<string, string>, startIndex: number): Promise<string> {
+    const apiKey = config.parallelApiKey || process.env.PARALLEL_API_KEY
+    if (!apiKey) throw new Error('Parallel API Key not configured in settings or environment')
+
+    const response = await fetch('https://api.parallel.ai/v1/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        objective: query,
+        limit: numResults,
+      }),
+    })
+    const data = await response.json() as any
+    const results = (data.results || []).slice(0, numResults)
+    if (results.length === 0) return 'No results found for this query.'
+
+    return results.map((r: any, i: number) =>
+      `${i + 1 + startIndex}. ${r.title}\n   ${r.snippet || r.content || ''}\n   URL: ${r.url}`
+    ).join('\n\n')
+  }
+
+  private async searchExa(query: string, numResults: number, config: Record<string, string>, startIndex: number): Promise<string> {
+    const apiKey = config.exaApiKey || process.env.EXA_API_KEY
+    if (!apiKey) throw new Error('Exa API Key not configured in settings or environment')
+
+    const response = await fetch('https://api.exa.ai/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        query: query,
+        numResults: numResults,
+        useAutoprompt: true,
+      }),
+    })
+    const data = await response.json() as any
+    const results = (data.results || []).slice(0, numResults)
+    if (results.length === 0) return 'No results found for this query.'
+
+    return results.map((r: any, i: number) =>
+      `${i + 1 + startIndex}. ${r.title}\n   ${r.text || r.snippet || ''}\n   URL: ${r.url}`
+    ).join('\n\n')
+  }
+
+  private async searchTavily(query: string, numResults: number, config: Record<string, string>, startIndex: number): Promise<string> {
+    const apiKey = config.tavilyApiKey || process.env.TAVILY_API_KEY
+    if (!apiKey) throw new Error('Tavily API Key not configured in settings or environment')
+
+    const response = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query: query,
+        max_results: numResults,
+      }),
+    })
+    const data = await response.json() as any
+    const results = (data.results || []).slice(0, numResults)
+    if (results.length === 0) return 'No results found for this query.'
+
+    return results.map((r: any, i: number) =>
+      `${i + 1 + startIndex}. ${r.title}\n   ${r.content || r.snippet || ''}\n   URL: ${r.url}`
     ).join('\n\n')
   }
 }

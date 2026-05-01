@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { useChatStore, generateUUID } from '../stores/chatStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { Message, Attachment, ToolCall, ToolResult } from '../stores/chatStore'
+import { getToolDisplay } from '../lib/toolDisplay'
 import { useUIStore } from '../stores/uiStore'
 
 function safeJsonParse(json: string): any {
@@ -175,6 +176,7 @@ export function useChat() {
             topP,
             stream: streamResponses,
             tools: tools.filter(t => t.enabled).map(t => t.name),
+            sessionId: sessionId,
           }),
         })
 
@@ -351,7 +353,7 @@ export function useChat() {
                 } else if (tc.name === 'read_url') parsedArgs.startIndex = currentSourceCount
 
                 allToolCalls = allToolCalls.map(call =>
-                  call.id === tc.id ? { ...call, arguments: parsedArgs } : call
+                  call.id === tc.id ? { ...call, arguments: parsedArgs, display: getToolDisplay(tc.name, parsedArgs) } : call
                 )
                 useChatStore.getState().setActiveToolCalls(sessionId, allToolCalls)
 

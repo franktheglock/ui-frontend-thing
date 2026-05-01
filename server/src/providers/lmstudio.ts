@@ -25,7 +25,7 @@ export class LMStudioProvider extends OpenAICompatibleProvider {
 
     if (options.temperature !== undefined) body.temperature = options.temperature
     if (options.topP !== undefined) body.top_p = options.topP
-    if (options.maxTokens !== undefined) body.max_tokens = options.maxTokens
+    if (options.maxTokens) body.max_tokens = options.maxTokens
 
     if (options.tools && options.tools.length > 0) {
       body.tools = options.tools.map(t => ({

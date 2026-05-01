@@ -23,7 +23,7 @@ export class AnthropicProvider extends BaseProvider {
       },
       body: JSON.stringify({
         model: options.model,
-        max_tokens: options.maxTokens || 4096,
+        max_tokens: options.maxTokens || 8192,
         temperature: options.temperature,
         top_p: options.topP,
         system: systemMessage?.content,

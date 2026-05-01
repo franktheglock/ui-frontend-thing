@@ -24,7 +24,7 @@ export class OllamaProvider extends BaseProvider {
         })),
         options: {
           temperature: options.temperature,
-          num_predict: options.maxTokens,
+          num_predict: options.maxTokens || undefined,
           top_p: options.topP,
         },
         stream: true,

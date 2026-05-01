@@ -9,6 +9,7 @@ export interface CompletionOptions {
   tools?: ToolDefinition[]
   stream?: boolean
   lastResponseId?: string // Added for stateful providers
+  sessionId?: string // Added for tracking/observability
 }
 
 export interface CompletionChunk {

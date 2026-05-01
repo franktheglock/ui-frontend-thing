@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Send, Plus, X, Loader2, Mic, Zap } from 'lucide-react'
+import { Send, Plus, X, Loader2, Mic, Zap, Hash } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useChatStore } from '../stores/chatStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
@@ -79,6 +80,33 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
   const { selectedModel, providers } = useSettingsStore()
   const { setModelSelectorOpen } = useUIStore()
   const { sendMessage } = useChat()
+
+  const sessionStats = useMemo(() => {
+    if (!currentSession) return { cost: 0, input: 0, output: 0, total: 0 }
+    
+    // Sum from finished messages
+    const stats = currentSession.messages.reduce((acc, m) => {
+      const info = m.generationInfo
+      if (!info) return acc
+      return {
+        cost: acc.cost + (info.totalCost || 0),
+        input: acc.input + (info.promptTokens || 0),
+        output: acc.output + (info.completionTokens || 0),
+        total: acc.total + (info.tokensUsed || info.completionTokens || 0),
+      }
+    }, { cost: 0, input: 0, output: 0, total: 0 })
+
+    // Add current streaming stats if any
+    const activeInfo = currentSessionId ? streaming[currentSessionId]?.generationInfo : null
+    if (activeInfo) {
+      stats.cost += activeInfo.totalCost || 0
+      stats.input += activeInfo.promptTokens || 0
+      stats.output += activeInfo.completionTokens || 0
+      stats.total += activeInfo.tokensUsed || activeInfo.completionTokens || 0
+    }
+
+    return stats
+  }, [currentSession, currentSessionId, streaming])
 
   const slashMenuItems = useMemo(() => {
     if (!input.startsWith('/')) {
@@ -491,6 +519,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                 onChange={handleFileSelect}
               />
 
+
               {/* Model selector pill */}
               <button
                 onClick={() => setModelSelectorOpen(true)}
@@ -499,6 +528,83 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                 <Zap className="w-3 h-3" />
                 <span className="truncate max-w-[100px]">{modelName}</span>
               </button>
+
+              {/* Session Cost Indicator */}
+              {currentSession && (
+                <div className="relative">
+                  <div className="group relative flex items-center justify-center w-8 h-8 cursor-pointer">
+                    <svg width="28" height="28" viewBox="0 0 28 28" className="transform -rotate-90">
+                      <circle
+                        cx="14"
+                        cy="14"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="3.5"
+                        fill="transparent"
+                        className="text-muted/50"
+                      />
+                      {(() => {
+                        const limit = 0.50
+                        const percent = Math.min((sessionStats.cost / limit) * 100, 100)
+                        const colorClass = percent < 10 ? 'text-emerald-500' : 
+                                         percent < 40 ? 'text-amber-500' :
+                                         percent < 80 ? 'text-orange-500' : 'text-rose-500'
+                        const circumference = 2 * Math.PI * 10
+                        const offset = circumference - (percent / 100) * circumference
+                        
+                        return (
+                          <circle
+                            cx="14"
+                            cy="14"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="3.5"
+                            strokeLinecap="round"
+                            fill="transparent"
+                            strokeDasharray={circumference}
+                            style={{ strokeDashoffset: offset }}
+                            className={cn("transition-all duration-1000 ease-out", colorClass)}
+                          />
+                        )
+                      })()}
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 rounded-full">
+                      <span className="text-[10px] font-bold text-accent">$</span>
+                    </div>
+
+                    {/* Custom Tooltip */}
+                    <div className="absolute bottom-full mb-3 right-0 opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-200 transform translate-y-2 group-hover:translate-y-0 z-50">
+                      <div className="bg-popover border border-border rounded-sm shadow-xl p-3 min-w-[180px] backdrop-blur-md bg-opacity-90">
+                        <div className="flex items-center gap-2 mb-2 border-b border-border pb-2">
+                          <div className="w-2 h-2 rounded-full bg-accent" />
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-foreground">Session Metrics</span>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center text-[11px]">
+                            <span className="text-muted-foreground">Input Tokens</span>
+                            <span className="font-mono text-foreground font-medium">{sessionStats.input.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-[11px]">
+                            <span className="text-muted-foreground">Output Tokens</span>
+                            <span className="font-mono text-foreground font-medium">{sessionStats.output.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-[11px]">
+                            <span className="text-muted-foreground">Total Tokens</span>
+                            <span className="font-mono text-foreground font-medium">{sessionStats.total.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between items-center pt-1 border-t border-border mt-1">
+                            <span className="text-[10px] font-bold uppercase text-accent">Total Cost</span>
+                            <span className="text-[12px] font-mono font-bold text-accent">${sessionStats.cost.toFixed(6)}</span>
+                          </div>
+                        </div>
+                        {/* Tooltip Arrow */}
+                        <div className="absolute top-full right-3 -translate-y-px w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-border" />
+                        <div className="absolute top-full right-3 -translate-y-[2px] w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-popover" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2">

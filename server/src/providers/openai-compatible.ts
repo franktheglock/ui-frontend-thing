@@ -26,7 +26,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
         model: options.model,
         messages: this.formatMessages(options.messages),
         temperature: options.temperature,
-        max_tokens: options.maxTokens,
+        max_tokens: options.maxTokens || undefined,
         top_p: options.topP,
         tools: options.tools?.map(t => ({
           type: 'function',
@@ -85,25 +85,27 @@ export class OpenAICompatibleProvider extends BaseProvider {
         promptTokens,
         completionTokens,
         tokensUsed: promptTokens + completionTokens,
+        provider: this.id,
+        model: options.model,
       },
     }
   }
 
   protected parseChunk(data: any): CompletionChunk | null {
     const delta = data.choices?.[0]?.delta
-    if (!delta) return null
+    const chunk: CompletionChunk = {
+      responseId: data.id
+    }
 
-    const chunk: CompletionChunk = {}
-
-    if (delta.content) {
+    if (delta?.content) {
       chunk.content = delta.content
     }
 
-    if (delta.reasoning_content || delta.reasoning) {
+    if (delta?.reasoning_content || delta?.reasoning) {
       chunk.thinking = delta.reasoning_content || delta.reasoning
     }
 
-    if (delta.tool_calls) {
+    if (delta?.tool_calls) {
       chunk.toolCalls = delta.tool_calls
     }
 

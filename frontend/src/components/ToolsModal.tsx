@@ -185,8 +185,12 @@ export function ToolsModal() {
 
   const searchProviders = [
     { id: 'searxng' as const, name: 'SearXNG', description: 'Self-hosted meta search' },
+    { id: 'duckduckgo' as const, name: 'DuckDuckGo', description: 'Privacy-focused search' },
     { id: 'brave' as const, name: 'Brave', description: 'API key required' },
     { id: 'google' as const, name: 'Google', description: 'API key required' },
+    { id: 'parallel' as const, name: 'Parallel', description: 'AI-native search API' },
+    { id: 'exa' as const, name: 'Exa', description: 'Neural search for LLMs' },
+    { id: 'tavily' as const, name: 'Tavily', description: 'AI search engine' },
   ]
 
   const statusColors: Record<string, string> = {
@@ -269,7 +273,7 @@ export function ToolsModal() {
                     onClick={() => setDefaultSearchProvider(sp.id)}
                     className={cn(
                       'p-3 text-left border rounded-sm transition-all',
-                      (defaultSearchProvider === 'duckduckgo' ? 'searxng' : defaultSearchProvider) === sp.id
+                      defaultSearchProvider === sp.id
                         ? 'border-accent bg-accent/10 text-foreground'
                         : 'border-border bg-secondary/20 text-muted-foreground hover:border-accent/50'
                     )}
@@ -301,6 +305,66 @@ export function ToolsModal() {
                     value={searchConfig.braveApiKey || ''}
                     onChange={e => setSearchConfig({ ...searchConfig, braveApiKey: e.target.value })}
                     placeholder="BSA..."
+                    className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
+                  />
+                </label>
+              )}
+              {defaultSearchProvider === 'google' && (
+                <div className="space-y-2">
+                  <label className="block">
+                    <span className="text-xs text-muted-foreground">Google PSE API Key</span>
+                    <input
+                      type="password"
+                      value={searchConfig.googleApiKey || ''}
+                      onChange={e => setSearchConfig({ ...searchConfig, googleApiKey: e.target.value })}
+                      placeholder="AIza..."
+                      className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-muted-foreground">Google PSE CX</span>
+                    <input
+                      type="text"
+                      value={searchConfig.googleCx || ''}
+                      onChange={e => setSearchConfig({ ...searchConfig, googleCx: e.target.value })}
+                      placeholder="cx..."
+                      className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
+                    />
+                  </label>
+                </div>
+              )}
+              {defaultSearchProvider === 'parallel' && (
+                <label className="block">
+                  <span className="text-xs text-muted-foreground">Parallel API Key</span>
+                  <input
+                    type="password"
+                    value={searchConfig.parallelApiKey || ''}
+                    onChange={e => setSearchConfig({ ...searchConfig, parallelApiKey: e.target.value })}
+                    placeholder="x-api-key..."
+                    className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
+                  />
+                </label>
+              )}
+              {defaultSearchProvider === 'exa' && (
+                <label className="block">
+                  <span className="text-xs text-muted-foreground">Exa API Key</span>
+                  <input
+                    type="password"
+                    value={searchConfig.exaApiKey || ''}
+                    onChange={e => setSearchConfig({ ...searchConfig, exaApiKey: e.target.value })}
+                    placeholder="x-api-key..."
+                    className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
+                  />
+                </label>
+              )}
+              {defaultSearchProvider === 'tavily' && (
+                <label className="block">
+                  <span className="text-xs text-muted-foreground">Tavily API Key</span>
+                  <input
+                    type="password"
+                    value={searchConfig.tavilyApiKey || ''}
+                    onChange={e => setSearchConfig({ ...searchConfig, tavilyApiKey: e.target.value })}
+                    placeholder="tvly-..."
                     className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
                   />
                 </label>
