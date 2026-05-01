@@ -8,7 +8,7 @@ A powerful, extensible, and beautiful web frontend for LLMs. Built for power use
 
 - **Multi-Provider Support**: OpenAI, Anthropic, Google Gemini, Ollama, OpenRouter, NVIDIA NIM, LM Studio, and custom OpenAI-compatible providers
 - **Streaming Responses**: Real-time token streaming with generation statistics
-- **Thinking/Reasoning Display**: Collapsible reasoning blocks for supported models (OpenAI o1/o3, DeepSeek, etc.)
+- **Thinking/Reasoning Display**: Collapsible reasoning blocks for supported models
 - **Web Search**: DuckDuckGo, SearxNG, Brave Search, and Google PSE integrations with inline citations
 - **Read URL Tool**: Fetch and extract content from any URL
 - **Python & Terminal Tools**: Execute code and shell commands directly with configurable timeouts
@@ -16,7 +16,7 @@ A powerful, extensible, and beautiful web frontend for LLMs. Built for power use
 - **Code Artifacts**: Interactive code blocks with preview, sidebar view, and new window support
 - **Extensible Tool System**: Easy-to-add tools and MCP servers
 - **Skills System**: Create, search, and load skills that inject specialized knowledge into conversations
-- **Skills.sh Integration**: Browse, search, and install skills from the skills.sh catalog
+- **Skills.sh Integration**: Browse, search, and install skills from the skills.sh catalog **(BROKEN ATM)**
 - **Slash Commands**: `/skill`, `/model` commands with autocomplete and keyboard navigation
 - **Industrial Design**: Dark, high-contrast theme with JetBrains Mono typography
 
