@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { User, Bot, Copy, Check, Terminal, RotateCcw, ChevronLeft, ChevronRight, FileText, Download, ExternalLink } from 'lucide-react'
+import { User, Copy, Check, Terminal, RotateCcw, ChevronLeft, ChevronRight, FileText, Download, ExternalLink } from 'lucide-react'
 import { Message, GenerationInfo as GenInfo, Attachment } from '../stores/chatStore'
 import { ToolCallBlock } from './ToolCallBlock'
 import { MarkdownRenderer } from './MarkdownRenderer'
@@ -9,6 +9,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { cn } from '../lib/utils'
 import { getActivitySublabel } from '../lib/toolDisplay'
+import { getProviderIcon } from '../lib/providerIcons'
 
 function AttachmentPreview({ attachment }: { attachment: Attachment }) {
   const isImage = attachment.type === 'image' || attachment.mimeType?.startsWith('image/')
@@ -117,9 +118,15 @@ export function MessageBubble({
     )}>
       <div className={cn(
         'w-7 h-7 rounded-none flex items-center justify-center flex-shrink-0 mt-1',
-        isUser ? 'bg-primary border border-primary-foreground/20' : 'bg-accent/10'
+        isUser ? 'bg-primary border border-primary-foreground/20' : 'bg-transparent'
       )}>
-        {isUser ? <User className="w-4 h-4 text-primary-foreground" /> : <Bot className="w-4 h-4 text-accent" />}
+        {isUser ? (
+          <User className="w-4 h-4 text-primary-foreground" />
+        ) : (() => {
+          const info = aggregatedGenInfo || message.generationInfo
+          const ProviderIcon = getProviderIcon(info ? `${info.provider}/${info.model}` : 'bot')
+          return <ProviderIcon size={18} className="text-accent" />
+        })()}
       </div>
 
       <div className={cn('flex-1 space-y-2 min-w-0', isUser ? 'flex flex-col items-end' : '')}>

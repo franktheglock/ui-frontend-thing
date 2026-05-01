@@ -93,7 +93,8 @@ export function useChat() {
     sessions,
     updateSessionModel,
     setActiveSkill,
-    clearMessages
+    clearMessages,
+    setStreamingGenerationInfo
   } = useChatStore()
 
   const {
@@ -224,7 +225,10 @@ export function useChat() {
                 }
                 if (parsed.toolCalls) setActiveToolCalls(sessionId, [...allToolCalls, ...parsed.toolCalls])
                 if (parsed.responseId) responseId = parsed.responseId
-                if (parsed.generationInfo) generationInfo = parsed.generationInfo
+                if (parsed.generationInfo) {
+                  generationInfo = parsed.generationInfo
+                  setStreamingGenerationInfo(sessionId, parsed.generationInfo)
+                }
               }
             }
           }
@@ -248,7 +252,10 @@ export function useChat() {
                 }
                 if (parsed.toolCalls) setActiveToolCalls(sessionId, [...allToolCalls, ...parsed.toolCalls])
                 if (parsed.responseId) responseId = parsed.responseId
-                if (parsed.generationInfo) generationInfo = parsed.generationInfo
+                if (parsed.generationInfo) {
+                  generationInfo = parsed.generationInfo
+                  setStreamingGenerationInfo(sessionId, parsed.generationInfo)
+                }
               } catch {}
             }
           }
@@ -416,8 +423,8 @@ export function useChat() {
         // Find the provider and model by splitting at the first slash
         const slashIdx = args.indexOf('/')
         if (slashIdx !== -1) {
-          const provider = args.slice(0, slashIdx)
-          const model = args.slice(slashIdx + 1)
+          const provider = args.slice(0, slashIdx).trim()
+          const model = args.slice(slashIdx + 1).trim()
           
           updateSessionModel(sessionId, model, provider)
           setSelectedProvider(provider)

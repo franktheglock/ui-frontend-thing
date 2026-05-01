@@ -1,9 +1,10 @@
 import { useState, useMemo, memo } from 'react'
-import { X, Cpu, Check, Plus, Trash2, ChevronDown, ChevronRight, Search } from 'lucide-react'
+import { X, Check, Plus, Trash2, ChevronDown, ChevronRight, Search } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { useChatStore } from '../stores/chatStore'
 import { cn } from '../lib/utils'
+import { getProviderIcon } from '../lib/providerIcons'
 
 const ProviderSection = memo(function ProviderSection({
   provider,
@@ -83,10 +84,13 @@ const ProviderSection = memo(function ProviderSection({
                   : 'border-transparent hover:bg-secondary hover:border-border'
               )}
             >
-              {isSelectedProvider && selectedModel === model && (
+              {isSelectedProvider && selectedModel === model ? (
                 <Check className="w-3.5 h-3.5 flex-shrink-0" />
-              )}
-              <span className="truncate font-mono">{model}</span>
+              ) : (() => {
+                const Icon = getProviderIcon(`${provider.id}/${model}`)
+                return <Icon size={14} className="flex-shrink-0 opacity-60" />
+              })()}
+              <span className="truncate font-mono flex-1">{model}</span>
             </button>
           ))}
           {filteredModels.length === 0 && !searchQuery.trim() && (
@@ -192,7 +196,10 @@ export function ModelSelector() {
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-accent" />
+            {(() => {
+              const ProviderIcon = getProviderIcon(selectedProvider)
+              return <ProviderIcon size={18} />
+            })()}
             <h2 className="text-sm font-medium">Select Model</h2>
           </div>
           <button
