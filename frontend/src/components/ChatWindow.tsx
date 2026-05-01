@@ -259,7 +259,7 @@ export function ChatWindow() {
   return (
     <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-6 pt-24 pb-32">
+        <div className="max-w-4xl mx-auto px-6 pt-24 pb-48">
           {renderItems.length === 0 && !isCurrentStreaming && (() => {
             const { selectedProvider, selectedModel } = useSettingsStore.getState()
             const ProviderIcon = getProviderIcon(`${selectedProvider}/${selectedModel}`)
@@ -449,7 +449,6 @@ export function ChatWindow() {
             }
             return null
           })()}
-          <div className="h-px w-full overflow-anchor-auto" />
         </div>
       </div>
 

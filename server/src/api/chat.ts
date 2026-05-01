@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { v4 as uuidv4 } from 'uuid'
+import path from 'path'
+import fs from 'fs'
 import { getDb } from '../db'
 import { getProvider } from '../providers'
 import { executeTool, listTools } from '../tools'
@@ -69,7 +71,7 @@ router.delete('/sessions/:id', async (req, res) => {
 
 router.patch('/sessions/:id', async (req, res) => {
   const db = await getDb()
-  const { title, lastResponseId } = req.body
+  const { title, lastResponseId, model, provider } = req.body
   const updates: string[] = []
   const values: any[] = []
 
@@ -80,6 +82,14 @@ router.patch('/sessions/:id', async (req, res) => {
   if (lastResponseId !== undefined) {
     updates.push('last_response_id = ?')
     values.push(lastResponseId)
+  }
+  if (model !== undefined) {
+    updates.push('model = ?')
+    values.push(model)
+  }
+  if (provider !== undefined) {
+    updates.push('provider = ?')
+    values.push(provider)
   }
   if (updates.length === 0) {
     return res.json({ success: true })
@@ -247,11 +257,16 @@ function getCleanErrorMessage(error: any, provider: string): string {
 router.post('/completions', async (req, res) => {
     const { messages, model, provider, systemPrompt, temperature, maxTokens, topP, disabledTools, lastResponseId, sessionId } = req.body
     
+    console.log(`[chat] /completions - Request: { model: "${model}", provider: "${provider}", sessionId: "${sessionId}" }`)
+
     try {
       const providerInstance = await getProvider(provider)
       if (!providerInstance) {
+        console.error(`[chat] Provider "${provider}" not found or disabled in DB`)
         return res.status(404).json({ error: `Provider "${provider}" not found or disabled` })
       }
+      
+      console.log(`[chat] Using provider instance: ${providerInstance.name} (${providerInstance.type})`)
   
       const disabledToolNames = Array.isArray(disabledTools) ? (disabledTools as string[]) : []
       const allTools = listTools().filter(t => !disabledToolNames.includes(t.name))
@@ -261,9 +276,54 @@ router.post('/completions', async (req, res) => {
       ? `${dateStr}\n${systemPrompt}`
       : dateStr
 
+    // Process attachments: Read text files and append to message content
+    const processedMessages = await Promise.all((messages || []).map(async (m: any) => {
+      if (m.attachments && m.attachments.length > 0) {
+        let content = m.content || ''
+        const attachmentsToKeep = []
+
+        for (const a of m.attachments) {
+          // Resolve file path correctly relative to the uploads directory
+          const filename = path.basename(a.url)
+          
+          // Check multiple potential locations for the uploads folder
+          const possiblePaths = [
+            path.resolve(process.cwd(), 'uploads', filename),
+            path.resolve(process.cwd(), 'server', 'uploads', filename),
+            path.resolve(__dirname, '../../uploads', filename),
+            path.resolve(__dirname, '../../../uploads', filename)
+          ]
+          
+          let filePath = possiblePaths.find(p => fs.existsSync(p))
+          
+          // List of text-based extensions to read
+          const textExtensions = ['.txt', '.md', '.json', '.js', '.ts', '.tsx', '.css', '.html', '.py', '.c', '.cpp', '.rs', '.go', '.sh', '.yaml', '.yml']
+          const ext = path.extname(a.name).toLowerCase()
+          
+          if (textExtensions.includes(ext) && filePath) {
+            try {
+              console.log(`[chat] Extracting text from ${a.name} (Path: ${filePath})`)
+              const textContent = fs.readFileSync(filePath, 'utf-8')
+              content += `\n\n[File Attachment: ${a.name}]\n\`\`\`${ext.slice(1) || 'text'}\n${textContent}\n\`\`\``
+            } catch (err) {
+              console.error(`[chat] Failed to read text file ${a.name}:`, err)
+              attachmentsToKeep.push(a)
+            }
+          } else {
+            if (textExtensions.includes(ext)) {
+              console.warn(`[chat] Text file ${a.name} found but path could not be resolved. Tried:`, possiblePaths)
+            }
+            attachmentsToKeep.push(a)
+          }
+        }
+        return { ...m, content, attachments: attachmentsToKeep }
+      }
+      return m
+    }))
+
     const stream = providerInstance.chatCompletion({
       model,
-      messages: [{ role: 'system', content: enhancedSystemPrompt }, ...(messages || [])],
+      messages: [{ role: 'system', content: enhancedSystemPrompt }, ...processedMessages],
       temperature,
       maxTokens,
       topP,

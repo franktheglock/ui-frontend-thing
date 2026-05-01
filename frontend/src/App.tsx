@@ -113,7 +113,7 @@ function App() {
         <SidebarToggle />
 
         <main className={cn(
-          "flex-1 flex flex-col min-w-0 overflow-hidden",
+          "flex-1 flex flex-col min-w-0 overflow-hidden relative",
           isEmpty ? "justify-center pb-[10vh]" : ""
         )}>
           <ChatWindow />
