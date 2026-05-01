@@ -80,6 +80,8 @@ export function getProviderIcon(provider: string): React.ComponentType<any> {
   if (normalized.includes('mistral')) return LobeIcons.Mistral.Avatar
   if (normalized.includes('x-ai') || normalized.includes('grok') || normalized.includes('xai')) return LobeIcons.XAI.Avatar
   if (normalized.includes('deepseek')) return LobeIcons.DeepSeek.Avatar
+  if (normalized.includes('qwen')) return LobeIcons.Qwen.Avatar
+  if (normalized.includes('moonshot') || normalized.includes('kimi')) return LobeIcons.Moonshot.Avatar
   if (normalized.includes('groq')) return LobeIcons.Groq.Avatar
   if (normalized.includes('openrouter')) return LobeIcons.OpenRouter.Avatar
   if (normalized.includes('ollama')) return LobeIcons.Ollama.Avatar

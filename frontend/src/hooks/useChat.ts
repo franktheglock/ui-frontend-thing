@@ -146,11 +146,25 @@ export function useChat() {
            return true
         })
         
-        const currentModel = latestSession.model || selectedModel
-        const currentProvider = latestSession.provider || selectedProvider
+        const currentModel = (selectedModel && selectedModel !== '') ? selectedModel : latestSession.model
+        const currentProvider = (selectedProvider && selectedProvider !== '') ? selectedProvider : latestSession.provider
+
+        console.log('[useChat] Turn starting:', { 
+          selectedModel, 
+          selectedProvider, 
+          sessionModel: latestSession.model, 
+          sessionProvider: latestSession.provider,
+          usingModel: currentModel,
+          usingProvider: currentProvider
+        })
 
         const apiMessages = chatMessages.map(m => ({
-          role: m.role, content: m.content, thinking: m.thinking, toolCalls: m.toolCalls, toolResults: m.toolResults
+          role: m.role, 
+          content: m.content, 
+          thinking: m.thinking, 
+          toolCalls: m.toolCalls, 
+          toolResults: m.toolResults,
+          attachments: m.attachments
         }))
 
         if (allToolCalls.length > 0) {
@@ -319,7 +333,7 @@ export function useChat() {
               toolResults: allToolResults.length > 0 ? [...allToolResults] : undefined,
               timeline: finalTimeline.length > 0 ? finalTimeline : undefined,
               responseId: finalResponseId,
-              generationInfo: { ...finalGenInfo, isGatheringCost: !finalGenInfo?.totalCost && !!finalResponseId },
+              generationInfo: { ...finalGenInfo, isGatheringCost: currentProvider === 'openrouter' && !finalGenInfo?.totalCost && !!finalResponseId },
               timestamp: Date.now(),
               metadata: { active: true, model: currentModel, provider: currentProvider }
             }

@@ -133,10 +133,23 @@ export class OpenAICompatibleProvider extends BaseProvider {
       if (m.attachments && m.attachments.length > 0) {
         base.content = [
           { type: 'text', text: m.content || '' },
-          ...m.attachments.map((a: any) => ({
-            type: 'image_url',
-            image_url: { url: a.url.startsWith('http') ? a.url : `http://localhost:3456${a.url}` },
-          })),
+          ...m.attachments.map((a: any) => {
+            const url = a.url.startsWith('http') ? a.url : `http://localhost:3456${a.url}`
+            if (a.type === 'image') {
+              return {
+                type: 'image_url',
+                image_url: { url }
+              }
+            } else {
+              // For other files, use a 'file' type if supported by the provider, 
+              // or fall back to a text description if needed.
+              // OpenRouter and some OpenAI-compatible endpoints support this.
+              return {
+                type: 'file',
+                file_url: { url, name: a.name, mime_type: a.mimeType }
+              }
+            }
+          }),
         ]
       }
 

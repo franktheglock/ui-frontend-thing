@@ -48,7 +48,7 @@ export function ToolsModal() {
     searchConfig,
     setSearchConfig,
   } = useSettingsStore()
-  const { setAvailableTools, toggleTool: toggleToolStore } = useToolStore()
+  const { toggleTool: toggleToolStore } = useToolStore()
 
   const [backendTools, setBackendTools] = useState<BackendTool[]>([])
   const [mcpServers, setMcpServers] = useState<MCPServer[]>([])

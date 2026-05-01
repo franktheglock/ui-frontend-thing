@@ -369,7 +369,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
   const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
     const target = e.currentTarget
     target.style.height = 'auto'
-    target.style.height = `${Math.min(target.scrollHeight, 200)}px`
+    target.style.height = `${target.scrollHeight}px`
   }
 
   const handlePaste = (e: React.ClipboardEvent) => {
@@ -407,7 +407,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
 
   return (
     <div className={cn(
-      "flex-shrink-0 px-4 pb-[env(safe-area-inset-bottom)]",
+      "absolute bottom-0 left-0 right-0 z-20 px-4 pb-[env(safe-area-inset-bottom)]",
       isLanding ? "bg-transparent pb-[max(env(safe-area-inset-bottom),3rem)]" : "pb-[max(env(safe-area-inset-bottom),1.5rem)] pt-2"
     )}>
       <div className="max-w-3xl mx-auto space-y-3">
@@ -458,7 +458,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
               onInput={handleInput}
               onPaste={handlePaste}
               placeholder="Ask anything (type / for commands)"
-              className="flex-1 px-1.5 py-1 bg-transparent text-sm placeholder:text-muted-foreground/60 focus:outline-none resize-none min-h-[28px] max-h-[200px] overflow-y-auto leading-normal"
+              className="flex-1 px-1.5 py-1 bg-transparent text-sm placeholder:text-muted-foreground/60 focus:outline-none resize-none min-h-[28px] leading-normal"
               disabled={isCurrentGenerating || isUploading}
             />
             {slashMenuOpen && slashMenuItems.length > 0 && (
