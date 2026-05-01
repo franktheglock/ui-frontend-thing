@@ -114,6 +114,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
         promptTokens: data.usage.prompt_tokens,
         completionTokens: data.usage.completion_tokens,
         tokensUsed: data.usage.total_tokens,
+        totalCost: data.usage.total_cost,
       }
     }
 

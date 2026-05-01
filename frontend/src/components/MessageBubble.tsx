@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { User, Copy, Check, Terminal, RotateCcw, ChevronLeft, ChevronRight, FileText, Download, ExternalLink } from 'lucide-react'
-import { Message, GenerationInfo as GenInfo, Attachment } from '../stores/chatStore'
+import { useChatStore, Message, GenerationInfo as GenInfo, Attachment } from '../stores/chatStore'
 import { ToolCallBlock } from './ToolCallBlock'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { ThinkingBlock } from './ThinkingBlock'
@@ -55,7 +55,7 @@ function AttachmentPreview({ attachment }: { attachment: Attachment }) {
       rel="noopener noreferrer"
       className="flex items-center gap-3 px-3 py-2 bg-secondary/50 border border-border rounded-sm hover:border-accent transition-colors group max-w-xs"
     >
-      <div className="w-10 h-10 rounded-sm bg-accent/10 flex items-center justify-center flex-shrink-0">
+      <div className="w-10 h-10 rounded-sm flex items-center justify-center flex-shrink-0">
         <FileText className="w-5 h-5 text-accent" />
       </div>
       <div className="flex-1 min-w-0">
@@ -85,6 +85,7 @@ interface MessageBubbleProps {
   aggregatedGenInfo?: GenInfo
   onRegenerate?: () => void
   versionInfo?: { current: number, total: number, onPrev: () => void, onNext: () => void }
+  sessionId?: string
 }
 
 export function MessageBubble({ 
@@ -93,11 +94,14 @@ export function MessageBubble({
   hideTools = false, 
   aggregatedGenInfo,
   onRegenerate,
-  versionInfo
+  versionInfo,
+  sessionId
 }: MessageBubbleProps) {
   const isUser = message.role === 'user'
   const [copied, setCopied] = useState(false)
   const { toolDisplayMode } = useSettingsStore()
+  const { sessions } = useChatStore()
+  const session = sessions.find(s => s.id === sessionId)
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content)
@@ -117,19 +121,22 @@ export function MessageBubble({
       isUser ? 'flex-row-reverse' : 'flex-row'
     )}>
       <div className={cn(
-        'w-7 h-7 rounded-none flex items-center justify-center flex-shrink-0 mt-1',
+        'w-10 h-10 rounded-none flex items-center justify-center flex-shrink-0 mt-1',
         isUser ? 'bg-primary border border-primary-foreground/20' : 'bg-transparent'
       )}>
         {isUser ? (
-          <User className="w-4 h-4 text-primary-foreground" />
+          <User className="w-6 h-6 text-primary-foreground" />
         ) : (() => {
           const info = aggregatedGenInfo || message.generationInfo
-          const ProviderIcon = getProviderIcon(info ? `${info.provider}/${info.model}` : 'bot')
-          return <ProviderIcon size={18} className="text-accent" />
+          // Priority: 1. Specific info, 2. Message metadata, 3. Session current (risky but needed for old msgs)
+          const provider = info?.provider || (message.metadata as any)?.provider || session?.provider || ''
+          const model = info?.model || (message.metadata as any)?.model || session?.model || ''
+          const ProviderIcon = getProviderIcon(provider && model ? `${provider}/${model}` : 'sparkles')
+          return <ProviderIcon size={32} className="text-accent" />
         })()}
       </div>
 
-      <div className={cn('flex-1 space-y-2 min-w-0', isUser ? 'flex flex-col items-end' : '')}>
+      <div className={cn('flex-1 space-y-2 min-w-0', isUser ? 'flex flex-col items-end pt-2' : '')}>
         {!isUser && message.timeline && message.timeline.length > 0 && toolDisplayMode === 'timeline' && (
           (() => {
             const start = message.timeline[0].timestamp
@@ -150,7 +157,16 @@ export function MessageBubble({
                   <span>{label}</span>
                   <ChevronRight className="w-4 h-4 text-muted-foreground/70 flex-shrink-0" />
                 </div>
-                {sublabel && <span className="text-xs text-muted-foreground/70 truncate max-w-[240px] block mt-0.5">{sublabel}</span>}
+                {sublabel && (
+                  <span 
+                    className={cn(
+                      "text-xs text-muted-foreground/70 block mt-0.5 max-w-[240px] whitespace-nowrap overflow-hidden",
+                      sublabel.type === 'thinking' ? "flex justify-end [mask-image:linear-gradient(to_right,transparent,black_20%)]" : "truncate"
+                    )}
+                  >
+                    {sublabel.text}
+                  </span>
+                )}
               </button>
             )
           })()
@@ -200,7 +216,7 @@ export function MessageBubble({
           <div className="relative max-w-full">
             <div className={cn(
               'relative',
-              isUser ? 'bg-primary text-primary-foreground px-4 py-2.5 rounded-none' : 'text-foreground'
+              isUser ? 'bg-primary text-primary-foreground px-4 pt-4 pb-3 rounded-none' : 'text-foreground'
             )}>
               {isUser ? (
                 <p className="text-sm whitespace-pre-wrap">

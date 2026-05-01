@@ -27,6 +27,8 @@ export interface Message {
     version?: number
     active?: boolean
     turnId?: string
+    model?: string
+    provider?: string
   }
 }
 
@@ -62,6 +64,7 @@ export interface GenerationInfo {
   loadDuration?: number
   promptEvalDuration?: number
   totalCost?: number
+  isGatheringCost?: boolean
   evalDuration?: number
 }
 

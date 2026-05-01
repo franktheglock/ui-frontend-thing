@@ -31,9 +31,13 @@ export function GenerationInfo({ info }: GenerationInfoProps) {
         </span>
       )}
       
-      {info.totalCost !== undefined && (
+      {(info.totalCost !== undefined || info.isGatheringCost) && (
         <span className="flex items-center gap-1 text-accent font-bold">
-          ${info.totalCost < 0.0001 ? info.totalCost.toFixed(6) : info.totalCost.toFixed(4)}
+          {info.isGatheringCost ? (
+            <span className="animate-pulse">Gathering cost...</span>
+          ) : (
+            `$${info.totalCost! < 0.0001 ? info.totalCost!.toFixed(6) : info.totalCost!.toFixed(4)}`
+          )}
         </span>
       )}
       

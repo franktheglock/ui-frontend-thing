@@ -78,7 +78,7 @@ export function getToolDisplay(name: string, args: unknown): string {
 export function getActivitySublabel(
   timeline: TimelineEvent[],
   toolResults: ToolResult[]
-): string | undefined {
+): { text: string; type: 'thinking' | 'tool' | 'result' } | undefined {
   const processEvents = timeline.filter((e) => e.type !== 'content')
   if (processEvents.length === 0) return undefined
 
@@ -86,24 +86,23 @@ export function getActivitySublabel(
 
   if (lastEvent.type === 'thinking') {
     const text = lastEvent.content.replace(/\s+/g, ' ').trim()
-    if (text) return text.slice(0, 60) + (text.length > 60 ? '…' : '')
-    return 'Thinking'
+    return { text: text.slice(-50), type: 'thinking' }
   }
 
   if (lastEvent.type === 'tool_call') {
     const hasResult = toolResults.some((r) => r.toolCallId === lastEvent.toolCallId)
     if (!hasResult) {
-      if (lastEvent.display) return lastEvent.display
-      if (lastEvent.toolArgs) return getToolDisplay(lastEvent.toolName || '', lastEvent.toolArgs)
-      return `Using ${lastEvent.toolName || 'tool'}`
+      if (lastEvent.display) return { text: lastEvent.display, type: 'tool' }
+      if (lastEvent.toolArgs) return { text: getToolDisplay(lastEvent.toolName || '', lastEvent.toolArgs), type: 'tool' }
+      return { text: `Using ${lastEvent.toolName || 'tool'}`, type: 'tool' }
     }
-    return `Finished ${lastEvent.toolName || 'tool'}`
+    return { text: `Finished ${lastEvent.toolName || 'tool'}`, type: 'result' }
   }
 
   if (lastEvent.type === 'tool_result') {
     const isError = lastEvent.content.startsWith('Error:')
-    if (isError) return `Error in ${lastEvent.toolName || 'tool'}`
-    return `Got result from ${lastEvent.toolName || 'tool'}`
+    if (isError) return { text: `Error in ${lastEvent.toolName || 'tool'}`, type: 'result' }
+    return { text: `Got result from ${lastEvent.toolName || 'tool'}`, type: 'result' }
   }
 
   return undefined

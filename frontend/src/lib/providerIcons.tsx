@@ -1,17 +1,21 @@
 import React from 'react'
 import * as LobeIcons from '@lobehub/icons'
-import { Bot } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 
 const iconMap: Record<string, React.ComponentType<any>> = {
   openai: LobeIcons.OpenAI.Avatar,
+  gpt: LobeIcons.OpenAI.Avatar,
   anthropic: LobeIcons.Anthropic.Avatar,
+  claude: LobeIcons.Anthropic.Avatar,
   deepseek: LobeIcons.DeepSeek.Avatar,
   google: LobeIcons.Google.Avatar,
   gemini: LobeIcons.Gemini.Avatar,
   grok: LobeIcons.XAI.Avatar,
   xai: LobeIcons.XAI.Avatar,
+  "x-ai": LobeIcons.XAI.Avatar,
   meta: LobeIcons.Meta.Avatar,
   llama: LobeIcons.Meta.Avatar,
+  llama3: LobeIcons.Meta.Avatar,
   mistral: LobeIcons.Mistral.Avatar,
   perplexity: LobeIcons.Perplexity.Avatar,
   cohere: LobeIcons.Cohere.Avatar,
@@ -60,33 +64,38 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   ai21: LobeIcons.Ai21.Avatar,
   ai21labs: LobeIcons.Ai21.Avatar,
   jamba: LobeIcons.Ai21.Avatar,
-  gpt: LobeIcons.OpenAI.Avatar,
-  claude: LobeIcons.Anthropic.Avatar,
+  gemma: LobeIcons.Gemma.Avatar,
 }
 
 export function getProviderIcon(provider: string): React.ComponentType<any> {
   const normalized = provider.toLowerCase()
   
-  // Skip the first segment (delivery provider) if slashes are present
-  // e.g., "openrouter/x-ai/grok" -> search for "x-ai/grok"
-  const slashIdx = normalized.indexOf('/')
-  const searchString = slashIdx !== -1 ? normalized.slice(slashIdx + 1) : normalized
-  
-  const key = searchString.replace(/[^a-z0-9]/g, '')
+  // 1. Check for common substrings directly in the full string first
+  if (normalized.includes('openai') || normalized.includes('gpt')) return LobeIcons.OpenAI.Avatar
+  if (normalized.includes('anthropic') || normalized.includes('claude')) return LobeIcons.Anthropic.Avatar
+  if (normalized.includes('gemini')) return LobeIcons.Gemini.Avatar
+  if (normalized.includes('gemma')) return LobeIcons.Gemma.Avatar
+  if (normalized.includes('google')) return LobeIcons.Google.Avatar
+  if (normalized.includes('meta') || normalized.includes('llama')) return LobeIcons.Meta.Avatar
+  if (normalized.includes('mistral')) return LobeIcons.Mistral.Avatar
+  if (normalized.includes('x-ai') || normalized.includes('grok') || normalized.includes('xai')) return LobeIcons.XAI.Avatar
+  if (normalized.includes('deepseek')) return LobeIcons.DeepSeek.Avatar
+  if (normalized.includes('groq')) return LobeIcons.Groq.Avatar
+  if (normalized.includes('openrouter')) return LobeIcons.OpenRouter.Avatar
+  if (normalized.includes('ollama')) return LobeIcons.Ollama.Avatar
+  if (normalized.includes('lmstudio')) return LobeIcons.LmStudio.Avatar
+  if (normalized.includes('perplexity')) return LobeIcons.Perplexity.Avatar
+  if (normalized.includes('together')) return LobeIcons.Together.Avatar
+  if (normalized.includes('nvidia')) return LobeIcons.Nvidia.Avatar
 
-  // 1. Exact match on the model/owner part
+  // 2. Exact match on cleaned search string
+  const key = normalized.replace(/[^a-z0-9]/g, '')
   if (iconMap[key]) return iconMap[key]
 
-  // 2. Substring match on the model/owner part
+  // 3. Substring match on the map keys
   for (const [k, v] of Object.entries(iconMap)) {
     if (key.includes(k)) return v
   }
-
-  // 3. Fallback: Check the full original string if no match in model part
-  const fullKey = normalized.replace(/[^a-z0-9]/g, '')
-  for (const [k, v] of Object.entries(iconMap)) {
-    if (fullKey.includes(k)) return v
-  }
   
-  return Bot
+  return Sparkles
 }

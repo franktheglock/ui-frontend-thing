@@ -186,7 +186,7 @@ export function useChat() {
         let turnContent = ''
         let turnThinking = ''
         let responseId = ''
-        let generationInfo = undefined
+        let generationInfo: any = { model: currentModel, provider: currentProvider }
 
         const reader = response.body?.getReader()
         if (!reader) throw new Error('No reader available')
@@ -297,7 +297,7 @@ export function useChat() {
               responseId: finalResponseId,
               generationInfo: finalGenInfo,
               timestamp: Date.now(),
-              metadata: { active: true }
+              metadata: { active: true, model: currentModel, provider: currentProvider }
             })
             if (useUIStore.getState().activeActivityMessageId === 'streaming') {
               useUIStore.getState().setActiveActivityMessageId(messageId)
@@ -319,9 +319,9 @@ export function useChat() {
               toolResults: allToolResults.length > 0 ? [...allToolResults] : undefined,
               timeline: finalTimeline.length > 0 ? finalTimeline : undefined,
               responseId: finalResponseId,
-              generationInfo: finalGenInfo,
+              generationInfo: { ...finalGenInfo, isGatheringCost: !finalGenInfo?.totalCost && !!finalResponseId },
               timestamp: Date.now(),
-              metadata: { active: true }
+              metadata: { active: true, model: currentModel, provider: currentProvider }
             }
             await addMessage(sessionId, assistantMessage)
             if (useUIStore.getState().activeActivityMessageId === 'streaming') {
@@ -406,6 +406,38 @@ export function useChat() {
     } finally {
       unsubscribe()
       stopGenerating(sessionId)
+      
+      // Post-generation background tasks (e.g. OpenRouter cost polling)
+      const lastMessage = useChatStore.getState().sessions.find(s => s.id === sessionId)?.messages.slice(-1)[0]
+      const lastFinalGenInfo = lastMessage?.generationInfo
+      const lastFinalMsgId = lastMessage?.id
+      const lastResponseId = lastMessage?.responseId
+      
+      if (lastFinalMsgId && lastResponseId && selectedProvider === 'openrouter' && !lastFinalGenInfo?.totalCost) {
+        // Start background polling for cost
+        (async () => {
+          try {
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              await new Promise(resolve => setTimeout(resolve, attempt === 1 ? 2000 : attempt === 2 ? 4000 : 6000))
+              const res = await fetch(`/api/chat/messages/${lastFinalMsgId}/poll-cost?provider=openrouter&responseId=${lastResponseId}`)
+              if (res.ok) {
+                const data = await res.json()
+                if (data.cost !== null) {
+                  const session = useChatStore.getState().sessions.find(s => s.id === sessionId)
+                  const msg = session?.messages.find(m => m.id === lastFinalMsgId)
+                  if (msg && msg.generationInfo) {
+                    const newInfo = { ...msg.generationInfo, totalCost: data.cost, isGatheringCost: false }
+                    updateMessage(sessionId, lastFinalMsgId, { generationInfo: newInfo })
+                  }
+                  break
+                }
+              }
+            }
+          } catch (err) {
+            console.error('[useChat] Cost poll background error:', err)
+          }
+        })()
+      }
     }
   }, [selectedModel, selectedProvider, systemPrompt, temperature, maxTokens, topP, streamResponses, tools, defaultSearchProvider, searchConfig, maxToolTurns, addMessage, startGenerating, stopGenerating, clearStreaming, appendStreamingContent, setStreamingContent, appendStreamingThinking, setActiveToolCalls, updateMessage])
 
