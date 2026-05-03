@@ -4,6 +4,15 @@ A powerful, extensible, and beautiful web frontend for LLMs. Built for power use
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
+## Screenshots
+
+<p align="center">
+  <img src="images for readme/ckR1VD8CJj.png" width="49%">
+  <img src="images for readme/rCfFWR28N8.png" width="49%">
+  <img src="images for readme/sGv6l2nNe6.png" width="49%">
+  <img src="images for readme/wLHsEDjmhg.png" width="49%">
+</p>
+
 ## Features
 
 - **Multi-Provider Support**: OpenAI, Anthropic, Google Gemini, Ollama, OpenRouter, NVIDIA NIM, LM Studio, and custom OpenAI-compatible providers
