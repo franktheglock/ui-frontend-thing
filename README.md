@@ -4,7 +4,7 @@ A powerful, extensible, and beautiful web frontend for LLMs. Built for power use
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-![AI Chat UI - Main Interface](images\ for\ readme/rCfFWR28N8.png)
+![AI Chat UI - Main Interface](images%20for%20readme/rCfFWR28N8.png)
 
 ## Features
 
@@ -13,14 +13,14 @@ A powerful, extensible, and beautiful web frontend for LLMs. Built for power use
 - **Thinking/Reasoning Display**: Collapsible reasoning blocks for supported models
 - **Web Search**: DuckDuckGo, SearxNG, Brave Search, and Google PSE integrations with inline citations
 
-![Web Search Capabilities](images\ for\ readme/sGv6l2nNe6.png)
+![Web Search Capabilities](images%20for%20readme/sGv6l2nNe6.png)
 
 - **Read URL Tool**: Fetch and extract content from any URL
 - **Python & Terminal Tools**: Execute code and shell commands directly with configurable timeouts
 - **File & Image Uploads**: Drag-and-drop support with image preview
 - **Code Artifacts**: Interactive code blocks with preview, sidebar view, and new window support
 
-![Interactive Code Artifacts & UI Execution](images\ for\ readme/ckR1VD8CJj.png)
+![Interactive Code Artifacts & UI Execution](images%20for%20readme/ckR1VD8CJj.png)
 
 - **Extensible Tool System**: Easy-to-add tools and MCP servers
 - **Skills System**: Create, search, and load skills that inject specialized knowledge into conversations
@@ -94,7 +94,7 @@ npm run dev
 
 Copy `.env.example` to `.env` and configure your API keys:
 
-![Settings and Provider Configuration](images\ for\ readme/wLHsEDjmhg.png)
+![Settings and Provider Configuration](images%20for%20readme/wLHsEDjmhg.png)
 
 ```env
 # LLM Provider API Keys
