@@ -108,17 +108,18 @@ export async function getDb(): Promise<Database<sqlite3.Database, sqlite3.Statem
 
   // Seed default providers if empty
   const providerCount = await dbInstance.get('SELECT COUNT(*) as count FROM providers')
-  if (providerCount && (providerCount as any).count === 0) {
-    const defaults = [
-      { id: 'openai', name: 'OpenAI', type: 'openai', baseUrl: null, apiKey: process.env.OPENAI_API_KEY || null },
-      { id: 'anthropic', name: 'Anthropic', type: 'anthropic', baseUrl: null, apiKey: process.env.ANTHROPIC_API_KEY || null },
-      { id: 'ollama', name: 'Ollama', type: 'ollama', baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434', apiKey: null },
-      { id: 'gemini', name: 'Google Gemini', type: 'gemini', baseUrl: null, apiKey: process.env.GEMINI_API_KEY || null },
-      { id: 'openrouter', name: 'OpenRouter', type: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY || null },
-      { id: 'lmstudio', name: 'LM Studio', type: 'lmstudio', baseUrl: process.env.LMSTUDIO_BASE_URL || 'http://localhost:1234', apiKey: null },
-      { id: 'nvidia', name: 'NVIDIA NIM', type: 'nvidia', baseUrl: 'https://integrate.api.nvidia.com/v1', apiKey: process.env.NVIDIA_API_KEY || null },
-    ]
+  const defaults = [
+    { id: 'openai', name: 'OpenAI', type: 'openai', baseUrl: null, apiKey: process.env.OPENAI_API_KEY || null },
+    { id: 'anthropic', name: 'Anthropic', type: 'anthropic', baseUrl: null, apiKey: process.env.ANTHROPIC_API_KEY || null },
+    { id: 'ollama', name: 'Ollama', type: 'ollama', baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434', apiKey: null },
+    { id: 'gemini', name: 'Google Gemini', type: 'gemini', baseUrl: null, apiKey: process.env.GEMINI_API_KEY || null },
+    { id: 'openrouter', name: 'OpenRouter', type: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY || null },
+    { id: 'lmstudio', name: 'LM Studio', type: 'lmstudio', baseUrl: process.env.LMSTUDIO_BASE_URL || 'http://localhost:1234', apiKey: null },
+    { id: 'nvidia', name: 'NVIDIA NIM', type: 'nvidia', baseUrl: 'https://integrate.api.nvidia.com/v1', apiKey: process.env.NVIDIA_API_KEY || null },
+    { id: 'opencode-go', name: 'Opencode Go', type: 'opencode-go', baseUrl: 'https://opencode.ai/zen/go', apiKey: process.env.OPENCODE_GO_API_KEY || null },
+  ]
 
+  if (providerCount && (providerCount as any).count === 0) {
     for (const p of defaults) {
       await dbInstance.run(
         'INSERT INTO providers (id, name, type, base_url, api_key, models, enabled, config) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -126,6 +127,13 @@ export async function getDb(): Promise<Database<sqlite3.Database, sqlite3.Statem
       )
     }
     console.log('[db] Seeded default providers')
+  }
+
+  for (const p of defaults) {
+    await dbInstance.run(
+      'INSERT OR IGNORE INTO providers (id, name, type, base_url, api_key, models, enabled, config) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      p.id, p.name, p.type, p.baseUrl, p.apiKey, JSON.stringify([]), 1, null
+    )
   }
 
   return dbInstance

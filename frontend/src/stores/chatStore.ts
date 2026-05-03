@@ -51,6 +51,7 @@ export interface Attachment {
   url: string
   name: string
   mimeType: string
+  sourceUrl?: string
 }
 
 export interface GenerationInfo {

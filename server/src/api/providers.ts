@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { getDb } from '../db'
-import { getProvider } from '../providers'
+import { createProviderFromConfig, getProvider } from '../providers'
 
 const router = Router()
 
@@ -68,6 +68,32 @@ router.get('/:id/models', async (req, res) => {
   }
 
   res.json(fallbackModels)
+})
+
+router.post('/probe-models', async (req, res) => {
+  const { type, baseUrl, apiKey } = req.body || {}
+
+  if (!type) {
+    return res.status(400).json({ error: 'Provider type is required' })
+  }
+
+  try {
+    const providerInstance = createProviderFromConfig({
+      type,
+      baseUrl,
+      apiKey,
+    })
+
+    if (!providerInstance || !("fetchModels" in providerInstance) || typeof (providerInstance as any).fetchModels !== 'function') {
+      return res.status(400).json({ error: 'This provider type does not support model probing' })
+    }
+
+    const models = await (providerInstance as any).fetchModels()
+    return res.json({ models: models || [] })
+  } catch (err: any) {
+    console.error('[providers] Probe failed:', err.message)
+    return res.status(500).json({ error: err.message || 'Failed to probe models' })
+  }
 })
 
 export default router

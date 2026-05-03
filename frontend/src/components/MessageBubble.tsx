@@ -10,10 +10,12 @@ import { useUIStore } from '../stores/uiStore'
 import { cn } from '../lib/utils'
 import { getActivitySublabel } from '../lib/toolDisplay'
 import { getProviderIcon } from '../lib/providerIcons'
+import { SiteFavicon } from './SiteFavicon'
 
 function AttachmentPreview({ attachment }: { attachment: Attachment }) {
   const isImage = attachment.type === 'image' || attachment.mimeType?.startsWith('image/')
   const isPdf = attachment.mimeType === 'application/pdf' || attachment.name?.toLowerCase().endsWith('.pdf')
+  const isBrowserTab = attachment.mimeType === 'text/markdown' && !!attachment.sourceUrl
 
   if (isImage) {
     return (
@@ -56,11 +58,15 @@ function AttachmentPreview({ attachment }: { attachment: Attachment }) {
       className="flex items-center gap-3 px-3 py-2 bg-secondary/50 border border-border rounded-sm hover:border-accent transition-colors group max-w-xs"
     >
       <div className="w-10 h-10 rounded-sm flex items-center justify-center flex-shrink-0">
-        <FileText className="w-5 h-5 text-accent" />
+        {isBrowserTab ? (
+          <SiteFavicon sourceUrl={attachment.sourceUrl} className="w-5 h-5 rounded-sm" />
+        ) : (
+          <FileText className="w-5 h-5 text-accent" />
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{attachment.name}</p>
-        <p className="text-xs text-muted-foreground">{attachment.mimeType?.split('/')[1]?.toUpperCase() || 'File'}</p>
+        <p className="text-xs text-muted-foreground">{isBrowserTab ? (attachment.sourceUrl ? new URL(attachment.sourceUrl).hostname.replace(/^www\./, '') : 'Browser Tab') : (attachment.mimeType?.split('/')[1]?.toUpperCase() || 'File')}</p>
       </div>
       <Download className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
     </a>
@@ -177,7 +183,7 @@ export function MessageBubble({
         )}
 
         {!isUser && message.toolCalls && message.toolCalls.length > 0 && !hideTools && toolDisplayMode !== 'timeline' && (
-          <div className="space-y-2 mb-2">
+          <div className={cn(toolDisplayMode === 'grouped' ? 'space-y-3.5 mb-3' : 'space-y-2 mb-2')}>
             {toolDisplayMode === 'grouped' ? (
               (() => {
                 const getToolType = (name: string) => {

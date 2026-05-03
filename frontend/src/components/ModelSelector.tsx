@@ -1,16 +1,21 @@
-import { useState, useMemo, memo } from 'react'
-import { X, Check, Plus, Trash2, ChevronDown, ChevronRight, Search } from 'lucide-react'
+import { useState, useMemo, memo, useEffect } from 'react'
+import { X, Check, Plus, Trash2, ChevronDown, ChevronRight, Search, Pencil } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { useChatStore } from '../stores/chatStore'
 import { cn } from '../lib/utils'
 import { getProviderIcon } from '../lib/providerIcons'
 
+function modelsToText(models: string[] | undefined) {
+  return (models || []).join(', ')
+}
+
 const ProviderSection = memo(function ProviderSection({
   provider,
   selectedModel,
   selectedProvider,
   onSelect,
+  onUpdate,
   onRemove,
   searchQuery,
   isOpen,
@@ -20,11 +25,32 @@ const ProviderSection = memo(function ProviderSection({
   selectedModel: string
   selectedProvider: string
   onSelect: (providerId: string, model: string) => void
+  onUpdate: (id: string, updates: any) => void
   onRemove: (id: string) => void
   searchQuery: string
   isOpen: boolean
   onToggle: () => void
 }) {
+  const ProviderIcon = getProviderIcon(provider.id)
+  const [isEditing, setIsEditing] = useState(false)
+  const [draft, setDraft] = useState({
+    name: provider.name || '',
+    baseUrl: provider.baseUrl || provider.base_url || '',
+    apiKey: provider.apiKey || provider.api_key || '',
+    models: modelsToText(provider.models),
+  })
+
+  useEffect(() => {
+    if (!isEditing) {
+      setDraft({
+        name: provider.name || '',
+        baseUrl: provider.baseUrl || provider.base_url || '',
+        apiKey: provider.apiKey || provider.api_key || '',
+        models: modelsToText(provider.models),
+      })
+    }
+  }, [provider, isEditing])
+
   const filteredModels = useMemo(() => {
     const models = Array.from(new Set(provider.models || [])) as string[]
     if (!searchQuery.trim()) return models
@@ -50,6 +76,7 @@ const ProviderSection = memo(function ProviderSection({
           ) : (
             <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
           )}
+          <ProviderIcon size={15} className="flex-shrink-0 opacity-80" />
           <h3 className="text-xs font-medium uppercase tracking-wider text-foreground">
             {provider.name}
           </h3>
@@ -59,6 +86,16 @@ const ProviderSection = memo(function ProviderSection({
           {isSelectedProvider && (
             <span className="text-[10px] px-1.5 py-0.5 bg-accent/10 text-accent rounded-sm">active</span>
           )}
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsEditing((prev) => !prev)
+          }}
+          className="p-1 hover:bg-accent/10 hover:text-accent rounded-sm transition-colors"
+          title="Edit provider"
+        >
+          <Pencil className="w-3 h-3" />
         </button>
         <button
           onClick={(e) => {
@@ -73,6 +110,72 @@ const ProviderSection = memo(function ProviderSection({
 
       {isOpen && (
         <div className="p-2 grid grid-cols-1 gap-1">
+          {isEditing && (
+            <div className="mb-2 space-y-2 border border-border rounded-sm p-3 bg-secondary/30">
+              <div className="flex items-center gap-2 px-1 pb-1 text-xs text-muted-foreground">
+                <ProviderIcon size={14} className="flex-shrink-0 opacity-80" />
+                <span>Editing {provider.name}</span>
+              </div>
+              <input
+                type="text"
+                placeholder="Name"
+                value={draft.name}
+                onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
+                className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <input
+                type="text"
+                placeholder="Base URL (optional)"
+                value={draft.baseUrl}
+                onChange={(e) => setDraft((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <input
+                type="password"
+                placeholder="API Key (optional)"
+                value={draft.apiKey}
+                onChange={(e) => setDraft((prev) => ({ ...prev, apiKey: e.target.value }))}
+                className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <input
+                type="text"
+                placeholder="Models (comma-separated)"
+                value={draft.models}
+                onChange={(e) => setDraft((prev) => ({ ...prev, models: e.target.value }))}
+                className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    onUpdate(provider.id, {
+                      name: draft.name || provider.name,
+                      baseUrl: draft.baseUrl,
+                      apiKey: draft.apiKey,
+                      models: draft.models.split(',').map((model: string) => model.trim()).filter(Boolean),
+                    })
+                    setIsEditing(false)
+                  }}
+                  className="flex-1 px-3 py-2 bg-accent text-accent-foreground rounded-sm text-sm hover:bg-accent/90 transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setDraft({
+                      name: provider.name || '',
+                      baseUrl: provider.baseUrl || provider.base_url || '',
+                      apiKey: provider.apiKey || provider.api_key || '',
+                      models: modelsToText(provider.models),
+                    })
+                    setIsEditing(false)
+                  }}
+                  className="px-3 py-2 border border-border rounded-sm text-sm hover:bg-secondary transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
           {filteredModels.map((model: string) => (
             <button
               key={model}
@@ -111,12 +214,15 @@ export function ModelSelector() {
     setSelectedModel,
     setSelectedProvider,
     addProvider,
+    updateProvider,
     removeProvider,
   } = useSettingsStore()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [openProviders, setOpenProviders] = useState<Set<string>>(new Set())
   const [newProviderOpen, setNewProviderOpen] = useState(false)
+  const [isProbingProvider, setIsProbingProvider] = useState(false)
+  const [probeResult, setProbeResult] = useState<string | null>(null)
   const [newProvider, setNewProvider] = useState({
     id: '',
     name: '',
@@ -167,7 +273,41 @@ export function ModelSelector() {
         enabled: true,
       })
       setNewProviderOpen(false)
+      setProbeResult(null)
       setNewProvider({ id: '', name: '', type: 'openai', baseUrl: '', apiKey: '', models: '' })
+    }
+  }
+
+  const handleProbeProvider = async () => {
+    setIsProbingProvider(true)
+    setProbeResult(null)
+    try {
+      const response = await fetch('/api/providers/probe-models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: newProvider.type,
+          baseUrl: newProvider.baseUrl,
+          apiKey: newProvider.apiKey,
+        }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setProbeResult(data.error || 'Probe failed')
+        return
+      }
+
+      const models = Array.isArray(data.models) ? data.models : []
+      setNewProvider((prev) => ({
+        ...prev,
+        models: models.join(', '),
+      }))
+      setProbeResult(models.length > 0 ? `Found ${models.length} model${models.length === 1 ? '' : 's'}` : 'Connected, but no models were returned')
+    } catch (error: any) {
+      setProbeResult(error.message || 'Probe failed')
+    } finally {
+      setIsProbingProvider(false)
     }
   }
 
@@ -241,6 +381,7 @@ export function ModelSelector() {
               selectedModel={selectedModel}
               selectedProvider={selectedProvider}
               onSelect={handleSelect}
+              onUpdate={updateProvider}
               onRemove={removeProvider}
               searchQuery={searchQuery}
               isOpen={openProviders.has(provider.id) || !!searchQuery.trim()}
@@ -290,6 +431,7 @@ export function ModelSelector() {
                 <option value="openrouter">OpenRouter</option>
                 <option value="lmstudio">LM Studio</option>
                 <option value="nvidia">NVIDIA NIM</option>
+                <option value="opencode-go">Opencode Go</option>
                 <option value="openai-compatible">OpenAI Compatible</option>
               </select>
               <input
@@ -319,12 +461,24 @@ export function ModelSelector() {
                 }
                 className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
               />
-              <button
-                onClick={handleAddProvider}
-                className="w-full px-3 py-2 bg-accent text-accent-foreground rounded-sm text-sm hover:bg-accent/90 transition-colors"
-              >
-                Add Provider
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleProbeProvider}
+                  disabled={isProbingProvider}
+                  className="flex-1 px-3 py-2 border border-border rounded-sm text-sm hover:bg-secondary transition-colors disabled:opacity-50"
+                >
+                  {isProbingProvider ? 'Testing...' : 'Test Models Endpoint'}
+                </button>
+                <button
+                  onClick={handleAddProvider}
+                  className="flex-1 px-3 py-2 bg-accent text-accent-foreground rounded-sm text-sm hover:bg-accent/90 transition-colors"
+                >
+                  Add Provider
+                </button>
+              </div>
+              {probeResult && (
+                <p className="text-xs text-muted-foreground px-1">{probeResult}</p>
+              )}
             </div>
           )}
         </div>

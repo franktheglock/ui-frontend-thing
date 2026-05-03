@@ -104,6 +104,7 @@ export function useChat() {
     temperature,
     maxTokens,
     topP,
+    reasoningEffort,
     streamResponses,
     tools,
     defaultSearchProvider,
@@ -189,6 +190,7 @@ export function useChat() {
             temperature,
             maxTokens,
             topP,
+            reasoningEffort,
             stream: streamResponses,
             disabledTools: tools.filter(t => !t.enabled).map(t => t.name),
             sessionId: sessionId,
@@ -333,7 +335,7 @@ export function useChat() {
               toolResults: allToolResults.length > 0 ? [...allToolResults] : undefined,
               timeline: finalTimeline.length > 0 ? finalTimeline : undefined,
               responseId: finalResponseId,
-              generationInfo: { ...finalGenInfo, isGatheringCost: currentProvider === 'openrouter' && !finalGenInfo?.totalCost && !!finalResponseId },
+              generationInfo: { ...finalGenInfo, isGatheringCost: currentProvider === 'openrouter' && finalGenInfo?.totalCost === undefined && !!finalResponseId },
               timestamp: Date.now(),
               metadata: { active: true, model: currentModel, provider: currentProvider }
             }
@@ -427,7 +429,7 @@ export function useChat() {
       const lastFinalMsgId = lastMessage?.id
       const lastResponseId = lastMessage?.responseId
       
-      if (lastFinalMsgId && lastResponseId && selectedProvider === 'openrouter' && !lastFinalGenInfo?.totalCost) {
+      if (lastFinalMsgId && lastResponseId && selectedProvider === 'openrouter' && lastFinalGenInfo?.totalCost === undefined) {
         // Start background polling for cost
         (async () => {
           try {
@@ -453,7 +455,7 @@ export function useChat() {
         })()
       }
     }
-  }, [selectedModel, selectedProvider, systemPrompt, temperature, maxTokens, topP, streamResponses, tools, defaultSearchProvider, searchConfig, maxToolTurns, addMessage, startGenerating, stopGenerating, clearStreaming, appendStreamingContent, setStreamingContent, appendStreamingThinking, setActiveToolCalls, updateMessage])
+  }, [selectedModel, selectedProvider, systemPrompt, temperature, maxTokens, topP, reasoningEffort, streamResponses, tools, defaultSearchProvider, searchConfig, maxToolTurns, addMessage, startGenerating, stopGenerating, clearStreaming, appendStreamingContent, setStreamingContent, appendStreamingThinking, setActiveToolCalls, updateMessage])
 
   const sendMessage = useCallback(async (content: string, attachments?: Attachment[]) => {
     let sessionId = currentSessionId

@@ -188,15 +188,21 @@ router.get('/messages/:id/poll-cost', async (req, res) => {
       return res.status(400).json({ error: 'Invalid provider for cost polling' })
     }
 
+    const apiKey = providerInstance.apiKey || process.env.OPENROUTER_API_KEY
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Missing OpenRouter API key for cost polling' })
+    }
+
     // Single poll attempt
     const statsRes = await fetch(`https://openrouter.ai/api/v1/generation?id=${responseId}`, {
-      headers: { 'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}` }
+      headers: { 'Authorization': `Bearer ${apiKey}` }
     })
     
     if (statsRes.ok) {
       const stats = await statsRes.json() as any
-      const foundCost = stats.data?.total_cost
-      if (foundCost !== undefined && foundCost !== null) {
+      const rawCost = stats.data?.total_cost ?? stats.total_cost ?? stats.data?.cost ?? stats.cost
+      const foundCost = typeof rawCost === 'string' ? Number(rawCost) : rawCost
+      if (typeof foundCost === 'number' && Number.isFinite(foundCost)) {
         // Update DB
         const msg = await db.get('SELECT generation_info FROM messages WHERE id = ?', id)
         if (msg) {
@@ -240,6 +246,15 @@ function getCleanErrorMessage(error: any, provider: string): string {
       const jsonStart = message.indexOf('{')
       const jsonStr = message.substring(jsonStart)
       const parsed = JSON.parse(jsonStr)
+      const rawNested = parsed.error?.metadata?.raw
+      if (typeof rawNested === 'string') {
+        try {
+          const nestedParsed = JSON.parse(rawNested)
+          if (nestedParsed.error?.message) {
+            message = nestedParsed.error.message
+          }
+        } catch {}
+      }
       if (parsed.error?.message) {
         message = parsed.error.message
       }
@@ -255,7 +270,7 @@ function getCleanErrorMessage(error: any, provider: string): string {
 }
 
 router.post('/completions', async (req, res) => {
-    const { messages, model, provider, systemPrompt, temperature, maxTokens, topP, disabledTools, lastResponseId, sessionId } = req.body
+  const { messages, model, provider, systemPrompt, temperature, maxTokens, topP, reasoningEffort, disabledTools, lastResponseId, sessionId } = req.body
     
     console.log(`[chat] /completions - Request: { model: "${model}", provider: "${provider}", sessionId: "${sessionId}" }`)
 
@@ -327,6 +342,7 @@ router.post('/completions', async (req, res) => {
       temperature,
       maxTokens,
       topP,
+      reasoningEffort,
       tools: allTools.length > 0 ? allTools.map(t => ({ ...t, id: t.name })) : undefined,
       stream: true,
       lastResponseId,

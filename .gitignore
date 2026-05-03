@@ -17,6 +17,7 @@ data/
 uploads/
 tmp/
 output/
+workspace/
 
 # Python venv
 .venv/

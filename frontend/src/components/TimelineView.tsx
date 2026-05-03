@@ -144,18 +144,11 @@ function ToolCallDetails({ event, toolResult }: { event: TimelineEvent, toolResu
             {searchIcon} Query
           </span>
           <span className="font-mono text-foreground/90 bg-background/50 px-2 py-1 rounded-sm border border-border/50 break-words">
-            {query || (Object.keys(args).length > 0 ? JSON.stringify(args) : '...')}
+            {query || (Object.keys(args).length > 0 ? JSON.stringify(args) : (String(event.toolArgs) || '...'))}
           </span>
         </div>
       )}
 
-      {!toolResult ? (
-        <div className="text-[10px] text-muted-foreground italic px-2 flex items-center gap-1.5 pt-1">
-          <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-          Working...
-        </div>
-      ) : (
-        <>
       {(event.toolName === 'read_url' || event.toolName === 'read_browser_page') && targetUrl && (
         <div className="flex flex-col gap-1 text-xs">
           <span className="text-muted-foreground flex items-center gap-1">
@@ -166,17 +159,26 @@ function ToolCallDetails({ event, toolResult }: { event: TimelineEvent, toolResu
           </a>
         </div>
       )}
+
       {/* Show raw arguments for other tools or if query is missing for search */}
       {!(event.toolName === 'web_search' || event.toolName?.toLowerCase().includes('search')) && 
        !(event.toolName === 'read_url' || event.toolName === 'read_browser_page') && 
-       Object.keys(args).length > 0 && (
+       (Object.keys(args).length > 0 || String(event.toolArgs || '').length > 0) && (
         <div className="flex flex-col gap-1 text-xs">
           <span className="text-muted-foreground">Arguments</span>
           <div className="p-2 bg-background/50 border border-border/50 rounded-sm font-mono text-[11px] whitespace-pre-wrap break-all">
-            {JSON.stringify(args, null, 2)}
+            {Object.keys(args).length > 0 ? JSON.stringify(args, null, 2) : String(event.toolArgs || '')}
           </div>
         </div>
       )}
+
+      {!toolResult ? (
+        <div className="text-[10px] text-muted-foreground italic px-2 flex items-center gap-1.5 pt-1">
+          <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+          Working...
+        </div>
+      ) : (
+        <>
       {urls.length > 0 && (
         <div className="flex flex-col gap-2">
           <span className="text-xs text-muted-foreground">Sources</span>

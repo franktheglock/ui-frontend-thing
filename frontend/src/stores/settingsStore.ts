@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware'
 export interface ProviderConfig {
   id: string
   name: string
-  type: 'openai' | 'anthropic' | 'ollama' | 'gemini' | 'openrouter' | 'lmstudio' | 'nvidia' | 'openai-compatible' | 'custom'
+  type: 'openai' | 'anthropic' | 'ollama' | 'gemini' | 'openrouter' | 'lmstudio' | 'nvidia' | 'opencode-go' | 'openai-compatible' | 'custom'
   baseUrl?: string
   apiKey?: string
   models: string[]
@@ -18,6 +18,8 @@ export interface ToolConfig {
   config: Record<string, string>
 }
 
+export type ReasoningEffort = 'auto' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
 export interface SettingsState {
   theme: 'dark' | 'light' | 'system' | 'midnight' | 'emerald' | 'rose' | 'violet' | 'sunset'
   sidebarOpen: boolean
@@ -29,6 +31,7 @@ export interface SettingsState {
   maxTokens: number
   temperature: number
   topP: number
+  reasoningEffort: ReasoningEffort
   streamResponses: boolean
   showThinking: boolean
   showGenerationInfo: boolean
@@ -56,6 +59,7 @@ export interface SettingsState {
   setMaxTokens: (tokens: number) => void
   setTemperature: (temp: number) => void
   setTopP: (topP: number) => void
+  setReasoningEffort: (effort: ReasoningEffort) => void
   setStreamResponses: (stream: boolean) => void
   setShowThinking: (show: boolean) => void
   setShowGenerationInfo: (show: boolean) => void
@@ -81,6 +85,7 @@ export const useSettingsStore = create<SettingsState>()(
       maxTokens: 131072,
       temperature: 0.7,
       topP: 1,
+      reasoningEffort: 'auto',
       streamResponses: true,
       showThinking: true,
       showGenerationInfo: true,
@@ -145,6 +150,7 @@ export const useSettingsStore = create<SettingsState>()(
       setMaxTokens: (maxTokens) => set({ maxTokens }),
       setTemperature: (temperature) => set({ temperature }),
       setTopP: (topP) => set({ topP }),
+      setReasoningEffort: (reasoningEffort) => set({ reasoningEffort }),
       setStreamResponses: (streamResponses) => set({ streamResponses }),
       setShowThinking: (showThinking) => set({ showThinking }),
       setShowGenerationInfo: (showGenerationInfo) => set({ showGenerationInfo }),
