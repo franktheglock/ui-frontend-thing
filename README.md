@@ -4,14 +4,7 @@ A powerful, extensible, and beautiful web frontend for LLMs. Built for power use
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-## Screenshots
-
-<p align="center">
-  <img src="images for readme/ckR1VD8CJj.png" width="49%">
-  <img src="images for readme/rCfFWR28N8.png" width="49%">
-  <img src="images for readme/sGv6l2nNe6.png" width="49%">
-  <img src="images for readme/wLHsEDjmhg.png" width="49%">
-</p>
+![AI Chat UI - Main Interface](images\ for\ readme/rCfFWR28N8.png)
 
 ## Features
 
@@ -19,10 +12,16 @@ A powerful, extensible, and beautiful web frontend for LLMs. Built for power use
 - **Streaming Responses**: Real-time token streaming with generation statistics
 - **Thinking/Reasoning Display**: Collapsible reasoning blocks for supported models
 - **Web Search**: DuckDuckGo, SearxNG, Brave Search, and Google PSE integrations with inline citations
+
+![Web Search Capabilities](images\ for\ readme/sGv6l2nNe6.png)
+
 - **Read URL Tool**: Fetch and extract content from any URL
 - **Python & Terminal Tools**: Execute code and shell commands directly with configurable timeouts
 - **File & Image Uploads**: Drag-and-drop support with image preview
 - **Code Artifacts**: Interactive code blocks with preview, sidebar view, and new window support
+
+![Interactive Code Artifacts & UI Execution](images\ for\ readme/ckR1VD8CJj.png)
+
 - **Extensible Tool System**: Easy-to-add tools and MCP servers
 - **Skills System**: Create, search, and load skills that inject specialized knowledge into conversations
 - **Skills.sh Integration**: Browse, search, and install skills from the skills.sh catalog **(BROKEN ATM)**
@@ -94,6 +93,8 @@ npm run dev
 ## Configuration
 
 Copy `.env.example` to `.env` and configure your API keys:
+
+![Settings and Provider Configuration](images\ for\ readme/wLHsEDjmhg.png)
 
 ```env
 # LLM Provider API Keys
