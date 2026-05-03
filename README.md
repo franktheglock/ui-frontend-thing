@@ -4,7 +4,7 @@ A powerful, extensible, and beautiful web frontend for LLMs. Built for power use
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-![AI Chat UI - Main Interface](docs/readme-images/rCfFWR28N8.png)
+![AI Chat UI - Main Interface](docs/readme-images/ckR1VD8CJj.png)
 
 ## Features
 
@@ -13,16 +13,16 @@ A powerful, extensible, and beautiful web frontend for LLMs. Built for power use
 - **Thinking/Reasoning Display**: Collapsible reasoning blocks for supported models
 - **Web Search**: DuckDuckGo, SearxNG, Brave Search, and Google PSE integrations with inline citations
 
-![Web Search Capabilities](docs/readme-images/sGv6l2nNe6.png)
-
 - **Read URL Tool**: Fetch and extract content from any URL
 - **Python & Terminal Tools**: Execute code and shell commands directly with configurable timeouts
 - **File & Image Uploads**: Drag-and-drop support with image preview
 - **Code Artifacts**: Interactive code blocks with preview, sidebar view, and new window support
 
-![Interactive Code Artifacts & UI Execution](docs/readme-images/ckR1VD8CJj.png)
+![Interactive Code Artifacts & UI Execution](docs/readme-images/wLHsEDjmhg.png)
 
 - **Extensible Tool System**: Easy-to-add tools and MCP servers
+
+![Tools & MCP Configuration](docs/readme-images/rCfFWR28N8.png)
 - **Skills System**: Create, search, and load skills that inject specialized knowledge into conversations
 - **Skills.sh Integration**: Browse, search, and install skills from the skills.sh catalog **(BROKEN ATM)**
 - **Slash Commands**: `/skill`, `/model` commands with autocomplete and keyboard navigation
@@ -94,7 +94,7 @@ npm run dev
 
 Copy `.env.example` to `.env` and configure your API keys:
 
-![Settings and Provider Configuration](docs/readme-images/wLHsEDjmhg.png)
+![Settings and Provider Configuration](docs/readme-images/sGv6l2nNe6.png)
 
 ```env
 # LLM Provider API Keys
