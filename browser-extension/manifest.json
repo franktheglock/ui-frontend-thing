@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "AI Chat UI Tab Bridge",
+  "version": "0.1.0",
+  "description": "Lets AI Chat UI import browser tabs as message context.",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:5183/*",
+        "http://127.0.0.1:5183/*"
+      ],
+      "js": [
+        "content-script.js"
+      ],
+      "run_at": "document_start"
+    }
+  ]
+}

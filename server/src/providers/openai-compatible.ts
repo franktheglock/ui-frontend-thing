@@ -15,13 +15,21 @@ export class OpenAICompatibleProvider extends BaseProvider {
     this.baseUrl = url
   }
 
+  protected getRequestHeaders(): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {}),
+    }
+  }
+
+  protected getModelRequestHeaders(): Record<string, string> {
+    return this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {}
+  }
+
   async *chatCompletion(options: CompletionOptions): AsyncGenerator<CompletionChunk> {
     const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {}),
-      },
+      headers: this.getRequestHeaders(),
       body: JSON.stringify({
         model: options.model,
         messages: this.formatMessages(options.messages),
@@ -130,6 +138,10 @@ export class OpenAICompatibleProvider extends BaseProvider {
         content: m.content || '',
       }
 
+      if (m.role === 'assistant' && m.thinking) {
+        base.reasoning_content = m.thinking
+      }
+
       if (m.attachments && m.attachments.length > 0) {
         base.content = [
           { type: 'text', text: m.content || '' },
@@ -180,7 +192,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
   async fetchModels(): Promise<string[]> {
     try {
       const response = await fetch(`${this.baseUrl}/v1/models`, {
-        headers: this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {},
+        headers: this.getModelRequestHeaders(),
       })
       if (!response.ok) throw new Error('Failed to fetch models')
       const data = await response.json() as any

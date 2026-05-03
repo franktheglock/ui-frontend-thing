@@ -11,6 +11,8 @@ export class OpenAIProvider extends BaseProvider {
   }
 
   async *chatCompletion(options: CompletionOptions): AsyncGenerator<CompletionChunk> {
+    const reasoningEffort = this.getOpenAIReasoningEffort(options.reasoningEffort)
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -23,6 +25,7 @@ export class OpenAIProvider extends BaseProvider {
         temperature: options.temperature,
         max_tokens: options.maxTokens || undefined,
         top_p: options.topP,
+        reasoning_effort: reasoningEffort,
         tools: options.tools?.map(t => ({
           type: 'function',
           function: {

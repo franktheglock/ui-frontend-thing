@@ -13,6 +13,7 @@ export class AnthropicProvider extends BaseProvider {
   async *chatCompletion(options: CompletionOptions): AsyncGenerator<CompletionChunk> {
     const systemMessage = options.messages.find(m => m.role === 'system')
     const userMessages = options.messages.filter(m => m.role !== 'system')
+    const reasoningEffort = this.getAnthropicReasoningEffort(options.reasoningEffort)
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -63,6 +64,7 @@ export class AnthropicProvider extends BaseProvider {
           description: t.description,
           input_schema: t.parameters,
         })),
+        output_config: reasoningEffort ? { effort: reasoningEffort } : undefined,
         stream: true,
       }),
     })

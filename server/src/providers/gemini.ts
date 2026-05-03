@@ -6,6 +6,30 @@ export class GeminiProvider extends BaseProvider {
   name = 'Google Gemini'
   type = 'gemini'
 
+  private getThinkingConfig(model: string, effort?: CompletionOptions['reasoningEffort']) {
+    if (!effort || effort === 'auto') return undefined
+
+    const normalizedModel = model.toLowerCase()
+
+    if (normalizedModel.includes('gemini-3')) {
+      if (effort === 'max' || effort === 'xhigh') return { thinkingLevel: 'high' }
+      if (effort === 'none') return { thinkingLevel: 'minimal' }
+      if (effort === 'minimal' || effort === 'low' || effort === 'medium' || effort === 'high') {
+        return { thinkingLevel: effort }
+      }
+      return undefined
+    }
+
+    if (normalizedModel.includes('gemini-2.5')) {
+      if (effort === 'none') return { thinkingBudget: 0 }
+      if (effort === 'minimal' || effort === 'low') return { thinkingBudget: 1024 }
+      if (effort === 'medium') return { thinkingBudget: 8192 }
+      if (effort === 'high' || effort === 'xhigh' || effort === 'max') return { thinkingBudget: 24576 }
+    }
+
+    return undefined
+  }
+
   constructor(config: { apiKey?: string }) {
     super({ apiKey: config.apiKey || process.env.GEMINI_API_KEY })
   }
@@ -13,6 +37,7 @@ export class GeminiProvider extends BaseProvider {
   async *chatCompletion(options: CompletionOptions): AsyncGenerator<CompletionChunk> {
     const systemMessage = options.messages.find(m => m.role === 'system')
     const userMessages = options.messages.filter(m => m.role !== 'system')
+    const thinkingConfig = this.getThinkingConfig(options.model, options.reasoningEffort)
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${options.model}:streamGenerateContent?alt=sse&key=${this.apiKey}`,
@@ -53,6 +78,7 @@ export class GeminiProvider extends BaseProvider {
             temperature: options.temperature,
             maxOutputTokens: options.maxTokens || undefined,
             topP: options.topP,
+            thinkingConfig,
           },
           tools: options.tools?.map(t => ({
             functionDeclarations: [{

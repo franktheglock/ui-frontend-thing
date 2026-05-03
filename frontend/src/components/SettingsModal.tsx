@@ -7,6 +7,34 @@ import { cn } from '../lib/utils'
 
 type SettingsTab = 'general' | 'providers' | 'tools' | 'skills'
 
+const reasoningEffortOptions = [
+  { value: 'auto', label: 'Provider default' },
+  { value: 'none', label: 'None' },
+  { value: 'minimal', label: 'Minimal' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'xhigh', label: 'X-High' },
+  { value: 'max', label: 'Max' },
+] as const
+
+function getReasoningEffortHint(providerId: string) {
+  switch (providerId) {
+    case 'openai':
+    case 'openrouter':
+    case 'openai-compatible':
+    case 'nvidia':
+    case 'lmstudio':
+      return 'OpenAI-style providers use the nearest supported reasoning effort level.'
+    case 'anthropic':
+      return 'Anthropic maps this to Claude effort. Unsupported lower levels are rounded up.'
+    case 'gemini':
+      return 'Gemini maps this to thinking level on Gemini 3 and thinking budget on Gemini 2.5.'
+    default:
+      return 'Applied only when the selected provider supports reasoning controls.'
+  }
+}
+
 function LocalInput({ value, onChange, ...props }: any) {
   const [localValue, setLocalValue] = useState(value)
   React.useEffect(() => { setLocalValue(value) }, [value])
@@ -40,6 +68,8 @@ export function SettingsModal() {
     temperature,
     maxTokens,
     topP,
+    selectedProvider,
+    reasoningEffort,
     streamResponses,
     showThinking,
     showGenerationInfo,
@@ -52,6 +82,7 @@ export function SettingsModal() {
     setTemperature,
     setMaxTokens,
     setTopP,
+    setReasoningEffort,
     setStreamResponses,
     setShowThinking,
     setShowGenerationInfo,
@@ -293,6 +324,24 @@ export function SettingsModal() {
                       onChange={(val: string) => setTopP(parseFloat(val))}
                       className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                     />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Reasoning Effort</label>
+                    <select
+                      value={reasoningEffort}
+                      onChange={(e) => setReasoningEffort(e.target.value as any)}
+                      className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      {reasoningEffortOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground">
+                      {getReasoningEffortHint(selectedProvider)}
+                    </p>
                   </div>
 
                   <div className="space-y-3">

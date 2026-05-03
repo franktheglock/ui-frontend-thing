@@ -1,21 +1,91 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Send, Plus, X, Loader2, Mic, Zap } from 'lucide-react'
-import { useChatStore } from '../stores/chatStore'
+import { Send, Plus, X, Loader2, Mic, Globe2 } from 'lucide-react'
+import { Attachment, useChatStore } from '../stores/chatStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { useChat } from '../hooks/useChat'
 import { cn } from '../lib/utils'
 import { getProviderIcon } from '../lib/providerIcons'
+import { SiteFavicon } from './SiteFavicon'
 
-function FilePreview({ file, onRemove }: { file: File, onRemove: () => void }) {
+interface PendingLocalAttachment {
+  id: string
+  kind: 'local-file'
+  file: File
+}
+
+interface PendingServerAttachment {
+  id: string
+  kind: 'server-attachment'
+  attachment: Attachment
+}
+
+type PendingComposerAttachment = PendingLocalAttachment | PendingServerAttachment
+
+interface BrowserTabSummary {
+  id: number
+  title: string
+  url: string
+}
+
+interface BrowserTabSnapshot {
+  title: string
+  url: string
+  text?: string
+  selection?: string
+}
+
+interface PendingExtensionRequest {
+  resolve: (value: any) => void
+  reject: (reason?: unknown) => void
+  timeoutId: number
+}
+
+const reasoningEffortOptions = [
+  { value: 'auto', label: 'Provider default', compactLabel: 'Auto' },
+  { value: 'none', label: 'None', compactLabel: 'None' },
+  { value: 'minimal', label: 'Minimal', compactLabel: 'Minimal' },
+  { value: 'low', label: 'Low', compactLabel: 'Low' },
+  { value: 'medium', label: 'Medium', compactLabel: 'Medium' },
+  { value: 'high', label: 'High', compactLabel: 'High' },
+  { value: 'xhigh', label: 'X-High', compactLabel: 'X-High' },
+  { value: 'max', label: 'Max', compactLabel: 'Max' },
+] as const
+
+function generateClientId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function getAttachmentName(item: PendingComposerAttachment) {
+  return item.kind === 'local-file' ? item.file.name : item.attachment.name
+}
+
+function getUrlHost(value: string) {
+  try {
+    return new URL(value).hostname.replace(/^www\./, '')
+  } catch {
+    return value
+  }
+}
+
+function ComposerAttachmentPreview({ item, onRemove }: { item: PendingComposerAttachment, onRemove: () => void }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const file = item.kind === 'local-file' ? item.file : null
+  const browserTabUrl = item.kind === 'server-attachment' && item.attachment.mimeType === 'text/markdown'
+    ? item.attachment.sourceUrl
+    : undefined
+  const name = getAttachmentName(item)
 
   useEffect(() => {
-    if (file.type.startsWith('image/')) {
+    if (file?.type.startsWith('image/')) {
       const url = URL.createObjectURL(file)
       setPreviewUrl(url)
       return () => URL.revokeObjectURL(url)
     }
+    setPreviewUrl(null)
   }, [file])
 
   return (
@@ -23,7 +93,8 @@ function FilePreview({ file, onRemove }: { file: File, onRemove: () => void }) {
       {previewUrl && (
         <img src={previewUrl} alt="preview" className="w-6 h-6 object-cover rounded-sm border border-border" />
       )}
-      <span className="truncate max-w-[150px]">{file.name}</span>
+      {!previewUrl && browserTabUrl && <SiteFavicon sourceUrl={browserTabUrl} className="w-4 h-4 rounded-sm flex-shrink-0" />}
+      <span className="truncate max-w-[180px]">{name}</span>
       <button
         onClick={onRemove}
         className="hover:text-destructive text-muted-foreground transition-colors flex-shrink-0"
@@ -43,16 +114,33 @@ interface SlashItem {
 
 export function MessageInput({ isLanding }: { isLanding?: boolean }) {
   const [input, setInput] = useState('')
-  const [files, setFiles] = useState<File[]>([])
+  const [pendingAttachments, setPendingAttachments] = useState<PendingComposerAttachment[]>([])
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [isListening, setIsListening] = useState(false)
   const [availableSkills, setAvailableSkills] = useState<any[]>([])
   const [slashMenuOpen, setSlashMenuOpen] = useState(false)
   const [slashMenuIndex, setSlashMenuIndex] = useState(0)
+  const [browserTabs, setBrowserTabs] = useState<BrowserTabSummary[]>([])
+  const [tabSearch, setTabSearch] = useState('')
+  const [tabPickerOpen, setTabPickerOpen] = useState(false)
+  const [isLoadingTabs, setIsLoadingTabs] = useState(false)
+  const [importingTabId, setImportingTabId] = useState<number | null>(null)
+  const [extensionReady, setExtensionReady] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const recognitionRef = useRef<any>(null)
+  const inputRef = useRef('')
+  const shouldKeepListeningRef = useRef(false)
+  const recognitionErrorRef = useRef<string | null>(null)
+  const micStreamRef = useRef<MediaStream | null>(null)
+  const dictationBaseRef = useRef('')
   const containerRef = useRef<HTMLDivElement>(null)
+  const extensionRequestsRef = useRef<Map<string, PendingExtensionRequest>>(new Map())
+
+  useEffect(() => {
+    inputRef.current = input
+  }, [input])
 
   // Load available skills
   useEffect(() => {
@@ -67,19 +155,94 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     function handleClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setSlashMenuOpen(false)
+        setAttachmentMenuOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  useEffect(() => {
+    function handleExtensionMessage(event: MessageEvent) {
+      if (event.source !== window) return
+      const data = event.data
+      if (!data || data.source !== 'ai-chat-ui-extension') return
+
+       if (data.type === 'READY' || data.type === 'PONG') {
+        setExtensionReady(true)
+      }
+
+      const requestId = typeof data.requestId === 'string' ? data.requestId : null
+      if (!requestId) return
+
+      const pending = extensionRequestsRef.current.get(requestId)
+      if (!pending) return
+
+      window.clearTimeout(pending.timeoutId)
+      extensionRequestsRef.current.delete(requestId)
+
+      if (data.error) {
+        pending.reject(new Error(String(data.error)))
+        return
+      }
+
+      pending.resolve(data.payload)
+    }
+
+    window.addEventListener('message', handleExtensionMessage)
+    return () => {
+      window.removeEventListener('message', handleExtensionMessage)
+      extensionRequestsRef.current.forEach((pending) => {
+        window.clearTimeout(pending.timeoutId)
+        pending.reject(new Error('Browser tab request cancelled'))
+      })
+      extensionRequestsRef.current.clear()
+    }
+  }, [])
+
+  useEffect(() => {
+    const requestId = generateClientId()
+    window.postMessage({ source: 'ai-chat-ui', type: 'PING', requestId, payload: {} }, '*')
+  }, [])
+
   const { currentSessionId, streaming, sessions } = useChatStore()
   const isCurrentGenerating = currentSessionId ? streaming[currentSessionId]?.isGenerating ?? false : false
   const currentSession = sessions.find(s => s.id === currentSessionId)
   const activeSkill = currentSession?.activeSkill
-  const { selectedModel, selectedProvider, providers } = useSettingsStore()
+  const {
+    selectedModel,
+    selectedProvider,
+    providers,
+    reasoningEffort,
+    setReasoningEffort,
+  } = useSettingsStore()
   const { setModelSelectorOpen } = useUIStore()
   const { sendMessage } = useChat()
+
+  const reasoningEffortIndex = useMemo(
+    () => Math.max(0, reasoningEffortOptions.findIndex((option) => option.value === reasoningEffort)),
+    [reasoningEffort]
+  )
+
+  const requestExtension = useCallback((type: string, payload?: Record<string, unknown>) => {
+    return new Promise<any>((resolve, reject) => {
+      const requestId = generateClientId()
+      const timeoutId = window.setTimeout(() => {
+        extensionRequestsRef.current.delete(requestId)
+        reject(new Error(extensionReady
+          ? 'Browser extension bridge did not respond. Reload the extension and the app tab, then try again.'
+          : 'Browser extension not detected in this tab. Reload the extension and refresh the app tab to import tabs.'))
+      }, 5000)
+
+      extensionRequestsRef.current.set(requestId, { resolve, reject, timeoutId })
+      window.postMessage({
+        source: 'ai-chat-ui',
+        type,
+        requestId,
+        payload: payload || {},
+      }, '*')
+    })
+  }, [extensionReady])
 
   const sessionStats = useMemo(() => {
     if (!currentSession) return { cost: 0, input: 0, output: 0, total: 0, isGathering: false }
@@ -107,6 +270,18 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
 
     return stats
   }, [currentSession, currentSessionId, streaming])
+
+  const filteredBrowserTabs = useMemo(() => {
+    const query = tabSearch.trim().toLowerCase()
+    if (!query) return browserTabs
+
+    return browserTabs.filter((tab) => {
+      const title = (tab.title || '').toLowerCase()
+      const url = (tab.url || '').toLowerCase()
+      const hostname = getUrlHost(tab.url).toLowerCase()
+      return title.includes(query) || url.includes(query) || hostname.includes(query)
+    })
+  }, [browserTabs, tabSearch])
 
   const slashMenuItems = useMemo(() => {
     if (!input.startsWith('/')) {
@@ -221,19 +396,23 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     }
 
     const recognition = new SpeechRecognition()
-    recognition.continuous = true
+    recognition.continuous = false
     recognition.interimResults = true
-    recognition.lang = 'en-US'
+    recognition.lang = navigator.language || 'en-US'
+    recognition.maxAlternatives = 1
 
     recognition.onstart = () => {
       console.log('Speech recognition started')
+      recognitionErrorRef.current = null
+      dictationBaseRef.current = inputRef.current.replace(/\s*\.\.\.$/, '').trim()
       setIsListening(true)
     }
 
     recognition.onresult = (event: any) => {
       let finalTranscript = ''
       let interimTranscript = ''
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+
+      for (let i = 0; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript
         if (event.results[i].isFinal) {
           finalTranscript += transcript
@@ -243,30 +422,51 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
       }
       
       if (finalTranscript || interimTranscript) {
-        setInput(prev => {
-          const base = prev.replace(/\s*\.\.\.$/, '')
-          if (finalTranscript) {
-            return (base + ' ' + finalTranscript).trim()
-          }
-          return (base + ' ' + interimTranscript).trim() + '...'
-        })
+        const dictatedText = `${finalTranscript}${interimTranscript}`.trim()
+        const base = dictationBaseRef.current
+        const nextValue = dictatedText
+          ? `${base} ${dictatedText}`.trim()
+          : base
+
+        setInput(interimTranscript ? `${nextValue}...` : nextValue)
       }
     }
 
     recognition.onerror = (event: any) => {
       console.error('Speech recognition error:', event.error)
+      recognitionErrorRef.current = event.error || 'unknown'
       if (event.error === 'not-allowed') {
         alert('Microphone access denied. Please check your browser permissions.')
+      } else if (event.error === 'network') {
+        shouldKeepListeningRef.current = false
+        alert('Voice input could not reach the browser speech service. Check your browser network access, then try again.')
       }
       setIsListening(false)
     }
 
     recognition.onend = () => {
       console.log('Speech recognition ended')
+      const shouldRestart = shouldKeepListeningRef.current && !recognitionErrorRef.current
+      if (shouldRestart) {
+        try {
+          dictationBaseRef.current = inputRef.current.replace(/\s*\.\.\.$/, '').trim()
+          recognition.start()
+          return
+        } catch (err) {
+          console.error('Failed to restart recognition:', err)
+        }
+      }
       setIsListening(false)
     }
 
     recognitionRef.current = recognition
+
+    return () => {
+      shouldKeepListeningRef.current = false
+      micStreamRef.current?.getTracks().forEach(track => track.stop())
+      micStreamRef.current = null
+      recognition.stop()
+    }
   }, [])
 
   const toggleListening = useCallback(() => {
@@ -275,34 +475,102 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
       return
     }
     if (isListening) {
+      shouldKeepListeningRef.current = false
       recognitionRef.current.stop()
     } else {
       setInput(prev => prev.replace(/\s*\.\.\.$/, ''))
-      try {
-        recognitionRef.current.start()
-      } catch (err) {
-        console.error('Failed to start recognition:', err)
-        // If it's already started, just sync the state
-        setIsListening(true)
-      }
+      shouldKeepListeningRef.current = true
+      recognitionErrorRef.current = null
+
+      ;(async () => {
+        try {
+          if (!micStreamRef.current) {
+            micStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true })
+          }
+          recognitionRef.current.start()
+        } catch (err: any) {
+          shouldKeepListeningRef.current = false
+          console.error('Failed to start recognition:', err)
+          const message = err?.name === 'NotAllowedError'
+            ? 'Microphone access denied. Please check your browser permissions.'
+            : 'Voice input could not start. Check microphone permissions and browser speech support, then try again.'
+          alert(message)
+          setIsListening(false)
+        }
+      })()
     }
   }, [isListening])
+
+  const openTabPicker = useCallback(async () => {
+    setIsLoadingTabs(true)
+    try {
+      const tabs = await requestExtension('LIST_TABS') as BrowserTabSummary[]
+      const visibleTabs = (Array.isArray(tabs) ? tabs : []).filter(tab => tab.url !== window.location.href)
+      setBrowserTabs(visibleTabs)
+      setTabSearch('')
+      setAttachmentMenuOpen(false)
+      setTabPickerOpen(true)
+    } catch (error) {
+      console.error('Tab listing error:', error)
+      alert(error instanceof Error ? error.message : 'Failed to fetch browser tabs.')
+    } finally {
+      setIsLoadingTabs(false)
+    }
+  }, [requestExtension])
+
+  const importBrowserTab = useCallback(async (tabId: number) => {
+    setImportingTabId(tabId)
+    try {
+      const snapshot = await requestExtension('CAPTURE_TAB', { tabId }) as BrowserTabSnapshot
+      const response = await fetch('/api/upload/browser-tab', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snapshot),
+      })
+
+      if (!response.ok) {
+        const message = await response.text()
+        throw new Error(message || 'Failed to store browser tab context.')
+      }
+
+      const data = await response.json()
+      const attachments = Array.isArray(data.attachments) ? data.attachments as Attachment[] : []
+      setPendingAttachments(prev => [
+        ...prev,
+        ...attachments.map(attachment => ({
+          id: attachment.id,
+          kind: 'server-attachment' as const,
+          attachment,
+        })),
+      ])
+      setTabPickerOpen(false)
+    } catch (error) {
+      console.error('Tab import error:', error)
+      alert(error instanceof Error ? error.message : 'Failed to import browser tab.')
+    } finally {
+      setImportingTabId(null)
+    }
+  }, [requestExtension])
 
   // --------------------------------------------------------------------------
   // Message sending
   // --------------------------------------------------------------------------
   const handleSubmit = useCallback(async (overrideContent?: string) => {
     const content = (overrideContent || input).trim()
-    if (!content && files.length === 0) return
+    if (!content && pendingAttachments.length === 0) return
     if (isCurrentGenerating) return
 
     setSlashMenuOpen(false)
-    let attachments: any[] = []
+    const localFiles = pendingAttachments.filter((item): item is PendingLocalAttachment => item.kind === 'local-file')
+    const existingAttachments = pendingAttachments
+      .filter((item): item is PendingServerAttachment => item.kind === 'server-attachment')
+      .map(item => item.attachment)
+    let attachments: Attachment[] = [...existingAttachments]
 
-    if (files.length > 0) {
+    if (localFiles.length > 0) {
       setIsUploading(true)
       const formData = new FormData()
-      files.forEach(file => formData.append('files', file))
+      localFiles.forEach(item => formData.append('files', item.file))
 
       try {
         const response = await fetch('/api/upload', {
@@ -310,7 +578,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
           body: formData,
         })
         const data = await response.json()
-        attachments = data.attachments
+        attachments = [...attachments, ...(Array.isArray(data.attachments) ? data.attachments : [])]
       } catch (error) {
         console.error('Upload error:', error)
       } finally {
@@ -319,13 +587,14 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     }
 
     setInput('')
-    setFiles([])
+    setPendingAttachments([])
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
+      textareaRef.current.focus()
     }
 
     await sendMessage(content, attachments)
-  }, [input, files, isCurrentGenerating, currentSessionId, sendMessage])
+  }, [input, pendingAttachments, isCurrentGenerating, sendMessage])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!slashMenuOpen) {
@@ -374,7 +643,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
 
   const handlePaste = (e: React.ClipboardEvent) => {
     if (e.clipboardData && e.clipboardData.items) {
-      const pastedFiles: File[] = []
+      const pastedFiles: PendingLocalAttachment[] = []
       for (let i = 0; i < e.clipboardData.items.length; i++) {
         const item = e.clipboardData.items[i]
         if (item.type.startsWith('image/')) {
@@ -382,23 +651,31 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
           if (file) {
             const ext = item.type.split('/')[1] || 'png'
             const newFile = new File([file], `pasted-image-${Date.now()}-${i}.${ext}`, { type: file.type })
-            pastedFiles.push(newFile)
+            pastedFiles.push({ id: generateClientId(), kind: 'local-file', file: newFile })
           }
         }
       }
       if (pastedFiles.length > 0) {
-        setFiles(prev => [...prev, ...pastedFiles])
+        setPendingAttachments(prev => [...prev, ...pastedFiles])
       }
     }
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setFiles(Array.from(e.target.files))
+      setPendingAttachments(prev => [
+        ...prev,
+        ...Array.from(e.target.files || []).map(file => ({
+          id: generateClientId(),
+          kind: 'local-file' as const,
+          file,
+        })),
+      ])
+      e.target.value = ''
     }
   }
 
-  const canSubmit = !isCurrentGenerating && !isUploading && (input.trim() || files.length > 0)
+  const canSubmit = !isCurrentGenerating && !isUploading && (input.trim() || pendingAttachments.length > 0)
 
   // Model display name (truncate if too long)
   const modelName = selectedModel
@@ -423,13 +700,67 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
             </button>
           </div>
         )}
-        {files.length > 0 && (
+        {tabPickerOpen && (
+          <div className="border border-border bg-card/95 backdrop-blur-sm rounded-xl shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-border/60">
+              <div>
+                <p className="text-sm font-medium">Add Browser Tab</p>
+                <p className="text-xs text-muted-foreground">Choose a tab to snapshot into chat context.</p>
+              </div>
+              <button
+                onClick={() => {
+                  setTabPickerOpen(false)
+                  setTabSearch('')
+                }}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-3 py-2 border-b border-border/60">
+              <input
+                value={tabSearch}
+                onChange={(e) => setTabSearch(e.target.value)}
+                placeholder="Search tabs by title or URL"
+                className="w-full px-3 py-2 bg-secondary/50 border border-border rounded-lg text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:border-accent/40"
+              />
+            </div>
+            <div className="max-h-64 overflow-y-auto p-2 space-y-1">
+              {filteredBrowserTabs.length > 0 ? filteredBrowserTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => importBrowserTab(tab.id)}
+                  disabled={importingTabId !== null}
+                  className="w-full text-left px-3 py-2 rounded-lg border border-transparent hover:border-border hover:bg-secondary/60 transition-colors disabled:opacity-60"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex items-center gap-2">
+                      <SiteFavicon sourceUrl={tab.url} className="w-4 h-4 rounded-sm flex-shrink-0" />
+                      <div className="min-w-0">
+                      <p className="text-sm truncate">{tab.title || 'Untitled tab'}</p>
+                      <p className="text-xs text-muted-foreground truncate">{getUrlHost(tab.url)}</p>
+                      </div>
+                    </div>
+                    {importingTabId === tab.id ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" /> : <Globe2 className="w-4 h-4 text-accent flex-shrink-0" />}
+                  </div>
+                </button>
+              )) : (
+                <div className="px-3 py-4 text-sm text-muted-foreground">
+                  {browserTabs.length > 0
+                    ? 'No tabs match that search.'
+                    : 'No importable tabs found. Open another tab, or install the companion extension if it is missing.'}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {pendingAttachments.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {files.map((file, index) => (
-              <FilePreview
-                key={index}
-                file={file}
-                onRemove={() => setFiles(files.filter((_, i) => i !== index))}
+            {pendingAttachments.map((item) => (
+              <ComposerAttachmentPreview
+                key={item.id}
+                item={item}
+                onRemove={() => setPendingAttachments(prev => prev.filter((attachment) => attachment.id !== item.id))}
               />
             ))}
           </div>
@@ -437,6 +768,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
 
         {/* Floating input bar */}
         <div
+          ref={containerRef}
           className={cn(
             "flex flex-col gap-1.5",
             "bg-card/80 backdrop-blur-xl",
@@ -449,7 +781,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
           )}
         >
           {/* Top row: textarea with slash menu */}
-          <div ref={containerRef} className="flex items-end gap-1.5 relative">
+          <div className="flex items-end gap-1.5 relative">
             <textarea
               ref={textareaRef}
               value={input}
@@ -459,7 +791,6 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
               onPaste={handlePaste}
               placeholder="Ask anything (type / for commands)"
               className="flex-1 px-1.5 py-1 bg-transparent text-sm placeholder:text-muted-foreground/60 focus:outline-none resize-none min-h-[28px] leading-normal"
-              disabled={isCurrentGenerating || isUploading}
             />
             {slashMenuOpen && slashMenuItems.length > 0 && (
               <div className="absolute bottom-full left-0 right-0 mb-1.5 bg-popover border border-border rounded-none shadow-2xl max-h-[240px] overflow-y-auto z-[9999]">
@@ -501,7 +832,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                       <>
                         {(() => {
                           const Icon = getProviderIcon(item.value.split(' ')[1])
-                          return <Icon size={14} className="flex-shrink-0 opacity-60" />
+                          return <Icon size={16} className="flex-shrink-0 opacity-60" />
                         })()}
                         <span className="flex-1 truncate">{item.label}</span>
                         <span className="text-[10px] text-muted-foreground">{item.meta}</span>
@@ -519,12 +850,86 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
           <div className="flex items-center justify-between pt-1">
             <div className="flex items-center gap-2">
               {/* File upload */}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-accent/5"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setAttachmentMenuOpen(prev => !prev)}
+                  className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-accent/5"
+                  title="Add attachment or browser context"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+
+                {attachmentMenuOpen && (
+                  <div className="absolute bottom-full left-0 mb-2 w-72 max-w-[calc(100vw-1rem)] overflow-hidden rounded-xl border border-border bg-popover/95 shadow-2xl backdrop-blur-sm z-30">
+                    <button
+                      onClick={() => {
+                        setAttachmentMenuOpen(false)
+                        fileInputRef.current?.click()
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-left hover:bg-secondary/60 transition-colors"
+                    >
+                      <Plus className="w-4 h-4 text-accent" />
+                      <span>Upload file</span>
+                    </button>
+                    <button
+                      onClick={() => openTabPicker()}
+                      disabled={isLoadingTabs || isUploading}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-left hover:bg-secondary/60 transition-colors disabled:opacity-50"
+                    >
+                      {isLoadingTabs ? <Loader2 className="w-4 h-4 animate-spin text-accent" /> : <Globe2 className="w-4 h-4 text-accent" />}
+                      <span>Add browser tab</span>
+                    </button>
+                    <div className="border-t border-border/70 px-3 py-3">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <div>
+                          <div className="text-xs font-medium text-foreground">Reasoning effort</div>
+                          <div className="text-[11px] text-muted-foreground">Applies to the next message</div>
+                        </div>
+                        <span className="rounded-full border border-border/70 bg-secondary/70 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
+                          {reasoningEffortOptions[reasoningEffortIndex]?.label ?? 'Auto'}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={reasoningEffortOptions.length - 1}
+                        step={1}
+                        value={reasoningEffortIndex}
+                        onChange={(e) => {
+                          const nextIndex = Number(e.target.value)
+                          const nextOption = reasoningEffortOptions[nextIndex]
+                          if (nextOption) {
+                            setReasoningEffort(nextOption.value)
+                          }
+                        }}
+                        className="w-full accent-[var(--accent)]"
+                        aria-label="Reasoning effort"
+                      />
+                      <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>Auto</span>
+                        <span>Max</span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-4 gap-1.5">
+                        {reasoningEffortOptions.map((option, index) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setReasoningEffort(option.value)}
+                            className={cn(
+                              'rounded-md border px-1.5 py-1 text-[10px] font-medium transition-colors',
+                              index === reasoningEffortIndex
+                                ? 'border-accent/40 bg-accent/10 text-accent'
+                                : 'border-border/60 text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                            )}
+                          >
+                            {option.compactLabel}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -541,7 +946,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
               >
                 {(() => {
                   const Icon = getProviderIcon(`${selectedProvider}/${selectedModel}`)
-                  return <Icon size={12} className="text-accent/80" />
+                  return <Icon size={16} className="text-accent/80" />
                 })()}
                 <span className="truncate max-w-[100px]">{modelName}</span>
               </button>

@@ -23,6 +23,7 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   together: LobeIcons.Together.Avatar,
   fireworks: LobeIcons.Fireworks.Avatar,
   groq: LobeIcons.Groq.Avatar,
+  opencode: LobeIcons.OpenCode.Avatar,
   openrouter: LobeIcons.OpenRouter.Avatar,
   lmstudio: LobeIcons.LmStudio.Avatar,
   nvidia: LobeIcons.Nvidia.Avatar,
@@ -35,8 +36,10 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   tencent: LobeIcons.Tencent.Avatar,
   moonshot: LobeIcons.Moonshot.Avatar,
   minimax: LobeIcons.Minimax.Avatar,
+  xiaomimimo: LobeIcons.XiaomiMiMo.Avatar,
   yi: LobeIcons.Yi.Avatar,
   zeroone: LobeIcons.ZeroOne.Avatar,
+  zai: LobeIcons.ZAI.Avatar,
   zhipu: LobeIcons.Zhipu.Avatar,
   chatglm: LobeIcons.ChatGLM.Avatar,
   baichuan: LobeIcons.Baichuan.Avatar,
@@ -76,15 +79,18 @@ export function getProviderIcon(provider: string): React.ComponentType<any> {
   if (normalized.includes('gemini')) return LobeIcons.Gemini.Avatar
   if (normalized.includes('gemma')) return LobeIcons.Gemma.Avatar
   if (normalized.includes('google')) return LobeIcons.Google.Avatar
+  if (normalized.includes('ollama')) return LobeIcons.Ollama.Avatar
   if (normalized.includes('meta') || normalized.includes('llama')) return LobeIcons.Meta.Avatar
   if (normalized.includes('mistral')) return LobeIcons.Mistral.Avatar
   if (normalized.includes('x-ai') || normalized.includes('grok') || normalized.includes('xai')) return LobeIcons.XAI.Avatar
   if (normalized.includes('deepseek')) return LobeIcons.DeepSeek.Avatar
   if (normalized.includes('qwen')) return LobeIcons.Qwen.Avatar
   if (normalized.includes('moonshot') || normalized.includes('kimi')) return LobeIcons.Moonshot.Avatar
+  if (normalized.includes('minimax')) return LobeIcons.Minimax.Avatar
+  if (normalized.includes('glm') || normalized.includes('z.ai') || normalized.includes('zai')) return LobeIcons.ZAI.Avatar
+  if (normalized.includes('mimo') || normalized.includes('xiaomi')) return LobeIcons.XiaomiMiMo.Avatar
   if (normalized.includes('groq')) return LobeIcons.Groq.Avatar
   if (normalized.includes('openrouter')) return LobeIcons.OpenRouter.Avatar
-  if (normalized.includes('ollama')) return LobeIcons.Ollama.Avatar
   if (normalized.includes('lmstudio')) return LobeIcons.LmStudio.Avatar
   if (normalized.includes('perplexity')) return LobeIcons.Perplexity.Avatar
   if (normalized.includes('together')) return LobeIcons.Together.Avatar
@@ -98,6 +104,8 @@ export function getProviderIcon(provider: string): React.ComponentType<any> {
   for (const [k, v] of Object.entries(iconMap)) {
     if (key.includes(k)) return v
   }
+
+  if (key.includes('opencode')) return LobeIcons.OpenCode.Avatar
   
   return Sparkles
 }
