@@ -22,7 +22,7 @@ type RenderItem =
 export function ChatWindow() {
   const { sessions, currentSessionId, streaming } = useChatStore()
   const { searchHighlight, highlightMessageId, setSearchHighlight } = useUIStore()
-  const { toolDisplayMode, selectedProvider, selectedModel } = useSettingsStore()
+  const { toolDisplayMode, selectedProvider, selectedModel, heroTitle, heroSubtitle } = useSettingsStore()
   const { regenerateMessage } = useChat()
   const [autoScroll, setAutoScroll] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -277,9 +277,9 @@ export function ChatWindow() {
               </div>
               <div className="space-y-2">
                 <h1 className="text-4xl font-display font-bold tracking-tight bg-gradient-to-br from-foreground to-foreground/50 bg-clip-text text-transparent">
-                  What's on your mind?
+                  {heroTitle}
                 </h1>
-                <p className="text-muted-foreground text-lg">Search the web, run code, or just chat.</p>
+                <p className="text-muted-foreground text-lg">{heroSubtitle}</p>
               </div>
             </motion.div>
           )})()}

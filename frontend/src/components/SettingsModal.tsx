@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Settings, Key, Wrench, Download, Loader2, Trash2 } from 'lucide-react'
+import { X, Settings, Key, Wrench, Download, Loader2, Trash2, Sparkles } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { cn } from '../lib/utils'
@@ -16,6 +16,59 @@ const reasoningEffortOptions = [
   { value: 'high', label: 'High' },
   { value: 'xhigh', label: 'X-High' },
   { value: 'max', label: 'Max' },
+] as const
+
+const heroTextOptions = [
+  { title: "What's on your mind?", subtitle: 'Search the web, run code, or just chat.' },
+  { title: 'Ready when you are.', subtitle: 'Ask a question, start a project, or chase a weird idea.' },
+  { title: 'Let’s make something useful.', subtitle: 'From quick answers to deep work, start anywhere.' },
+  { title: 'Start with a spark.', subtitle: 'Explore an idea, solve a problem, or build momentum.' },
+  { title: 'Bring me the messy version.', subtitle: 'I can help shape rough thoughts into something sharp.' },
+  { title: 'What are we figuring out today?', subtitle: 'Research it, write it, plan it, or debug it.' },
+  { title: 'One prompt can change the day.', subtitle: 'Try a question worth thinking about.' },
+  { title: 'Open thread, closed tabs.', subtitle: 'Drop in the task you have been putting off.' },
+  { title: 'Think bigger, start smaller.', subtitle: 'We can turn vague ambition into concrete steps.' },
+  { title: 'Pick a direction.', subtitle: 'I can help with code, strategy, writing, and everything between.' },
+  { title: 'What should exist that does not?', subtitle: 'Let’s design, prototype, or reason it out.' },
+  { title: 'Ask the dangerous question.', subtitle: 'The interesting one. The useful one. The hard one.' },
+  { title: 'Here for the rabbit holes.', subtitle: 'Research deeply or just follow your curiosity.' },
+  { title: 'Make progress, not noise.', subtitle: 'Bring a problem and we will work the edges.' },
+  { title: 'This could be the clean start.', subtitle: 'New chat, new angle, same momentum.' },
+  { title: 'You can start half-formed.', subtitle: 'Rough notes and unfinished thoughts are enough.' },
+  { title: 'What needs clarity?', subtitle: 'I can help untangle the technical, practical, or creative parts.' },
+  { title: 'Let’s build from first principles.', subtitle: 'Or skip straight to the version that works.' },
+  { title: 'What are you trying to move?', subtitle: 'A project, a bug, a decision, or your own thinking.' },
+  { title: 'Today feels like a good day to ship.', subtitle: 'Let’s turn intention into output.' },
+  { title: 'Start anywhere interesting.', subtitle: 'A question, a code snippet, a plan, a mess.' },
+  { title: 'Use me as your second brain.', subtitle: 'For research, writing, systems, and tactical thinking.' },
+  { title: 'What deserves a better answer?', subtitle: 'Let’s go deeper than the obvious version.' },
+  { title: 'Bring me the impossible-looking task.', subtitle: 'We can usually reduce it to something tractable.' },
+  { title: 'A good prompt beats a blank page.', subtitle: 'Let’s find the one that unlocks motion.' },
+  { title: 'Where do you want leverage?', subtitle: 'In code, workflows, decisions, or learning.' },
+  { title: 'Let’s make this easier.', subtitle: 'Automate it, rewrite it, simplify it, or rethink it.' },
+  { title: 'Curiosity is enough.', subtitle: 'You do not need a perfect question to start.' },
+  { title: 'What do you want to understand better?', subtitle: 'Technical systems, big ideas, or your own next move.' },
+  { title: 'Let’s turn friction into flow.', subtitle: 'Name the bottleneck and we will work on it.' },
+  { title: 'Something worth exploring?', subtitle: 'We can chase it until it becomes useful.' },
+  { title: 'Make it concrete.', subtitle: 'I can help turn abstractions into plans and plans into action.' },
+  { title: 'What are we shipping?', subtitle: 'A fix, a feature, a plan, or a better question.' },
+  { title: 'Bring the overcomplicated thing.', subtitle: 'I like making systems legible.' },
+  { title: 'There is probably a smarter way.', subtitle: 'Let’s find it together.' },
+  { title: 'Start with the version you can say out loud.', subtitle: 'We can refine it from there.' },
+  { title: 'What would make today feel productive?', subtitle: 'Let’s design that path on purpose.' },
+  { title: 'Ask for the ambitious version.', subtitle: 'We can scale it down later if needed.' },
+  { title: 'Your next good idea can start here.', subtitle: 'One prompt, one plan, one clear next step.' },
+  { title: 'What is still fuzzy?', subtitle: 'We can sharpen it until it becomes usable.' },
+  { title: 'Let’s make the invisible visible.', subtitle: 'Systems, assumptions, tradeoffs, structure.' },
+  { title: 'Build momentum from one question.', subtitle: 'That is usually enough.' },
+  { title: 'Need a better angle?', subtitle: 'I can challenge assumptions or help frame the problem.' },
+  { title: 'What is the highest-leverage move?', subtitle: 'Let’s identify it before doing more work than necessary.' },
+  { title: 'This is a good place to think.', subtitle: 'Quietly, practically, and with some ambition.' },
+  { title: 'What should be simpler than it is?', subtitle: 'That is often where the best work starts.' },
+  { title: 'Let’s turn ideas into structure.', subtitle: 'And structure into something you can use immediately.' },
+  { title: 'What are we solving for?', subtitle: 'Speed, clarity, depth, creativity, or all four.' },
+  { title: 'You bring the intent.', subtitle: 'I will help with the shape, logic, and execution.' },
+  { title: 'Make the next move obvious.', subtitle: 'That is usually the difference between stalled and done.' },
 ] as const
 
 function getReasoningEffortHint(providerId: string) {
@@ -64,6 +117,8 @@ function LocalTextarea({ value, onChange, ...props }: any) {
 export function SettingsModal() {
   const { settingsOpen, setSettingsOpen } = useUIStore()
   const {
+    heroTitle,
+    heroSubtitle,
     systemPrompt,
     temperature,
     maxTokens,
@@ -78,6 +133,8 @@ export function SettingsModal() {
     artifactsEnabled,
     toolDisplayMode,
     maxToolTurns,
+    setHeroTitle,
+    setHeroSubtitle,
     setSystemPrompt,
     setTemperature,
     setMaxTokens,
@@ -219,6 +276,12 @@ export function SettingsModal() {
     }
   }, [skillView])
 
+  const handleSurpriseHeroText = () => {
+    const randomOption = heroTextOptions[Math.floor(Math.random() * heroTextOptions.length)]
+    setHeroTitle(randomOption.title)
+    setHeroSubtitle(randomOption.subtitle)
+  }
+
   const tabs = [
     { id: 'general' as SettingsTab, label: 'General', icon: Settings },
     { id: 'providers' as SettingsTab, label: 'Providers', icon: Key },
@@ -274,6 +337,38 @@ export function SettingsModal() {
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {activeTab === 'general' && (
                 <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-sm font-medium">Hero Title</label>
+                        <button
+                          type="button"
+                          onClick={handleSurpriseHeroText}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-accent/40 hover:bg-secondary/80"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-accent" />
+                          <span>Surprise Me</span>
+                        </button>
+                      </div>
+                      <LocalInput
+                        type="text"
+                        value={heroTitle}
+                        onChange={setHeroTitle}
+                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Hero Subtitle</label>
+                      <LocalInput
+                        type="text"
+                        value={heroSubtitle}
+                        onChange={setHeroSubtitle}
+                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                    </div>
+                  </div>
+
                   <div className="space-y-2">
                     <label className="text-sm font-medium">System Prompt</label>
                     <LocalTextarea

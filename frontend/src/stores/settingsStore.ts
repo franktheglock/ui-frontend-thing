@@ -46,6 +46,8 @@ export interface SettingsState {
   sidebarOpen: boolean
   selectedModel: string
   selectedProvider: string
+  heroTitle: string
+  heroSubtitle: string
   systemPrompt: string
   providers: ProviderConfig[]
   tools: ToolConfig[]
@@ -70,6 +72,8 @@ export interface SettingsState {
   setSelectedModel: (model: string) => void
   setSelectedProvider: (provider: string) => void
   setSelectedModelAndProvider: (model: string, provider: string) => void
+  setHeroTitle: (title: string) => void
+  setHeroSubtitle: (subtitle: string) => void
   setSystemPrompt: (prompt: string) => void
   setProviders: (providers: ProviderConfig[]) => void
   setTools: (tools: ToolConfig[]) => void
@@ -146,6 +150,8 @@ export const useSettingsStore = create<SettingsState>()(
       sidebarOpen: true,
       selectedModel: '',
       selectedProvider: '',
+      heroTitle: "What's on your mind?",
+      heroSubtitle: 'Search the web, run code, or just chat.',
       systemPrompt: 'You are a highly capable AI assistant. You excel at providing helpful, clear, and accurate information. When writing code, always use appropriate markdown formatting and specify the language.\n\nYou have access to tools (like web search). When you need to look up information or use a tool, ALWAYS call the appropriate tool using the proper format. Do not guess information if you can look it up.\n\nCRITICAL CITATION RULE: When providing information from search results or external URLs, you MUST cite your sources inline using the format [source:n], where n is the 1-indexed number of the search result or URL read. This is required for EVERY fact or claim that comes from a tool result.\n\nExample: "The capital of France is Paris [source:1]. The Eiffel Tower was completed in 1889 [source:2]."\n\nFailure to include inline citations is a violation of your instructions.',
       providers: [],
       tools: [],
@@ -179,6 +185,8 @@ export const useSettingsStore = create<SettingsState>()(
         set({ selectedModel: model, selectedProvider: provider })
         syncSharedSettings({ selectedModel: model, selectedProvider: provider })
       },
+      setHeroTitle: (heroTitle) => set({ heroTitle }),
+      setHeroSubtitle: (heroSubtitle) => set({ heroSubtitle }),
       setSystemPrompt: (prompt) => {
         set({ systemPrompt: prompt })
         syncSharedSettings({ systemPrompt: prompt })
@@ -323,6 +331,8 @@ export const useSettingsStore = create<SettingsState>()(
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
+        heroTitle: state.heroTitle,
+        heroSubtitle: state.heroSubtitle,
         providers: state.providers,
         tools: state.tools,
         skillsDirectory: state.skillsDirectory,
