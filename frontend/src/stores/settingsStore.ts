@@ -20,7 +20,28 @@ export interface ToolConfig {
 
 export type ReasoningEffort = 'auto' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
+type SharedSettingsSlice = Pick<SettingsState,
+  'selectedModel'
+  | 'selectedProvider'
+  | 'systemPrompt'
+  | 'maxTokens'
+  | 'temperature'
+  | 'topP'
+  | 'reasoningEffort'
+  | 'streamResponses'
+  | 'showThinking'
+  | 'showGenerationInfo'
+  | 'defaultSearchProvider'
+  | 'searchConfig'
+  | 'artifactsEnabled'
+  | 'toolDisplayMode'
+  | 'maxToolTurns'
+>
+
 export interface SettingsState {
+  sharedSettingsLoaded: boolean
+  providersLoaded: boolean
+  toolsLoaded: boolean
   theme: 'dark' | 'light' | 'system' | 'midnight' | 'emerald' | 'rose' | 'violet' | 'sunset'
   sidebarOpen: boolean
   selectedModel: string
@@ -48,8 +69,14 @@ export interface SettingsState {
   setSidebarOpen: (open: boolean) => void
   setSelectedModel: (model: string) => void
   setSelectedProvider: (provider: string) => void
+  setSelectedModelAndProvider: (model: string, provider: string) => void
   setSystemPrompt: (prompt: string) => void
   setProviders: (providers: ProviderConfig[]) => void
+  setTools: (tools: ToolConfig[]) => void
+  markProvidersLoaded: () => void
+  markToolsLoaded: () => void
+  hydrateSharedSettings: (settings: Partial<SharedSettingsSlice>) => void
+  markSharedSettingsLoaded: () => void
   addProvider: (provider: ProviderConfig) => void
   updateProvider: (id: string, updates: Partial<ProviderConfig>) => void
   removeProvider: (id: string) => void
@@ -72,9 +99,49 @@ export interface SettingsState {
   setMaxToolTurns: (turns: number) => void
 }
 
+const SHARED_SETTINGS_KEYS = [
+  'selectedModel',
+  'selectedProvider',
+  'systemPrompt',
+  'maxTokens',
+  'temperature',
+  'topP',
+  'reasoningEffort',
+  'streamResponses',
+  'showThinking',
+  'showGenerationInfo',
+  'defaultSearchProvider',
+  'searchConfig',
+  'artifactsEnabled',
+  'toolDisplayMode',
+  'maxToolTurns',
+] as const satisfies ReadonlyArray<keyof SharedSettingsSlice>
+
+function syncSharedSettings(updates: Partial<SharedSettingsSlice>) {
+  fetch('/api/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  }).catch(console.error)
+}
+
+function syncToolState(tool: ToolConfig) {
+  fetch(`/api/tools/${encodeURIComponent(tool.id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      enabled: tool.enabled,
+      config: tool.config,
+    }),
+  }).catch(console.error)
+}
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => ({
+      sharedSettingsLoaded: false,
+      providersLoaded: false,
+      toolsLoaded: false,
       theme: 'dark',
       sidebarOpen: true,
       selectedModel: '',
@@ -100,10 +167,36 @@ export const useSettingsStore = create<SettingsState>()(
       setTheme: (theme) => set({ theme }),
       toggleSidebar: () => set(state => ({ sidebarOpen: !state.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
-      setSelectedModel: (model) => set({ selectedModel: model }),
-      setSelectedProvider: (provider) => set({ selectedProvider: provider }),
-      setSystemPrompt: (prompt) => set({ systemPrompt: prompt }),
-      setProviders: (providers) => set({ providers }),
+      setSelectedModel: (model) => {
+        set({ selectedModel: model })
+        syncSharedSettings({ selectedModel: model })
+      },
+      setSelectedProvider: (provider) => {
+        set({ selectedProvider: provider })
+        syncSharedSettings({ selectedProvider: provider })
+      },
+      setSelectedModelAndProvider: (model, provider) => {
+        set({ selectedModel: model, selectedProvider: provider })
+        syncSharedSettings({ selectedModel: model, selectedProvider: provider })
+      },
+      setSystemPrompt: (prompt) => {
+        set({ systemPrompt: prompt })
+        syncSharedSettings({ systemPrompt: prompt })
+      },
+      setProviders: (providers) => set({ providers, providersLoaded: true }),
+      setTools: (tools) => set({ tools, toolsLoaded: true }),
+      markProvidersLoaded: () => set({ providersLoaded: true }),
+      markToolsLoaded: () => set({ toolsLoaded: true }),
+      hydrateSharedSettings: (settings) => set(state => ({
+        ...state,
+        ...Object.fromEntries(
+          SHARED_SETTINGS_KEYS
+            .filter((key) => settings[key] !== undefined)
+            .map((key) => [key, settings[key]])
+        ),
+        sharedSettingsLoaded: true,
+      })),
+      markSharedSettingsLoaded: () => set({ sharedSettingsLoaded: true }),
       addProvider: (provider) => {
         fetch('/api/providers', {
           method: 'POST',
@@ -115,7 +208,7 @@ export const useSettingsStore = create<SettingsState>()(
       updateProvider: (id, updates) => {
         const p = get().providers.find(p => p.id === id)
         if (p) {
-          fetch(`/api/providers/${id}`, {
+          fetch(`/api/providers/${encodeURIComponent(id)}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...p, ...updates }),
@@ -128,42 +221,113 @@ export const useSettingsStore = create<SettingsState>()(
         }))
       },
       removeProvider: (id) => {
-        fetch(`/api/providers/${id}`, {
+        fetch(`/api/providers/${encodeURIComponent(id)}`, {
           method: 'DELETE',
         }).catch(console.error)
         set(state => ({
           providers: state.providers.filter(p => p.id !== id),
         }))
       },
-      addTool: (tool) =>
-        set(state => ({ tools: [...state.tools, tool] })),
-      updateTool: (id, updates) =>
+      addTool: (tool) => {
+        const nextTool = { ...tool, config: tool.config || {} }
+        set(state => {
+          const existing = state.tools.some(t => t.id === nextTool.id)
+          return {
+            tools: existing
+              ? state.tools.map(t => t.id === nextTool.id ? nextTool : t)
+              : [...state.tools, nextTool],
+          }
+        })
+        syncToolState(nextTool)
+      },
+      updateTool: (id, updates) => {
+        const currentTool = get().tools.find(t => t.id === id)
+        const nextTool = {
+          id,
+          name: currentTool?.name || id,
+          enabled: currentTool?.enabled ?? true,
+          config: currentTool?.config || {},
+          ...currentTool,
+          ...updates,
+        }
+
         set(state => ({
-          tools: state.tools.map(t =>
-            t.id === id ? { ...t, ...updates } : t
-          ),
-        })),
-      removeTool: (id) =>
+          tools: state.tools.some(t => t.id === id)
+            ? state.tools.map(t => t.id === id ? nextTool : t)
+            : [...state.tools, nextTool],
+        }))
+
+        syncToolState(nextTool)
+      },
+      removeTool: (id) => {
+        fetch(`/api/tools/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+        }).catch(console.error)
         set(state => ({
           tools: state.tools.filter(t => t.id !== id),
-        })),
-      setMaxTokens: (maxTokens) => set({ maxTokens }),
-      setTemperature: (temperature) => set({ temperature }),
-      setTopP: (topP) => set({ topP }),
-      setReasoningEffort: (reasoningEffort) => set({ reasoningEffort }),
-      setStreamResponses: (streamResponses) => set({ streamResponses }),
-      setShowThinking: (showThinking) => set({ showThinking }),
-      setShowGenerationInfo: (showGenerationInfo) => set({ showGenerationInfo }),
-      setDefaultSearchProvider: (defaultSearchProvider) => set({ defaultSearchProvider }),
-      setSearchConfig: (searchConfig) => set({ searchConfig }),
-      setArtifactsEnabled: (artifactsEnabled) => set({ artifactsEnabled }),
+        }))
+      },
+      setMaxTokens: (maxTokens) => {
+        set({ maxTokens })
+        syncSharedSettings({ maxTokens })
+      },
+      setTemperature: (temperature) => {
+        set({ temperature })
+        syncSharedSettings({ temperature })
+      },
+      setTopP: (topP) => {
+        set({ topP })
+        syncSharedSettings({ topP })
+      },
+      setReasoningEffort: (reasoningEffort) => {
+        set({ reasoningEffort })
+        syncSharedSettings({ reasoningEffort })
+      },
+      setStreamResponses: (streamResponses) => {
+        set({ streamResponses })
+        syncSharedSettings({ streamResponses })
+      },
+      setShowThinking: (showThinking) => {
+        set({ showThinking })
+        syncSharedSettings({ showThinking })
+      },
+      setShowGenerationInfo: (showGenerationInfo) => {
+        set({ showGenerationInfo })
+        syncSharedSettings({ showGenerationInfo })
+      },
+      setDefaultSearchProvider: (defaultSearchProvider) => {
+        set({ defaultSearchProvider })
+        syncSharedSettings({ defaultSearchProvider })
+      },
+      setSearchConfig: (searchConfig) => {
+        set({ searchConfig })
+        syncSharedSettings({ searchConfig })
+      },
+      setArtifactsEnabled: (artifactsEnabled) => {
+        set({ artifactsEnabled })
+        syncSharedSettings({ artifactsEnabled })
+      },
       setSkillsDirectory: (skillsDirectory) => set({ skillsDirectory }),
       setSkillsShApiKey: (skillsShApiKey) => set({ skillsShApiKey }),
-      setToolDisplayMode: (toolDisplayMode) => set({ toolDisplayMode }),
-      setMaxToolTurns: (maxToolTurns) => set({ maxToolTurns }),
+      setToolDisplayMode: (toolDisplayMode) => {
+        set({ toolDisplayMode })
+        syncSharedSettings({ toolDisplayMode })
+      },
+      setMaxToolTurns: (maxToolTurns) => {
+        set({ maxToolTurns })
+        syncSharedSettings({ maxToolTurns })
+      },
     }),
     {
       name: 'ai-chat-ui-settings',
+      partialize: (state) => ({
+        theme: state.theme,
+        sidebarOpen: state.sidebarOpen,
+        providers: state.providers,
+        tools: state.tools,
+        skillsDirectory: state.skillsDirectory,
+        skillsShApiKey: state.skillsShApiKey,
+      }),
     }
   )
 )

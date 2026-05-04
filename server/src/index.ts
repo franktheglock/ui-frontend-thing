@@ -5,6 +5,7 @@ import path from 'path'
 import fs from 'fs'
 import chatRoutes from './api/chat'
 import providerRoutes from './api/providers'
+import settingsRoutes from './api/settings'
 import toolRoutes from './api/tools'
 import uploadRoutes from './api/upload'
 import skillRoutes from './api/skills'
@@ -41,6 +42,7 @@ async function main() {
   if (!fs.existsSync(workspaceDir)) fs.mkdirSync(workspaceDir, { recursive: true })
 
   app.use('/api/chat', chatRoutes)
+  app.use('/api/settings', settingsRoutes)
   app.use('/api/providers', providerRoutes)
   app.use('/api/tools', toolRoutes)
   app.use('/api/upload', uploadRoutes)

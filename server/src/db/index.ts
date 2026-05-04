@@ -68,6 +68,17 @@ export async function getDb(): Promise<Database<sqlite3.Database, sqlite3.Statem
       config TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      id TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS deleted_default_providers (
+      id TEXT PRIMARY KEY,
+      deleted_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS skills (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -129,7 +140,12 @@ export async function getDb(): Promise<Database<sqlite3.Database, sqlite3.Statem
     console.log('[db] Seeded default providers')
   }
 
+  const deletedDefaults = await dbInstance.all('SELECT id FROM deleted_default_providers')
+  const deletedDefaultIds = new Set(deletedDefaults.map((row: any) => row.id))
+
   for (const p of defaults) {
+    if (deletedDefaultIds.has(p.id)) continue
+
     await dbInstance.run(
       'INSERT OR IGNORE INTO providers (id, name, type, base_url, api_key, models, enabled, config) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       p.id, p.name, p.type, p.baseUrl, p.apiKey, JSON.stringify([]), 1, null

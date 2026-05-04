@@ -209,10 +209,10 @@ export function ModelSelector() {
   const { modelSelectorOpen, setModelSelectorOpen } = useUIStore()
   const {
     providers,
+    providersLoaded,
     selectedModel,
     selectedProvider,
-    setSelectedModel,
-    setSelectedProvider,
+    setSelectedModelAndProvider,
     addProvider,
     updateProvider,
     removeProvider,
@@ -242,8 +242,7 @@ export function ModelSelector() {
   }
 
   const handleSelect = (providerId: string, model: string) => {
-    setSelectedProvider(providerId)
-    setSelectedModel(model)
+    setSelectedModelAndProvider(model, providerId)
     
     // Also update the current session if we have one
     const { currentSessionId, updateSessionModel } = useChatStore.getState()
@@ -368,7 +367,13 @@ export function ModelSelector() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {enabledProviders.length === 0 && (
+          {!providersLoaded && enabledProviders.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              Loading providers...
+            </p>
+          )}
+
+          {providersLoaded && enabledProviders.length === 0 && (
             <p className="text-sm text-muted-foreground text-center py-8">
               No providers configured. Add one below.
             </p>

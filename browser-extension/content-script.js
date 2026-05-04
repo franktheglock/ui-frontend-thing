@@ -3,6 +3,24 @@
     return
   }
 
+  function isPrivateHostname(hostname) {
+    return /^10\./.test(hostname)
+      || /^192\.168\./.test(hostname)
+      || /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+      || hostname === 'localhost'
+      || hostname === '127.0.0.1'
+  }
+
+  function isAllowedAppPage(locationLike) {
+    return locationLike.protocol.startsWith('http')
+      && locationLike.port === '5183'
+      && isPrivateHostname(locationLike.hostname)
+  }
+
+  if (!isAllowedAppPage(window.location)) {
+    return
+  }
+
   window.__aiChatUiTabBridgeInstalled = true
 
   window.postMessage({
