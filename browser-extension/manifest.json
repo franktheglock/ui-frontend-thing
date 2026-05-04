@@ -21,8 +21,8 @@
   "content_scripts": [
     {
       "matches": [
-        "http://localhost:5183/*",
-        "http://127.0.0.1:5183/*"
+        "http://*/*",
+        "https://*/*"
       ],
       "js": [
         "content-script.js"

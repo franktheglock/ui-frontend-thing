@@ -32,7 +32,13 @@ function ThemeSync() {
 }
 
 function ModelSync() {
-  const { selectedModel, selectedProvider, setProviders, setSelectedModel, setSelectedProvider } = useSettingsStore()
+  const {
+    selectedModel,
+    selectedProvider,
+    sharedSettingsLoaded,
+    setProviders,
+    setSelectedModelAndProvider,
+  } = useSettingsStore()
 
   useEffect(() => {
     let cancelled = false
@@ -51,7 +57,7 @@ function ModelSync() {
         for (let i = 0; i < updatedProviders.length; i++) {
           const p = updatedProviders[i]
           try {
-            const modelRes = await fetch(`/api/providers/${p.id}/models`)
+            const modelRes = await fetch(`/api/providers/${encodeURIComponent(p.id)}/models`)
             if (modelRes.ok) {
               const models = await modelRes.json()
               if (Array.isArray(models) && models.length > 0) {
@@ -67,11 +73,10 @@ function ModelSync() {
         setProviders(updatedProviders)
 
         // Auto-select first model if none selected
-        if (!selectedProvider || !selectedModel) {
+        if (sharedSettingsLoaded && (!selectedProvider || !selectedModel)) {
           const firstWithModels = updatedProviders.find((p: any) => p.enabled && p.models && p.models.length > 0)
           if (firstWithModels) {
-            setSelectedProvider(firstWithModels.id)
-            setSelectedModel(firstWithModels.models[0])
+            setSelectedModelAndProvider(firstWithModels.models[0], firstWithModels.id)
           }
         }
       } catch (err) {
@@ -81,7 +86,73 @@ function ModelSync() {
 
     loadProvidersAndModels()
     return () => { cancelled = true }
-  }, [setProviders, setSelectedModel, setSelectedProvider])
+  }, [selectedModel, selectedProvider, sharedSettingsLoaded, setProviders, setSelectedModelAndProvider])
+
+  return null
+}
+
+function SharedSettingsSync() {
+  const { hydrateSharedSettings, markSharedSettingsLoaded, markToolsLoaded, setTools } = useSettingsStore()
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadSharedState = async () => {
+      try {
+        const [settingsRes, toolsRes] = await Promise.all([
+          fetch('/api/settings'),
+          fetch('/api/tools'),
+        ])
+
+        if (cancelled) return
+
+        if (settingsRes.ok) {
+          const payload = await settingsRes.json()
+          if (!cancelled) {
+            hydrateSharedSettings(payload.settings || {})
+          }
+        } else {
+          markSharedSettingsLoaded()
+        }
+
+        if (toolsRes.ok) {
+          const backendTools = await toolsRes.json()
+          if (!cancelled && Array.isArray(backendTools)) {
+            setTools(backendTools.map((tool: any) => ({
+              id: tool.name,
+              name: tool.name,
+              enabled: tool.enabled !== false,
+              config: tool.config || {},
+            })))
+          }
+        } else if (!cancelled) {
+          markToolsLoaded()
+        }
+      } catch (err) {
+        console.error('[app] Failed to sync shared settings:', err)
+        if (!cancelled) {
+          markSharedSettingsLoaded()
+          markToolsLoaded()
+        }
+      }
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadSharedState()
+      }
+    }
+
+    loadSharedState()
+    window.addEventListener('focus', loadSharedState)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', loadSharedState)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [hydrateSharedSettings, markSharedSettingsLoaded, markToolsLoaded, setTools])
 
   return null
 }
@@ -107,6 +178,7 @@ function App() {
   return (
     <>
       <ThemeSync />
+      <SharedSettingsSync />
       <ModelSync />
       <div className="fixed inset-0 flex overflow-hidden bg-background text-foreground">
         <Sidebar />

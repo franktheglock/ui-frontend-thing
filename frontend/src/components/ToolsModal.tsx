@@ -8,7 +8,6 @@ import {
 import { useUIStore } from '../stores/uiStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { cn } from '../lib/utils'
-import { useToolStore } from '../stores/toolStore'
 
 interface BackendTool {
   name: string
@@ -42,13 +41,13 @@ export function ToolsModal() {
   const {
     tools,
     addTool,
+    setTools,
     updateTool,
     defaultSearchProvider,
     setDefaultSearchProvider,
     searchConfig,
     setSearchConfig,
   } = useSettingsStore()
-  const { toggleTool: toggleToolStore } = useToolStore()
 
   const [backendTools, setBackendTools] = useState<BackendTool[]>([])
   const [mcpServers, setMcpServers] = useState<MCPServer[]>([])
@@ -73,12 +72,12 @@ export function ToolsModal() {
         if (Array.isArray(data)) {
           // Filter out MCP tools (they show under their server)
           setBackendTools(data.filter((t: any) => !t.name?.startsWith('mcp:')))
-          // Sync all tool configs (including MCP tools from already connected servers)
-          for (const t of data) {
-            if (!tools.find(tc => tc.name === t.name)) {
-              addTool({ id: t.name, name: t.name, enabled: true, config: {} })
-            }
-          }
+          setTools(data.map((tool: any) => ({
+            id: tool.name,
+            name: tool.name,
+            enabled: tool.enabled !== false,
+            config: tool.config || {},
+          })))
         }
       })
       .catch(console.error)
@@ -213,7 +212,6 @@ export function ToolsModal() {
     } else {
       addTool({ id: name, name, enabled: newState, config: {} })
     }
-    toggleToolStore(name)
   }
 
   const toolIcons: Record<string, React.ReactNode> = {

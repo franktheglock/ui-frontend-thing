@@ -110,8 +110,7 @@ export function useChat() {
     defaultSearchProvider,
     searchConfig,
     maxToolTurns,
-    setSelectedModel,
-    setSelectedProvider
+    setSelectedModelAndProvider
   } = useSettingsStore()
 
   const runCompletion = useCallback(async (sessionId: string) => {
@@ -147,8 +146,8 @@ export function useChat() {
            return true
         })
         
-        const currentModel = (selectedModel && selectedModel !== '') ? selectedModel : latestSession.model
-        const currentProvider = (selectedProvider && selectedProvider !== '') ? selectedProvider : latestSession.provider
+        const currentModel = latestSession.model || selectedModel
+        const currentProvider = latestSession.provider || selectedProvider
 
         console.log('[useChat] Turn starting:', { 
           selectedModel, 
@@ -429,7 +428,7 @@ export function useChat() {
       const lastFinalMsgId = lastMessage?.id
       const lastResponseId = lastMessage?.responseId
       
-      if (lastFinalMsgId && lastResponseId && selectedProvider === 'openrouter' && lastFinalGenInfo?.totalCost === undefined) {
+      if (lastFinalMsgId && lastResponseId && lastFinalGenInfo?.provider === 'openrouter' && lastFinalGenInfo?.totalCost === undefined) {
         // Start background polling for cost
         (async () => {
           try {
@@ -475,8 +474,7 @@ export function useChat() {
           const model = args.slice(slashIdx + 1).trim()
           
           updateSessionModel(sessionId, model, provider)
-          setSelectedProvider(provider)
-          setSelectedModel(model)
+          setSelectedModelAndProvider(model, provider)
           
           // Force a server sync for the session model
           await fetch(`/api/chat/sessions/${sessionId}`, {
@@ -562,7 +560,7 @@ export function useChat() {
         console.error('[auto-name] Failed:', err)
       }
     }
-  }, [currentSessionId, addMessage, runCompletion, updateSessionModel, setActiveSkill, setSelectedModel, setSelectedProvider, clearMessages, selectedModel, selectedProvider])
+  }, [currentSessionId, addMessage, runCompletion, updateSessionModel, setActiveSkill, setSelectedModelAndProvider, clearMessages, selectedModel, selectedProvider])
 
   const regenerateMessage = useCallback(async (messageId: string) => {
     if (!currentSessionId) return

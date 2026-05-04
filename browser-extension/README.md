@@ -11,12 +11,14 @@ This Chromium extension lets the frontend import an open browser tab as chat con
 
 ## Development URLs
 
-The extension currently injects into:
+The extension activates automatically on local Vite app tabs running on port `5183`, including:
 
 - `http://localhost:5183/*`
 - `http://127.0.0.1:5183/*`
+- local network IPs like `http://192.168.x.x:5183/*`
+- other private LAN ranges like `10.x.x.x` and `172.16.x.x` through `172.31.x.x`
 
-If you deploy the app somewhere else, add that origin to `manifest.json` under `content_scripts.matches`.
+After changing the extension files, click **Reload** on the extension in `chrome://extensions` or `edge://extensions`, then refresh the app tab.
 
 ## How it works
 

@@ -4,9 +4,21 @@ import { listTools } from '../tools'
 
 const router = Router()
 
-router.get('/', (_req, res) => {
+router.get('/', async (_req, res) => {
+  const db = await getDb()
   const tools = listTools()
-  res.json(tools)
+  const savedTools = await db.all('SELECT * FROM tools')
+  const savedById = new Map(savedTools.map((tool: any) => [tool.id, tool]))
+
+  res.json(tools.map((tool: any) => {
+    const saved = savedById.get(tool.name) || savedById.get(tool.id)
+
+    return {
+      ...tool,
+      enabled: saved ? !!saved.enabled : true,
+      config: saved?.config ? JSON.parse(saved.config) : {},
+    }
+  }))
 })
 
 router.get('/db', async (_req, res) => {
@@ -33,10 +45,24 @@ router.post('/', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   const db = await getDb()
   const { enabled, config } = req.body
+  const tool = listTools().find((candidate: any) => candidate.name === req.params.id || candidate.id === req.params.id)
+
+  if (!tool) {
+    return res.status(404).json({ error: 'Tool not found' })
+  }
+
   await db.run(
-    'UPDATE tools SET enabled = ?, config = ? WHERE id = ?',
-    enabled ? 1 : 0, config ? JSON.stringify(config) : null, req.params.id
+    `INSERT INTO tools (id, name, description, schema, enabled, config)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, config = excluded.config`,
+    req.params.id,
+    tool.name,
+    tool.description || null,
+    JSON.stringify(tool.parameters || {}),
+    enabled ? 1 : 0,
+    config ? JSON.stringify(config) : null
   )
+
   res.json({ success: true })
 })
 

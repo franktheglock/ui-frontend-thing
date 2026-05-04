@@ -4,6 +4,17 @@ import { createProviderFromConfig, getProvider } from '../providers'
 
 const router = Router()
 
+const DEFAULT_PROVIDER_IDS = new Set([
+  'openai',
+  'anthropic',
+  'ollama',
+  'gemini',
+  'openrouter',
+  'lmstudio',
+  'nvidia',
+  'opencode-go',
+])
+
 router.get('/', async (_req, res) => {
   const db = await getDb()
   const providers = await db.all('SELECT * FROM providers')
@@ -22,6 +33,7 @@ router.post('/', async (req, res) => {
     'INSERT INTO providers (id, name, type, base_url, api_key, models, enabled, config) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     id, name, type, baseUrl || null, apiKey || null, JSON.stringify(models || []), enabled ? 1 : 0, config ? JSON.stringify(config) : null
   )
+  await db.run('DELETE FROM deleted_default_providers WHERE id = ?', id)
   res.json({ id, name, type, baseUrl, apiKey, models: models || [], enabled, config })
 })
 
@@ -32,12 +44,24 @@ router.patch('/:id', async (req, res) => {
     'UPDATE providers SET name = ?, base_url = ?, api_key = ?, models = ?, enabled = ?, config = ? WHERE id = ?',
     name, baseUrl || null, apiKey || null, JSON.stringify(models || []), enabled ? 1 : 0, config ? JSON.stringify(config) : null, req.params.id
   )
+  await db.run('DELETE FROM deleted_default_providers WHERE id = ?', req.params.id)
   res.json({ success: true })
 })
 
 router.delete('/:id', async (req, res) => {
   const db = await getDb()
   await db.run('DELETE FROM providers WHERE id = ?', req.params.id)
+
+  if (DEFAULT_PROVIDER_IDS.has(req.params.id)) {
+    await db.run(
+      `INSERT INTO deleted_default_providers (id, deleted_at)
+       VALUES (?, ?)
+       ON CONFLICT(id) DO UPDATE SET deleted_at = excluded.deleted_at`,
+      req.params.id,
+      Date.now()
+    )
+  }
+
   res.json({ success: true })
 })
 

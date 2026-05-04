@@ -1,9 +1,24 @@
 const MAX_SELECTION_CHARS = 12000
 const MAX_TEXT_CHARS = 120000
-const APP_URL_PATTERNS = [
-  'http://localhost:5183/*',
-  'http://127.0.0.1:5183/*',
-]
+
+function isPrivateHostname(hostname) {
+  return /^10\./.test(hostname)
+    || /^192\.168\./.test(hostname)
+    || /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+    || hostname === 'localhost'
+    || hostname === '127.0.0.1'
+}
+
+function isAppTabUrl(url) {
+  try {
+    const parsed = new URL(url)
+    return /^https?:$/i.test(parsed.protocol)
+      && parsed.port === '5183'
+      && isPrivateHostname(parsed.hostname)
+  } catch {
+    return false
+  }
+}
 
 function isCapturableUrl(url) {
   return /^https?:\/\//i.test(String(url || ''))
@@ -43,10 +58,7 @@ async function ensureOriginPermission(url) {
 
 async function injectBridgeIntoAppTabs() {
   const tabs = await chrome.tabs.query({})
-  const appTabs = tabs.filter((tab) => typeof tab.id === 'number' && APP_URL_PATTERNS.some((pattern) => {
-    const prefix = pattern.slice(0, -1)
-    return typeof tab.url === 'string' && tab.url.startsWith(prefix)
-  }))
+  const appTabs = tabs.filter((tab) => typeof tab.id === 'number' && typeof tab.url === 'string' && isAppTabUrl(tab.url))
 
   await Promise.all(appTabs.map(async (tab) => {
     try {
