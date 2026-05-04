@@ -28,6 +28,11 @@ type SharedSettingsSlice = Pick<SettingsState,
   | 'temperature'
   | 'topP'
   | 'reasoningEffort'
+  | 'deepResearch'
+  | 'multiAgentEnabled'
+  | 'maxSubagents'
+  | 'subagentModel'
+  | 'subagentProvider'
   | 'streamResponses'
   | 'showThinking'
   | 'showGenerationInfo'
@@ -53,6 +58,11 @@ export interface SettingsState {
   temperature: number
   topP: number
   reasoningEffort: ReasoningEffort
+  deepResearch: boolean
+  multiAgentEnabled: boolean
+  maxSubagents: number
+  subagentModel: string
+  subagentProvider: string
   streamResponses: boolean
   showThinking: boolean
   showGenerationInfo: boolean
@@ -87,6 +97,11 @@ export interface SettingsState {
   setTemperature: (temp: number) => void
   setTopP: (topP: number) => void
   setReasoningEffort: (effort: ReasoningEffort) => void
+  setDeepResearch: (enabled: boolean) => void
+  setMultiAgentEnabled: (enabled: boolean) => void
+  setMaxSubagents: (count: number) => void
+  setSubagentModel: (model: string) => void
+  setSubagentProvider: (provider: string) => void
   setStreamResponses: (stream: boolean) => void
   setShowThinking: (show: boolean) => void
   setShowGenerationInfo: (show: boolean) => void
@@ -107,6 +122,11 @@ const SHARED_SETTINGS_KEYS = [
   'temperature',
   'topP',
   'reasoningEffort',
+  'deepResearch',
+  'multiAgentEnabled',
+  'maxSubagents',
+  'subagentModel',
+  'subagentProvider',
   'streamResponses',
   'showThinking',
   'showGenerationInfo',
@@ -153,6 +173,11 @@ export const useSettingsStore = create<SettingsState>()(
       temperature: 0.7,
       topP: 1,
       reasoningEffort: 'auto',
+      deepResearch: false,
+      multiAgentEnabled: false,
+      maxSubagents: 3,
+      subagentModel: '',
+      subagentProvider: '',
       streamResponses: true,
       showThinking: true,
       showGenerationInfo: true,
@@ -282,6 +307,26 @@ export const useSettingsStore = create<SettingsState>()(
       setReasoningEffort: (reasoningEffort) => {
         set({ reasoningEffort })
         syncSharedSettings({ reasoningEffort })
+      },
+      setDeepResearch: (deepResearch) => {
+        set({ deepResearch })
+        syncSharedSettings({ deepResearch })
+      },
+      setMultiAgentEnabled: (multiAgentEnabled) => {
+        set({ multiAgentEnabled })
+        syncSharedSettings({ multiAgentEnabled })
+      },
+      setMaxSubagents: (maxSubagents) => {
+        set({ maxSubagents })
+        syncSharedSettings({ maxSubagents })
+      },
+      setSubagentModel: (subagentModel) => {
+        set({ subagentModel })
+        syncSharedSettings({ subagentModel })
+      },
+      setSubagentProvider: (subagentProvider) => {
+        set({ subagentProvider })
+        syncSharedSettings({ subagentProvider })
       },
       setStreamResponses: (streamResponses) => {
         set({ streamResponses })

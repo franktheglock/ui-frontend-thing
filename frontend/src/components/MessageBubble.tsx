@@ -7,7 +7,7 @@ import { ThinkingBlock } from './ThinkingBlock'
 import { GenerationInfo } from './GenerationInfo'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
-import { cn } from '../lib/utils'
+import { cn, copyTextToClipboard } from '../lib/utils'
 import { getActivitySublabel } from '../lib/toolDisplay'
 import { getProviderIcon } from '../lib/providerIcons'
 import { SiteFavicon } from './SiteFavicon'
@@ -109,10 +109,15 @@ export function MessageBubble({
   const { sessions } = useChatStore()
   const session = sessions.find(s => s.id === sessionId)
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(message.content)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  const handleCopy = async () => {
+    try {
+      await copyTextToClipboard(message.content || '')
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (error) {
+      console.error('Failed to copy message:', error)
+      alert('Failed to copy message content to the clipboard.')
+    }
   }
 
   const showContent = message.content && (
@@ -261,9 +266,14 @@ export function MessageBubble({
                 {!isUser && (
                   <>
                     <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(JSON.stringify(message, null, 2))
-                        alert('Raw message JSON copied to clipboard')
+                      onClick={async () => {
+                        try {
+                          await copyTextToClipboard(JSON.stringify(message, null, 2))
+                          alert('Raw message JSON copied to clipboard')
+                        } catch (error) {
+                          console.error('Failed to copy raw message JSON:', error)
+                          alert('Failed to copy raw message JSON.')
+                        }
                       }}
                       title="Copy raw JSON (Debug)"
                       className="p-1 hover:bg-secondary rounded-none transition-all text-muted-foreground/20 hover:text-accent"

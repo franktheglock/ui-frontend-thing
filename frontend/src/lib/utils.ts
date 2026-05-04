@@ -27,3 +27,37 @@ export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(2)}s`
 }
+
+export async function copyTextToClipboard(text: string): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch {
+      // Fall back to the DOM-based copy path below.
+    }
+  }
+
+  if (typeof document === 'undefined') {
+    throw new Error('Clipboard is not available in this environment.')
+  }
+
+  const textArea = document.createElement('textarea')
+  textArea.value = text
+  textArea.setAttribute('readonly', '')
+  textArea.style.position = 'fixed'
+  textArea.style.top = '0'
+  textArea.style.left = '-9999px'
+  textArea.style.opacity = '0'
+
+  document.body.appendChild(textArea)
+  textArea.focus()
+  textArea.select()
+
+  const copied = document.execCommand('copy')
+  document.body.removeChild(textArea)
+
+  if (!copied) {
+    throw new Error('Failed to copy text to the clipboard.')
+  }
+}

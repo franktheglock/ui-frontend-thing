@@ -5,9 +5,293 @@ import fs from 'fs'
 import { getDb } from '../db'
 import { getProvider } from '../providers'
 import { executeTool, listTools } from '../tools'
+import { SpawnSubagentTool } from '../tools/subagent'
 import { safeJsonParse } from '../utils/json'
 
 const router = Router()
+const spawnSubagentTool = new SpawnSubagentTool()
+const DEFAULT_SUBAGENT_TOOL_TURNS = 6
+
+const DEEP_RESEARCH_PROMPT = [
+  'You are operating in Deep Research mode.',
+  'Before answering, conduct thorough multi-step research using available tools.',
+  'Make multiple targeted searches from diverse sources, inspect the most relevant materials, then synthesize the findings critically.',
+  'Do not answer prematurely. Research first, then write the final synthesis with citations where available.'
+].join(' ')
+
+function buildEnhancedSystemPrompt(systemPrompt?: string, deepResearch?: boolean, extraInstructions?: string) {
+  const dateStr = `Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`
+  const parts = [dateStr]
+  if (systemPrompt) parts.push(systemPrompt)
+  if (deepResearch) parts.push(DEEP_RESEARCH_PROMPT)
+  if (extraInstructions) parts.push(extraInstructions)
+  return parts.join('\n\n')
+}
+
+function countSourcesFromResult(result: string, name: string) {
+  if (name === 'web_search') {
+    const matches = result.match(/URL:\s*(https?:\/\/[^\s]+)/g)
+    return matches ? matches.length : 0
+  }
+  if (name === 'read_url' || name === 'read_browser_page') {
+    return 1
+  }
+  return 0
+}
+
+function extractSourceUrls(toolResults: Array<{ result: string }>) {
+  const urls = new Set<string>()
+  for (const toolResult of toolResults) {
+    const matches = toolResult.result.match(/URL:\s*(https?:\/\/[^\s]+)/g)
+    if (!matches) continue
+    for (const match of matches) {
+      const url = match.replace(/^URL:\s*/, '')
+      urls.add(url)
+    }
+  }
+  return Array.from(urls)
+}
+
+function normalizeToolArguments(name: string, rawArgs: any, sourceCount: number, defaultSearchProvider?: string, searchConfig?: Record<string, string>) {
+  const parsedArgs = typeof rawArgs === 'string' ? safeJsonParse(rawArgs) : rawArgs
+  if (name === 'web_search') {
+    parsedArgs.provider = defaultSearchProvider || parsedArgs.provider
+    parsedArgs.searchConfig = {
+      searxngUrl: 'http://192.168.1.70:8888',
+      ...(searchConfig || {}),
+      ...(parsedArgs.searchConfig || {}),
+    }
+    if (!parsedArgs.searchConfig.searxngUrl) {
+      parsedArgs.searchConfig.searxngUrl = 'http://192.168.1.70:8888'
+    }
+    parsedArgs.startIndex = sourceCount
+  } else if (name === 'read_url' || name === 'read_browser_page') {
+    parsedArgs.startIndex = sourceCount
+  }
+  return parsedArgs
+}
+
+function resolveToolDefinitions(disabledTools: string[], includeSubagentTool = false) {
+  const baseTools = listTools().filter((tool) => !disabledTools.includes(tool.name) && tool.name !== spawnSubagentTool.name)
+  if (includeSubagentTool) {
+    baseTools.push(spawnSubagentTool.getSchema())
+  }
+  return baseTools.map((tool) => ({ ...tool, id: tool.name }))
+}
+
+async function runProviderToolLoop(options: {
+  providerId: string
+  model: string
+  systemPrompt: string
+  messages: any[]
+  temperature?: number
+  maxTokens?: number
+  topP?: number
+  reasoningEffort?: any
+  disabledTools: string[]
+  defaultSearchProvider?: string
+  searchConfig?: Record<string, string>
+  maxToolTurns?: number
+  sessionId?: string
+}) {
+  const providerInstance = await getProvider(options.providerId)
+  if (!providerInstance) {
+    throw new Error(`Provider "${options.providerId}" not found or disabled`)
+  }
+
+  const configuredMaxToolTurns = options.maxToolTurns && options.maxToolTurns > 0
+    ? options.maxToolTurns
+    : DEFAULT_SUBAGENT_TOOL_TURNS
+  const conversationMessages = [...options.messages]
+
+  let finalContent = ''
+  let finalThinking = ''
+  let finalResponseId = ''
+  let finalGenInfo: any = undefined
+  let toolTurnCount = 0
+  let allToolCalls: any[] = []
+  let allToolResults: Array<{ toolCallId: string, name: string, result: string }> = []
+  let hasToolCalls = false
+
+  do {
+    hasToolCalls = false
+
+    const stream = providerInstance.chatCompletion({
+      model: options.model,
+      messages: [{ role: 'system', content: options.systemPrompt }, ...conversationMessages],
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      topP: options.topP,
+      reasoningEffort: options.reasoningEffort,
+      tools: resolveToolDefinitions(options.disabledTools, false),
+      stream: true,
+      sessionId: options.sessionId,
+    })
+
+    let turnContent = ''
+    let turnThinking = ''
+    let responseId = ''
+    let generationInfo: any = undefined
+    const turnToolCalls: any[] = []
+
+    for await (const chunk of stream) {
+      if (chunk.content) turnContent += chunk.content
+      if (chunk.thinking) turnThinking += chunk.thinking
+      if (chunk.responseId) responseId = chunk.responseId
+      if (chunk.generationInfo) generationInfo = chunk.generationInfo
+      if (chunk.toolCalls?.length) turnToolCalls.push(...chunk.toolCalls)
+    }
+
+    if (turnContent) finalContent += turnContent
+    if (turnThinking) finalThinking = finalThinking ? `${finalThinking}\n\n${turnThinking}` : turnThinking
+    if (responseId) finalResponseId = responseId
+    if (generationInfo) finalGenInfo = generationInfo
+
+    if (turnToolCalls.length === 0) {
+      break
+    }
+
+    if (toolTurnCount >= configuredMaxToolTurns) {
+      const limitMessage = `Stopped after ${configuredMaxToolTurns} subagent tool rounds.`
+      finalContent = finalContent ? `${finalContent}\n\n${limitMessage}` : limitMessage
+      break
+    }
+
+    hasToolCalls = true
+    toolTurnCount += 1
+    let currentSourceCount = allToolResults.reduce((count, result) => count + countSourcesFromResult(result.result, result.name), 0)
+    const normalizedTurnToolCalls: any[] = []
+    const turnResults: Array<{ toolCallId: string, name: string, result: string }> = []
+
+    for (const toolCall of turnToolCalls) {
+      const normalizedArguments = normalizeToolArguments(
+        toolCall.name,
+        toolCall.arguments,
+        currentSourceCount,
+        options.defaultSearchProvider,
+        options.searchConfig,
+      )
+      normalizedTurnToolCalls.push({
+        ...toolCall,
+        arguments: normalizedArguments,
+      })
+
+      if (toolCall.name === spawnSubagentTool.name) {
+        turnResults.push({
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          result: 'Error: Subagents cannot spawn additional subagents.',
+        })
+        continue
+      }
+
+      try {
+        const result = await executeTool(toolCall.name, normalizedArguments)
+        turnResults.push({ toolCallId: toolCall.id, name: toolCall.name, result })
+        currentSourceCount += countSourcesFromResult(result, toolCall.name)
+      } catch (error: any) {
+        turnResults.push({
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          result: `Error: ${error.message}`,
+        })
+      }
+    }
+
+    conversationMessages.push({
+      role: 'assistant',
+      content: turnContent,
+      thinking: turnThinking || undefined,
+      toolCalls: normalizedTurnToolCalls,
+    })
+    turnResults.forEach((turnResult) => {
+      conversationMessages.push({
+        role: 'tool',
+        content: '',
+        toolResults: [turnResult],
+      })
+    })
+
+    allToolCalls = [...allToolCalls, ...normalizedTurnToolCalls]
+    allToolResults = [...allToolResults, ...turnResults]
+  } while (hasToolCalls)
+
+  return {
+    content: finalContent,
+    thinking: finalThinking,
+    responseId: finalResponseId,
+    generationInfo: finalGenInfo,
+    toolCalls: allToolCalls,
+    toolResults: allToolResults,
+    toolTurnCount,
+  }
+}
+
+async function runSubagentTask(req: Request) {
+  const {
+    arguments: rawArgs,
+    model,
+    provider,
+    temperature,
+    maxTokens,
+    topP,
+    reasoningEffort,
+    disabledTools,
+    defaultSearchProvider,
+    searchConfig,
+    maxToolTurns,
+    subagentModel,
+    subagentProvider,
+    sessionId,
+  } = req.body
+
+  const parsedArgs = typeof rawArgs === 'string' ? safeJsonParse(rawArgs) : rawArgs
+  const scope = String(parsedArgs.scope || parsedArgs.topic || parsedArgs.focus || 'general research').trim()
+  const task = String(parsedArgs.task || parsedArgs.prompt || parsedArgs.query || '').trim()
+  if (!task) {
+    throw new Error('spawn_subagent requires a task')
+  }
+
+  const resolvedProvider = String(subagentProvider || provider || '').trim()
+  const resolvedModel = String(subagentModel || model || '').trim()
+  if (!resolvedProvider || !resolvedModel) {
+    throw new Error('Subagent provider and model must resolve to valid values')
+  }
+
+  const subagentPrompt = [
+    'You are a focused research subagent working for a larger orchestrator.',
+    `Scope: ${scope}.`,
+    `Task: ${task}.`,
+    'Use tools aggressively but stay within the assigned scope.',
+    'Return a concise research summary with the most important findings, caveats, and source-backed claims.',
+  ].join(' ')
+
+  const result = await runProviderToolLoop({
+    providerId: resolvedProvider,
+    model: resolvedModel,
+    systemPrompt: buildEnhancedSystemPrompt(undefined, true, subagentPrompt),
+    messages: [{ role: 'user', content: task }],
+    temperature,
+    maxTokens,
+    topP,
+    reasoningEffort,
+    disabledTools: Array.isArray(disabledTools) ? disabledTools : [],
+    defaultSearchProvider,
+    searchConfig,
+    maxToolTurns,
+    sessionId: sessionId ? `${sessionId}:subagent:${scope}` : undefined,
+  })
+
+  return JSON.stringify({
+    scope,
+    task,
+    summary: result.content || result.thinking || 'Subagent completed without a final summary.',
+    toolTurns: result.toolTurnCount,
+    sources: extractSourceUrls(result.toolResults),
+    model: resolvedModel,
+    provider: resolvedProvider,
+  })
+}
 
 router.get('/sessions', async (_req, res) => {
   const db = await getDb()
@@ -270,7 +554,7 @@ function getCleanErrorMessage(error: any, provider: string): string {
 }
 
 router.post('/completions', async (req, res) => {
-  const { messages, model, provider, systemPrompt, temperature, maxTokens, topP, reasoningEffort, disabledTools, lastResponseId, sessionId } = req.body
+  const { messages, model, provider, systemPrompt, temperature, maxTokens, topP, reasoningEffort, deepResearch, multiAgentEnabled, disabledTools, lastResponseId, sessionId } = req.body
     
     console.log(`[chat] /completions - Request: { model: "${model}", provider: "${provider}", sessionId: "${sessionId}" }`)
 
@@ -284,12 +568,9 @@ router.post('/completions', async (req, res) => {
       console.log(`[chat] Using provider instance: ${providerInstance.name} (${providerInstance.type})`)
   
       const disabledToolNames = Array.isArray(disabledTools) ? (disabledTools as string[]) : []
-      const allTools = listTools().filter(t => !disabledToolNames.includes(t.name))
+      const allTools = resolveToolDefinitions(disabledToolNames, Boolean(multiAgentEnabled))
 
-    const dateStr = `Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`
-    const enhancedSystemPrompt = systemPrompt 
-      ? `${dateStr}\n${systemPrompt}`
-      : dateStr
+    const enhancedSystemPrompt = buildEnhancedSystemPrompt(systemPrompt, Boolean(deepResearch))
 
     // Process attachments: Read text files and append to message content
     const processedMessages = await Promise.all((messages || []).map(async (m: any) => {
@@ -343,7 +624,7 @@ router.post('/completions', async (req, res) => {
       maxTokens,
       topP,
       reasoningEffort,
-      tools: allTools.length > 0 ? allTools.map(t => ({ ...t, id: t.name })) : undefined,
+      tools: allTools.length > 0 ? allTools : undefined,
       stream: true,
       lastResponseId,
       sessionId,
@@ -404,6 +685,10 @@ router.post('/completions', async (req, res) => {
 router.post('/tool-call', async (req, res) => {
   const { name, arguments: args } = req.body
   try {
+    if (name === spawnSubagentTool.name) {
+      const result = await runSubagentTask(req)
+      return res.json({ result })
+    }
     const parsedArgs = typeof args === 'string' ? safeJsonParse(args) : args
     const result = await executeTool(name, parsedArgs)
     res.json({ result })

@@ -10,7 +10,7 @@ import { ThinkingBlock } from './ThinkingBlock'
 import { ToolCallBlock } from './ToolCallBlock'
 import { GenerationInfo } from './GenerationInfo'
 import { useChat } from '../hooks/useChat'
-import { cn } from '../lib/utils'
+import { cn, copyTextToClipboard } from '../lib/utils'
 import { getActivitySublabel } from '../lib/toolDisplay'
 import { getProviderIcon } from '../lib/providerIcons'
 
@@ -374,9 +374,14 @@ export function ChatWindow() {
                             {item.generationInfo && <GenerationInfo info={item.generationInfo} />}
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(item.content || '')
-                                  alert('Content copied to clipboard')
+                                onClick={async () => {
+                                  try {
+                                    await copyTextToClipboard(item.content || '')
+                                    alert('Content copied to clipboard')
+                                  } catch (error) {
+                                    console.error('Failed to copy streaming content:', error)
+                                    alert('Failed to copy content to the clipboard.')
+                                  }
                                 }}
                                 title="Copy content"
                                 className="p-1 hover:bg-secondary rounded-none transition-all text-muted-foreground/40 hover:text-accent"
@@ -407,9 +412,14 @@ export function ChatWindow() {
                           {item.generationInfo && <GenerationInfo info={item.generationInfo} />}
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(item.content || '')
-                                alert('Content copied to clipboard')
+                              onClick={async () => {
+                                try {
+                                  await copyTextToClipboard(item.content || '')
+                                  alert('Content copied to clipboard')
+                                } catch (error) {
+                                  console.error('Failed to copy streaming content:', error)
+                                  alert('Failed to copy content to the clipboard.')
+                                }
                               }}
                               title="Copy content"
                               className="p-1 hover:bg-secondary rounded-none transition-all text-muted-foreground/40 hover:text-accent"

@@ -113,7 +113,20 @@ export class OpenAIProvider extends BaseProvider {
   }
 
   private formatMessages(messages: ChatMessage[]): any[] {
-    return messages.map(m => {
+    const formatted: any[] = []
+
+    for (const m of messages) {
+      if (m.role === 'tool' && m.toolResults && m.toolResults.length > 0) {
+        for (const tr of m.toolResults) {
+          formatted.push({
+            role: 'tool',
+            tool_call_id: tr.toolCallId,
+            content: tr.result !== undefined ? (typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result)) : '',
+          })
+        }
+        continue
+      }
+
       const msg: any = {
         role: m.role,
         content: m.content || null,
@@ -129,13 +142,6 @@ export class OpenAIProvider extends BaseProvider {
           },
         }))
       }
-
-      if (m.role === 'tool' && m.toolResults) {
-        // OpenAI expects one message per tool result, but our DB might group them.
-        // For simplicity, we use the first tool result's ID.
-        msg.tool_call_id = m.toolResults[0]?.toolCallId
-      }
-
       if (m.attachments && m.attachments.length > 0) {
         msg.content = [
           { type: 'text', text: m.content },
@@ -146,7 +152,9 @@ export class OpenAIProvider extends BaseProvider {
         ]
       }
 
-      return msg
-    })
+      formatted.push(msg)
+    }
+
+    return formatted
   }
 }

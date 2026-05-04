@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Send, Plus, X, Loader2, Mic, Globe2 } from 'lucide-react'
+import { Send, Plus, X, Loader2, Mic, Globe2, FlaskConical, Bot, Minus, Plus as PlusSmall } from 'lucide-react'
 import { Attachment, useChatStore } from '../stores/chatStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
@@ -214,7 +214,13 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     selectedProvider,
     providers,
     reasoningEffort,
+    deepResearch,
+    multiAgentEnabled,
+    maxSubagents,
     setReasoningEffort,
+    setDeepResearch,
+    setMultiAgentEnabled,
+    setMaxSubagents,
   } = useSettingsStore()
   const { setModelSelectorOpen } = useUIStore()
   const { sendMessage } = useChat()
@@ -927,6 +933,79 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                         ))}
                       </div>
                     </div>
+                    <div className="border-t border-border/70 px-3 py-3 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-start gap-2 min-w-0">
+                          <FlaskConical className="w-4 h-4 text-accent mt-0.5 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium text-foreground">Deep Research</div>
+                            <div className="text-[11px] text-muted-foreground">Thorough multi-step research before answering</div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setDeepResearch(!deepResearch)}
+                          className={cn(
+                            'rounded-md border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors',
+                            deepResearch
+                              ? 'border-accent/40 bg-accent/10 text-accent'
+                              : 'border-border/60 text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                          )}
+                        >
+                          {deepResearch ? 'On' : 'Off'}
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-start gap-2 min-w-0">
+                          <Bot className="w-4 h-4 text-accent mt-0.5 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium text-foreground">Multi-Agent</div>
+                            <div className="text-[11px] text-muted-foreground">Allow the model to delegate scoped research to subagents</div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setMultiAgentEnabled(!multiAgentEnabled)}
+                          className={cn(
+                            'rounded-md border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors',
+                            multiAgentEnabled
+                              ? 'border-accent/40 bg-accent/10 text-accent'
+                              : 'border-border/60 text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                          )}
+                        >
+                          {multiAgentEnabled ? 'On' : 'Off'}
+                        </button>
+                      </div>
+                      <div className="rounded-lg border border-border/60 bg-secondary/30 px-2.5 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[11px] font-medium text-foreground">Max subagents</div>
+                            <div className="text-[10px] text-muted-foreground">Concurrent subagents allowed on the next turn</div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setMaxSubagents(Math.max(1, maxSubagents - 1))}
+                              className="rounded-md border border-border/60 p-1 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+                              aria-label="Decrease max subagents"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="inline-flex min-w-8 items-center justify-center rounded-md border border-border/60 bg-background/60 px-2 py-1 text-xs font-medium text-foreground">
+                              {maxSubagents}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setMaxSubagents(Math.min(8, maxSubagents + 1))}
+                              className="rounded-md border border-border/60 p-1 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+                              aria-label="Increase max subagents"
+                            >
+                              <PlusSmall className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -940,6 +1019,30 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
 
 
               {/* Model selector pill */}
+              {deepResearch && (
+                <button
+                  type="button"
+                  onClick={() => setDeepResearch(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent/10 text-xs text-accent transition-colors border border-accent/20 hover:bg-accent/15"
+                  title="Disable deep research for the next message"
+                >
+                  <FlaskConical className="w-3.5 h-3.5" />
+                  <span>Deep Research</span>
+                </button>
+              )}
+
+              {multiAgentEnabled && (
+                <button
+                  type="button"
+                  onClick={() => setMultiAgentEnabled(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent/10 text-xs text-accent transition-colors border border-accent/20 hover:bg-accent/15"
+                  title="Disable multi-agent mode for the next message"
+                >
+                  <Bot className="w-3.5 h-3.5" />
+                  <span>Agents {maxSubagents}</span>
+                </button>
+              )}
+
               <button
                 onClick={() => setModelSelectorOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary/60 text-xs text-muted-foreground hover:text-foreground transition-colors border border-border/40"

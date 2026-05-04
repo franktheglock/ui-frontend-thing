@@ -105,6 +105,17 @@ export class LMStudioProvider extends OpenAICompatibleProvider {
     const formatted: any[] = []
 
     for (const m of messages) {
+      if (m.role === 'tool' && m.toolResults && m.toolResults.length > 0) {
+        for (const tr of m.toolResults) {
+          formatted.push({
+            role: 'tool',
+            tool_call_id: tr.toolCallId,
+            content: tr.result !== undefined ? (typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result)) : ''
+          })
+        }
+        continue
+      }
+
       // Skip messages with empty content and no special fields (except for user messages)
       if (m.role === 'user' && (!m.content || m.content === '') && (!m.attachments || m.attachments.length === 0)) {
         continue
@@ -139,19 +150,7 @@ export class LMStudioProvider extends OpenAICompatibleProvider {
       } else {
         base.content = m.content || ''
       }
-
       formatted.push(base)
-
-      // Add tool results as separate messages
-      if (m.toolResults && m.toolResults.length > 0) {
-        for (const tr of m.toolResults) {
-          formatted.push({
-            role: 'tool',
-            tool_call_id: tr.toolCallId,
-            content: tr.result !== undefined ? (typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result)) : ''
-          })
-        }
-      }
     }
 
     return formatted

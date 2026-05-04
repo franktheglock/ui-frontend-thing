@@ -70,6 +70,10 @@ export function SettingsModal() {
     topP,
     selectedProvider,
     reasoningEffort,
+    multiAgentEnabled,
+    maxSubagents,
+    subagentModel,
+    subagentProvider,
     streamResponses,
     showThinking,
     showGenerationInfo,
@@ -83,6 +87,10 @@ export function SettingsModal() {
     setMaxTokens,
     setTopP,
     setReasoningEffort,
+    setMultiAgentEnabled,
+    setMaxSubagents,
+    setSubagentModel,
+    setSubagentProvider,
     setStreamResponses,
     setShowThinking,
     setShowGenerationInfo,
@@ -491,6 +499,71 @@ export function SettingsModal() {
                     <p className="text-xs text-muted-foreground">
                       Maximum consecutive tool-call rounds before stopping. Set to 0 for unlimited.
                     </p>
+                  </div>
+
+                  <div className="space-y-3 border border-border rounded-sm p-4 bg-secondary/20">
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium">Multi-Agent Defaults</label>
+                      <p className="text-xs text-muted-foreground">
+                        Controls the optional subagent tool exposed when multi-agent mode is enabled from the composer.
+                      </p>
+                    </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={multiAgentEnabled}
+                        onChange={(e) => setMultiAgentEnabled(e.target.checked)}
+                        className="rounded border-border"
+                      />
+                      <span className="text-sm">Queue multi-agent mode for the next message</span>
+                    </label>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Max Subagents</label>
+                      <LocalInput
+                        type="number"
+                        min="1"
+                        max="10"
+                        step="1"
+                        value={String(maxSubagents ?? 3)}
+                        onChange={(val: string) => {
+                          const parsed = Number.parseInt(val, 10)
+                          setMaxSubagents(Number.isFinite(parsed) ? Math.min(10, Math.max(1, parsed)) : 3)
+                        }}
+                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Maximum concurrent subagents the model can delegate to in one tool round.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Subagent Provider</label>
+                      <select
+                        value={subagentProvider}
+                        onChange={(e) => setSubagentProvider(e.target.value)}
+                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      >
+                        <option value="">Same as main provider</option>
+                        {providers.map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Subagent Model</label>
+                      <LocalInput
+                        type="text"
+                        value={subagentModel}
+                        onChange={(val: string) => setSubagentModel(val.trim())}
+                        placeholder="Leave blank to reuse the main model"
+                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                    </div>
                   </div>
                 </div>
               )}

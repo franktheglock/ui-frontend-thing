@@ -105,12 +105,19 @@ export function useChat() {
     maxTokens,
     topP,
     reasoningEffort,
+    deepResearch,
+    multiAgentEnabled,
+    maxSubagents,
+    subagentModel,
+    subagentProvider,
     streamResponses,
     tools,
     defaultSearchProvider,
     searchConfig,
     maxToolTurns,
-    setSelectedModelAndProvider
+    setSelectedModelAndProvider,
+    setDeepResearch,
+    setMultiAgentEnabled
   } = useSettingsStore()
 
   const runCompletion = useCallback(async (sessionId: string) => {
@@ -190,6 +197,8 @@ export function useChat() {
             maxTokens,
             topP,
             reasoningEffort,
+            deepResearch,
+            multiAgentEnabled,
             stream: streamResponses,
             disabledTools: tools.filter(t => !t.enabled).map(t => t.name),
             sessionId: sessionId,
@@ -358,46 +367,71 @@ export function useChat() {
               })
             })
 
-            for (const tc of activeCalls) {
-              if (signal.aborted) break
-              try {
-                let parsedArgs = typeof tc.arguments === 'string' ? safeJsonParse(tc.arguments) : tc.arguments
-                if (tc.name === 'web_search') {
-                  parsedArgs.provider = defaultSearchProvider
-                  parsedArgs.searchConfig = {
-                    searxngUrl: 'http://192.168.1.70:8888',
-                    ...searchConfig,
-                  }
-                  if (!parsedArgs.searchConfig.searxngUrl) {
-                    parsedArgs.searchConfig.searxngUrl = 'http://192.168.1.70:8888'
-                  }
-                  parsedArgs.startIndex = currentSourceCount
-                } else if (tc.name === 'read_url') parsedArgs.startIndex = currentSourceCount
-
-                allToolCalls = allToolCalls.map(call =>
-                  call.id === tc.id ? { ...call, arguments: parsedArgs, display: getToolDisplay(tc.name, parsedArgs) } : call
-                )
-                useChatStore.getState().setActiveToolCalls(sessionId, allToolCalls)
-
-                const toolRequest = createChildAbortController(signal, 20000)
-                let res: Response
-                try {
-                  res = await fetch('/api/chat/tool-call', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    signal: toolRequest.signal,
-                    body: JSON.stringify({ name: tc.name, arguments: parsedArgs }),
-                  })
-                } finally {
-                  toolRequest.cleanup()
+            const executeToolCall = async (tc: ToolCall, sourceCount: number) => {
+              let parsedArgs = typeof tc.arguments === 'string' ? safeJsonParse(tc.arguments) : tc.arguments
+              if (tc.name === 'web_search') {
+                parsedArgs.provider = defaultSearchProvider
+                parsedArgs.searchConfig = {
+                  searxngUrl: 'http://192.168.1.70:8888',
+                  ...searchConfig,
                 }
+                if (!parsedArgs.searchConfig.searxngUrl) {
+                  parsedArgs.searchConfig.searxngUrl = 'http://192.168.1.70:8888'
+                }
+                parsedArgs.startIndex = sourceCount
+              } else if (tc.name === 'read_url') {
+                parsedArgs.startIndex = sourceCount
+              }
+
+              allToolCalls = allToolCalls.map(call =>
+                call.id === tc.id ? { ...call, arguments: parsedArgs, display: getToolDisplay(tc.name, parsedArgs) } : call
+              )
+              useChatStore.getState().setActiveToolCalls(sessionId, allToolCalls)
+
+              const toolRequest = createChildAbortController(signal, tc.name === 'spawn_subagent' ? 120000 : 20000)
+              try {
+                const res = await fetch('/api/chat/tool-call', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  signal: toolRequest.signal,
+                  body: JSON.stringify({
+                    name: tc.name,
+                    arguments: parsedArgs,
+                    model: currentModel,
+                    provider: currentProvider,
+                    sessionId,
+                    temperature,
+                    maxTokens,
+                    topP,
+                    reasoningEffort,
+                    defaultSearchProvider,
+                    searchConfig,
+                    disabledTools: tools.filter(t => !t.enabled).map(t => t.name),
+                    maxToolTurns,
+                    subagentModel,
+                    subagentProvider,
+                  }),
+                })
                 const data = await res.json()
                 const result = res.ok ? data.result : `Error: ${data.error || res.statusText}`
-                toolResults.push({ toolCallId: tc.id, name: tc.name, result })
+                return { toolCallId: tc.id, name: tc.name, result }
+              } finally {
+                toolRequest.cleanup()
+              }
+            }
+
+            const standardCalls = activeCalls.filter(tc => tc.name !== 'spawn_subagent')
+            const subagentCalls = activeCalls.filter(tc => tc.name === 'spawn_subagent')
+
+            for (const tc of standardCalls) {
+              if (signal.aborted) break
+              try {
+                const toolResult = await executeToolCall(tc, currentSourceCount)
+                toolResults.push(toolResult)
                 useChatStore.getState().setActiveToolResults(sessionId, [...allToolResults, ...toolResults])
                 
                 if (tc.name === 'web_search') {
-                  const matches = result.match(/URL:\s*(https?:\/\/[^\s]+)/g)
+                  const matches = toolResult.result.match(/URL:\s*(https?:\/\/[^\s]+)/g)
                   if (matches) currentSourceCount += matches.length
                 } else if (tc.name === 'read_url' || tc.name === 'read_browser_page') currentSourceCount += 1
               } catch (err: any) {
@@ -405,6 +439,21 @@ export function useChat() {
                 useChatStore.getState().setActiveToolResults(sessionId, [...allToolResults, ...toolResults])
               }
             }
+
+            for (let index = 0; index < subagentCalls.length; index += Math.max(1, maxSubagents)) {
+              if (signal.aborted) break
+              const batch = subagentCalls.slice(index, index + Math.max(1, maxSubagents))
+              const batchResults = await Promise.all(batch.map(async (tc) => {
+                try {
+                  return await executeToolCall(tc, currentSourceCount)
+                } catch (err: any) {
+                  return { toolCallId: tc.id, name: tc.name, result: `Error: ${err.message}` }
+                }
+              }))
+              toolResults.push(...batchResults)
+              useChatStore.getState().setActiveToolResults(sessionId, [...allToolResults, ...toolResults])
+            }
+
             allToolResults = [...allToolResults, ...toolResults]
             // Keep the live stream state intact between tool rounds so open process
             // panels and already-rendered tool results do not collapse or remount.
@@ -421,6 +470,8 @@ export function useChat() {
     } finally {
       unsubscribe()
       stopGenerating(sessionId)
+      if (deepResearch) setDeepResearch(false)
+      if (multiAgentEnabled) setMultiAgentEnabled(false)
       
       // Post-generation background tasks (e.g. OpenRouter cost polling)
       const lastMessage = useChatStore.getState().sessions.find(s => s.id === sessionId)?.messages.slice(-1)[0]
@@ -454,7 +505,7 @@ export function useChat() {
         })()
       }
     }
-  }, [selectedModel, selectedProvider, systemPrompt, temperature, maxTokens, topP, reasoningEffort, streamResponses, tools, defaultSearchProvider, searchConfig, maxToolTurns, addMessage, startGenerating, stopGenerating, clearStreaming, appendStreamingContent, setStreamingContent, appendStreamingThinking, setActiveToolCalls, updateMessage])
+  }, [selectedModel, selectedProvider, systemPrompt, temperature, maxTokens, topP, reasoningEffort, deepResearch, multiAgentEnabled, maxSubagents, subagentModel, subagentProvider, streamResponses, tools, defaultSearchProvider, searchConfig, maxToolTurns, addMessage, startGenerating, stopGenerating, clearStreaming, appendStreamingContent, setStreamingContent, appendStreamingThinking, setActiveToolCalls, updateMessage, setDeepResearch, setMultiAgentEnabled])
 
   const sendMessage = useCallback(async (content: string, attachments?: Attachment[]) => {
     let sessionId = currentSessionId

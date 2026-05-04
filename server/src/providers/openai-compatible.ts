@@ -133,6 +133,17 @@ export class OpenAICompatibleProvider extends BaseProvider {
     const formatted: any[] = []
     
     for (const m of messages) {
+      if (m.role === 'tool' && m.toolResults && m.toolResults.length > 0) {
+        for (const tr of m.toolResults) {
+          formatted.push({
+            role: 'tool',
+            tool_call_id: tr.toolCallId,
+            content: tr.result !== undefined ? (typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result)) : ''
+          })
+        }
+        continue
+      }
+
       const base: any = {
         role: m.role,
         content: m.content || '',
@@ -172,18 +183,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
           function: { name: tc.name, arguments: typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments) }
         }))
       }
-
       formatted.push(base)
-
-      if (m.toolResults && m.toolResults.length > 0) {
-        for (const tr of m.toolResults) {
-          formatted.push({
-            role: 'tool',
-            tool_call_id: tr.toolCallId,
-            content: tr.result !== undefined ? (typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result)) : ''
-          })
-        }
-      }
     }
 
     return formatted

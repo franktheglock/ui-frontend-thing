@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Globe, ChevronRight, Search, Terminal, Link2, FileText, Loader2 } from 'lucide-react'
+import { Globe, ChevronRight, Search, Terminal, Link2, FileText, Loader2, Bot } from 'lucide-react'
 import { ToolCall, ToolResult } from '../stores/chatStore'
 import { cn } from '../lib/utils'
 
@@ -83,6 +83,14 @@ function getUrl(args: Record<string, any>, resultText?: string) {
   return match?.[1] || ''
 }
 
+function parseSubagentResult(resultText: string) {
+  try {
+    return JSON.parse(resultText)
+  } catch {
+    return null
+  }
+}
+
 export function ToolCallBlock({ toolCalls, results = [], hideHeaderIcon = false }: ToolCallBlockProps) {
   const isRunning = toolCalls.some(tc => !results.some(r => r.toolCallId === tc.id))
   const [isOpen, setIsOpen] = useState(() => isRunning)
@@ -102,6 +110,7 @@ export function ToolCallBlock({ toolCalls, results = [], hideHeaderIcon = false 
   const firstCall = toolCalls[0]
   if (!firstCall) return null
 
+  const isSubagent = firstCall.name === 'spawn_subagent'
   const isWebSearch = firstCall.name === 'web_search' || firstCall.name?.toLowerCase().includes('search')
   const isReadUrl = firstCall.name === 'read_url' || firstCall.name === 'read_browser_page'
   const groupCount = toolCalls.length
@@ -133,15 +142,16 @@ export function ToolCallBlock({ toolCalls, results = [], hideHeaderIcon = false 
       >
         <div className="flex items-center gap-2 text-muted-foreground">
           {!hideHeaderIcon && (
-            isWebSearch ? <Globe className="w-3.5 h-3.5 text-accent" /> : isReadUrl ? <Link2 className="w-3.5 h-3.5 text-accent" /> : <Terminal className="w-3.5 h-3.5 text-accent" />
+            isSubagent ? <Bot className="w-3.5 h-3.5 text-accent" /> : isWebSearch ? <Globe className="w-3.5 h-3.5 text-accent" /> : isReadUrl ? <Link2 className="w-3.5 h-3.5 text-accent" /> : <Terminal className="w-3.5 h-3.5 text-accent" />
           )}
           <span className="font-medium text-foreground">
             {(() => {
               const allNames = new Set(toolCalls.map(tc => tc.name))
               if (allNames.size === 1) {
-                return isWebSearch ? 'web_search' : isReadUrl ? 'read_url' : firstCall.name
+                return isSubagent ? 'subagent' : isWebSearch ? 'web_search' : isReadUrl ? 'read_url' : firstCall.name
               }
               // If mixed tools in a type group
+              if (isSubagent) return 'subagent'
               if (isWebSearch) return 'web_search'
               if (isReadUrl) return 'browsing'
               if (firstCall.name === 'python' || firstCall.name === 'terminal') return 'code_execution'
@@ -188,10 +198,80 @@ export function ToolCallBlock({ toolCalls, results = [], hideHeaderIcon = false 
                 const args = getToolArgs(tc)
                 const query = getQuery(args)
                 const url = getUrl(args, resultText)
+                const subagentResult = isSubagent ? parseSubagentResult(resultText) : null
 
                 return (
                   <div key={tc.id} className={cn("space-y-3", idx > 0 && "pt-4 border-t border-border/50")}>
-                    {isWebSearch ? (
+                    {isSubagent ? (
+                      <>
+                        <div className="flex flex-col gap-1 text-xs">
+                          <span className="text-muted-foreground flex items-center gap-1">
+                            <Bot className="w-3 h-3" /> Scope {groupCount > 1 && `#${idx + 1}`}
+                          </span>
+                          <span className="font-mono text-foreground/90 bg-background/50 px-2 py-1 rounded-sm border border-border/50">
+                            {String(args.scope || args.topic || 'General research')}
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-1 text-xs">
+                          <span className="text-muted-foreground">Task</span>
+                          <div className="text-foreground/90 bg-background/50 px-2 py-1 rounded-sm border border-border/50 whitespace-pre-wrap break-words">
+                            {String(args.task || args.prompt || args.query || 'No task provided')}
+                          </div>
+                        </div>
+                        {subagentResult ? (
+                          <>
+                            <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+                              <span className="rounded-sm bg-background/50 px-1.5 py-0.5 border border-border/50">
+                                {subagentResult.provider || 'provider'} / {subagentResult.model || 'model'}
+                              </span>
+                              <span className="rounded-sm bg-background/50 px-1.5 py-0.5 border border-border/50">
+                                {subagentResult.toolTurns ?? 0} tool turns
+                              </span>
+                            </div>
+                            <div className="flex flex-col gap-1 mt-2">
+                              <span className="text-xs text-muted-foreground">Summary</span>
+                              <div className="text-xs text-foreground/90 bg-background/50 p-2 rounded-sm border border-border/50 whitespace-pre-wrap break-words">
+                                {String(subagentResult.summary || 'No summary returned')}
+                              </div>
+                            </div>
+                            {Array.isArray(subagentResult.sources) && subagentResult.sources.length > 0 && (
+                              <div className="flex flex-col gap-2 mt-2">
+                                <span className="text-xs text-muted-foreground">Sources</span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {subagentResult.sources.map((source: string, sourceIndex: number) => {
+                                    let domain = source
+                                    try { domain = new URL(source).hostname.replace('www.', '') } catch {}
+                                    return (
+                                      <a
+                                        key={`${source}-${sourceIndex}`}
+                                        href={source}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-2 px-2 py-1.5 bg-background border border-border rounded-sm hover:border-accent transition-colors overflow-hidden group"
+                                      >
+                                        <img
+                                          src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`}
+                                          alt=""
+                                          className="w-4 h-4 flex-shrink-0 rounded-[2px]"
+                                        />
+                                        <span className="text-xs text-foreground/70 truncate">{domain}</span>
+                                      </a>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        ) : resultText ? (
+                          <div className="text-xs font-mono text-muted-foreground border-t border-border pt-2 mt-2 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words max-h-40">
+                            <div className="text-foreground mb-1">Result:</div>
+                            {resultText}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-muted-foreground italic px-2 mt-2">Running subagent...</div>
+                        )}
+                      </>
+                    ) : isWebSearch ? (
                       <>
                         <div className="flex flex-col gap-1 text-xs">
                           <span className="text-muted-foreground flex items-center gap-1">
