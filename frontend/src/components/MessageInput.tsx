@@ -885,7 +885,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                           <div className="text-xs font-medium text-foreground">Reasoning effort</div>
                           <div className="text-[11px] text-muted-foreground">Applies to the next message</div>
                         </div>
-                        <span className="rounded-full border border-border/70 bg-secondary/70 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent">
+                        <span className="inline-flex min-h-6 min-w-[112px] flex-shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-border/70 bg-secondary/70 px-2 py-0.5 text-center text-[10px] font-medium uppercase tracking-wide leading-none text-accent">
                           {reasoningEffortOptions[reasoningEffortIndex]?.label ?? 'Auto'}
                         </span>
                       </div>
