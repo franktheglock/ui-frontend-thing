@@ -10,6 +10,7 @@ import toolRoutes from './api/tools'
 import uploadRoutes from './api/upload'
 import skillRoutes from './api/skills'
 import mcpRoutes from './api/mcp'
+import imageRoutes from './api/images'
 import { getDb } from './db'
 import { mcpManager } from './mcp/mcp-manager'
 
@@ -48,6 +49,7 @@ async function main() {
   app.use('/api/upload', uploadRoutes)
   app.use('/api/skills', skillRoutes)
   app.use('/api/mcp', mcpRoutes)
+  app.use('/api/images', imageRoutes)
 
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', version: '0.1.0' })

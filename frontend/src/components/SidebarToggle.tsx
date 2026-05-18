@@ -14,7 +14,7 @@ export function SidebarToggle() {
       animate={{ opacity: 1, x: 0 }}
       onClick={toggleSidebar}
       className={cn(
-        'fixed left-3 top-3 z-50 p-2 bg-card border border-border rounded-sm',
+        'fixed left-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[80] p-2 bg-card/95 border border-border rounded-sm backdrop-blur-sm',
         'hover:bg-secondary transition-colors shadow-lg md:left-3'
       )}
     >

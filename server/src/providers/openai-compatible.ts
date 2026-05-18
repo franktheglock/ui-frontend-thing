@@ -1,5 +1,10 @@
+import fs from 'fs'
+import path from 'path'
 import { BaseProvider, CompletionOptions, CompletionChunk } from './base'
 import { ChatMessage } from '../types'
+import { uploadToCatbox } from '../image/service'
+
+const catboxCache = new Map<string, string>()
 
 export class OpenAICompatibleProvider extends BaseProvider {
   id = 'openai-compatible'
@@ -32,7 +37,7 @@ export class OpenAICompatibleProvider extends BaseProvider {
       headers: this.getRequestHeaders(),
       body: JSON.stringify({
         model: options.model,
-        messages: this.formatMessages(options.messages),
+        messages: await this.formatMessages(options.messages),
         temperature: options.temperature,
         max_tokens: options.maxTokens || undefined,
         top_p: options.topP,
@@ -129,9 +134,58 @@ export class OpenAICompatibleProvider extends BaseProvider {
     return Object.keys(chunk).length > 0 ? chunk : null
   }
 
-  protected formatMessages(messages: any[]): any[] {
+  protected async resolveAttachmentUrl(url: string): Promise<string> {
+    // Already public — no conversion needed
+    if (url.startsWith('http') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
+      return url
+    }
+
+    // Check cache
+    const cached = catboxCache.get(url)
+    if (cached) return cached
+
+    // Extract path from URL
+    let filePath = url
+    if (url.startsWith('http')) {
+      try {
+        const parsed = new URL(url)
+        filePath = parsed.pathname
+      } catch {
+        filePath = url
+      }
+    }
+    const absolutePath = path.join(process.cwd(), filePath.replace(/^\/+/, ''))
+
+    if (!fs.existsSync(absolutePath)) {
+      catboxCache.set(url, url) // don't retry nonexistent paths
+      return url
+    }
+
+    // Try uploading to catbox for a short public URL (saves tokens vs base64)
+    try {
+      const buffer = fs.readFileSync(absolutePath)
+      const publicUrl = await uploadToCatbox(buffer, path.basename(absolutePath))
+      catboxCache.set(url, publicUrl)
+      return publicUrl
+    } catch {
+      // Fall through to base64
+    }
+
+    // Fallback: inline as base64
+    const buffer = fs.readFileSync(absolutePath)
+    const ext = path.extname(absolutePath).toLowerCase()
+    const mimeType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+      : ext === '.webp' ? 'image/webp'
+        : ext === '.gif' ? 'image/gif'
+          : 'image/png'
+    const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`
+    catboxCache.set(url, dataUrl) // cache base64 too so we don't re-read for same url
+    return dataUrl
+  }
+
+  protected async formatMessages(messages: any[]): Promise<any[]> {
     const formatted: any[] = []
-    
+
     for (const m of messages) {
       const base: any = {
         role: m.role,
@@ -143,25 +197,26 @@ export class OpenAICompatibleProvider extends BaseProvider {
       }
 
       if (m.attachments && m.attachments.length > 0) {
-        base.content = [
-          { type: 'text', text: m.content || '' },
-          ...m.attachments.map((a: any) => {
+        const attachmentContents = await Promise.all(
+          m.attachments.map(async (a: any) => {
             const url = a.url.startsWith('http') ? a.url : `http://localhost:3456${a.url}`
+            const resolvedUrl = await this.resolveAttachmentUrl(url)
             if (a.type === 'image') {
               return {
                 type: 'image_url',
-                image_url: { url }
+                image_url: { url: resolvedUrl }
               }
             } else {
-              // For other files, use a 'file' type if supported by the provider, 
-              // or fall back to a text description if needed.
-              // OpenRouter and some OpenAI-compatible endpoints support this.
               return {
                 type: 'file',
-                file_url: { url, name: a.name, mime_type: a.mimeType }
+                file_url: { url: resolvedUrl, name: a.name, mime_type: a.mimeType }
               }
             }
-          }),
+          })
+        )
+        base.content = [
+          { type: 'text', text: m.content || '' },
+          ...attachmentContents,
         ]
       }
 

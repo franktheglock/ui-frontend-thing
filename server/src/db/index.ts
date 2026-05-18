@@ -101,8 +101,19 @@ export async function getDb(): Promise<Database<sqlite3.Database, sqlite3.Statem
       auto_connect INTEGER NOT NULL DEFAULT 1
     );
 
+    CREATE TABLE IF NOT EXISTS image_generations (
+      id TEXT PRIMARY KEY,
+      prompt TEXT NOT NULL,
+      provider_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      images TEXT NOT NULL,
+      params TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
   CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_image_generations_created ON image_generations(created_at DESC);
   `)
 
   // Migrate: add last_response_id to existing sessions tables

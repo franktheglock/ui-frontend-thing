@@ -58,6 +58,14 @@ export function getToolDisplay(name: string, args: unknown): string {
       }
       return 'Running terminal command'
     }
+    case 'generate_image': {
+      const prompt = parsed.prompt
+      if (prompt) {
+        const text = String(prompt)
+        return `Generating image: ${text.slice(0, 40)}${text.length > 40 ? '…' : ''}`
+      }
+      return 'Generating image'
+    }
     case 'list_skills':
       return 'Listing available skills'
     case 'read_skill': {

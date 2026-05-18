@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   MessageSquare,
+  ImagePlus,
   Plus,
   Trash2,
   Settings,
@@ -14,13 +16,16 @@ import {
 } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { useUIStore } from '../stores/uiStore'
+import { getPathnameForView, getViewFromPathname, useUIStore } from '../stores/uiStore'
 import { cn, formatDate } from '../lib/utils'
 
 export function Sidebar() {
   const { sessions, currentSessionId, createSession, setCurrentSession, deleteSession, renameSession } = useChatStore()
   const { sidebarOpen, toggleSidebar, theme, setTheme } = useSettingsStore()
-  const { setSettingsOpen, setToolSelectorOpen, setSearchHighlight } = useUIStore()
+  const { setCurrentView, setSettingsOpen, setToolSelectorOpen, setSearchHighlight } = useUIStore()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const currentView = getViewFromPathname(location.pathname)
   const [searchQuery, setSearchQuery] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
@@ -102,12 +107,30 @@ export function Sidebar() {
             <button
               onClick={async () => {
                 const { selectedModel, selectedProvider } = useSettingsStore.getState()
+                setCurrentView('chat')
+                navigate(getPathnameForView('chat'))
                 await createSession(selectedModel, selectedProvider)
               }}
               className="w-full flex items-center gap-2 px-3 py-2 bg-accent text-accent-foreground rounded-none hover:bg-accent/90 transition-colors font-medium text-sm"
             >
               <Plus className="w-4 h-4" />
               New Chat
+            </button>
+
+            <button
+              onClick={() => {
+                setCurrentView('image-studio')
+                navigate(getPathnameForView('image-studio'))
+              }}
+              className={cn(
+                'w-full flex items-center gap-2 px-3 py-2 border text-sm transition-colors',
+                currentView === 'image-studio'
+                  ? 'border-accent bg-accent/10 text-foreground'
+                  : 'border-border bg-secondary/30 text-muted-foreground hover:text-foreground hover:border-accent/30'
+              )}
+            >
+              <ImagePlus className="w-4 h-4" />
+              Image Studio
             </button>
 
             <div className="relative">
@@ -135,6 +158,8 @@ export function Sidebar() {
                     : 'hover:bg-secondary/50 text-muted-foreground hover:text-foreground'
                 )}
                 onClick={() => {
+                  setCurrentView('chat')
+                  navigate(getPathnameForView('chat'))
                   setCurrentSession(session.id)
                   if (searchQuery.trim()) {
                     // Find the first message with the match for scrolling

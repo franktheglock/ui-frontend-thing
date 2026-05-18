@@ -1,5 +1,15 @@
 import { create } from 'zustand'
 
+export type UIView = 'chat' | 'image-studio'
+
+export function getViewFromPathname(pathname: string): UIView {
+  return pathname === '/image-studio' || pathname.startsWith('/image-studio/') ? 'image-studio' : 'chat'
+}
+
+export function getPathnameForView(view: UIView): string {
+  return view === 'image-studio' ? '/image-studio' : '/'
+}
+
 export interface Artifact {
   id: string
   type: 'code' | 'html' | 'svg' | 'markdown' | 'text'
@@ -10,6 +20,7 @@ export interface Artifact {
 }
 
 interface UIState {
+  currentView: UIView
   activeArtifact: Artifact | null
   artifactPanelOpen: boolean
   activeActivityMessageId: string | null
@@ -27,6 +38,7 @@ interface UIState {
   setActiveActivityMessageId: (id: string | null) => void
   setActivityPanelOpen: (open: boolean) => void
   toggleActivityPanel: () => void
+  setCurrentView: (view: UIView) => void
   setSettingsOpen: (open: boolean) => void
   setModelSelectorOpen: (open: boolean) => void
   setToolSelectorOpen: (open: boolean) => void
@@ -35,6 +47,7 @@ interface UIState {
 }
 
 export const useUIStore = create<UIState>()((set) => ({
+  currentView: 'chat',
   activeArtifact: null,
   artifactPanelOpen: false,
   activeActivityMessageId: null,
@@ -52,6 +65,7 @@ export const useUIStore = create<UIState>()((set) => ({
   setActiveActivityMessageId: (id) => set({ activeActivityMessageId: id }),
   setActivityPanelOpen: (open) => set({ activityPanelOpen: open }),
   toggleActivityPanel: () => set(state => ({ activityPanelOpen: !state.activityPanelOpen })),
+  setCurrentView: (view) => set({ currentView: view }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setModelSelectorOpen: (open) => set({ modelSelectorOpen: open }),
   setToolSelectorOpen: (open) => set({ toolSelectorOpen: open }),

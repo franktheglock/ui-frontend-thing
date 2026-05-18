@@ -15,7 +15,7 @@ export class LMStudioProvider extends OpenAICompatibleProvider {
     // Key differences:
     // 1. Assistant messages with tool_calls should NOT have a content field (or it must be null)
     // 2. We avoid sending vision content arrays unless absolutely necessary
-    const messages = this.formatMessagesForLMStudio(options.messages)
+    const messages = await this.formatMessagesForLMStudio(options.messages)
 
     const body: any = {
       model: options.model,
@@ -101,23 +101,17 @@ export class LMStudioProvider extends OpenAICompatibleProvider {
     }
   }
 
-  private formatMessagesForLMStudio(messages: any[]): any[] {
+  private async formatMessagesForLMStudio(messages: any[]): Promise<any[]> {
     const formatted: any[] = []
 
     for (const m of messages) {
-      // Skip messages with empty content and no special fields (except for user messages)
       if (m.role === 'user' && (!m.content || m.content === '') && (!m.attachments || m.attachments.length === 0)) {
         continue
       }
 
-      const base: any = {
-        role: m.role,
-      }
+      const base: any = { role: m.role }
 
-      // For assistant messages with tool calls, LM Studio prefers no content field at all
       if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
-        // LM Studio examples show tool call messages without content
-        // If there is actual content, we include it as null
         base.content = m.content && m.content.trim() ? m.content : null
         base.tool_calls = m.toolCalls.map((tc: any) => ({
           id: tc.id,
@@ -128,13 +122,16 @@ export class LMStudioProvider extends OpenAICompatibleProvider {
           }
         }))
       } else if (m.attachments && m.attachments.length > 0) {
-        // Vision format - only use if there are actual attachments
+        const attachmentContents = await Promise.all(
+          m.attachments.map(async (a: any) => {
+            const url = a.url?.startsWith('http') ? a.url : `http://localhost:3456${a.url}`
+            const resolvedUrl = await this.resolveAttachmentUrl(url)
+            return { type: 'image_url', image_url: { url: resolvedUrl } }
+          })
+        )
         base.content = [
           { type: 'text', text: m.content || '' },
-          ...m.attachments.map((a: any) => ({
-            type: 'image_url',
-            image_url: { url: a.url?.startsWith('http') ? a.url : `http://localhost:3456${a.url}` },
-          })),
+          ...attachmentContents,
         ]
       } else {
         base.content = m.content || ''
@@ -142,7 +139,6 @@ export class LMStudioProvider extends OpenAICompatibleProvider {
 
       formatted.push(base)
 
-      // Add tool results as separate messages
       if (m.toolResults && m.toolResults.length > 0) {
         for (const tr of m.toolResults) {
           formatted.push({

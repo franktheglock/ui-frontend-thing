@@ -1,5 +1,10 @@
+import fs from 'fs'
+import path from 'path'
 import { BaseProvider, CompletionOptions, CompletionChunk } from './base'
 import { ChatMessage } from '../types'
+import { uploadToCatbox } from '../image/service'
+
+const catboxCache = new Map<string, string>()
 
 export class OpenAIProvider extends BaseProvider {
   id = 'openai'
@@ -21,7 +26,7 @@ export class OpenAIProvider extends BaseProvider {
       },
       body: JSON.stringify({
         model: options.model,
-        messages: this.formatMessages(options.messages),
+        messages: await this.formatMessages(options.messages),
         temperature: options.temperature,
         max_tokens: options.maxTokens || undefined,
         top_p: options.topP,
@@ -112,8 +117,46 @@ export class OpenAIProvider extends BaseProvider {
     return chunk
   }
 
-  private formatMessages(messages: ChatMessage[]): any[] {
-    return messages.map(m => {
+  private async resolveAttachmentUrl(url: string): Promise<string> {
+    if (url.startsWith('http') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
+      return url
+    }
+    const cached = catboxCache.get(url)
+    if (cached) return cached
+
+    let filePath = url
+    if (url.startsWith('http')) {
+      try { filePath = new URL(url).pathname } catch { /* ignore */ }
+    }
+    const absolutePath = path.join(process.cwd(), filePath.replace(/^\/+/, ''))
+    if (!fs.existsSync(absolutePath)) {
+      catboxCache.set(url, url)
+      return url
+    }
+
+    try {
+      const buffer = fs.readFileSync(absolutePath)
+      const publicUrl = await uploadToCatbox(buffer, path.basename(absolutePath))
+      catboxCache.set(url, publicUrl)
+      return publicUrl
+    } catch {
+      // fall through
+    }
+
+    const buffer = fs.readFileSync(absolutePath)
+    const ext = path.extname(absolutePath).toLowerCase()
+    const mimeType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+      : ext === '.webp' ? 'image/webp'
+        : ext === '.gif' ? 'image/gif'
+          : 'image/png'
+    const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`
+    catboxCache.set(url, dataUrl)
+    return dataUrl
+  }
+
+  private async formatMessages(messages: ChatMessage[]): Promise<any[]> {
+    const result: any[] = []
+    for (const m of messages) {
       const msg: any = {
         role: m.role,
         content: m.content || null,
@@ -131,22 +174,25 @@ export class OpenAIProvider extends BaseProvider {
       }
 
       if (m.role === 'tool' && m.toolResults) {
-        // OpenAI expects one message per tool result, but our DB might group them.
-        // For simplicity, we use the first tool result's ID.
         msg.tool_call_id = m.toolResults[0]?.toolCallId
       }
 
       if (m.attachments && m.attachments.length > 0) {
+        const attachmentContents = await Promise.all(
+          m.attachments.map(async (a) => {
+            const url = a.url.startsWith('http') ? a.url : `http://localhost:3456${a.url}`
+            const resolvedUrl = await this.resolveAttachmentUrl(url)
+            return { type: 'image_url', image_url: { url: resolvedUrl } }
+          })
+        )
         msg.content = [
           { type: 'text', text: m.content },
-          ...m.attachments.map(a => ({
-            type: 'image_url',
-            image_url: { url: a.url.startsWith('http') ? a.url : `http://localhost:3456${a.url}` },
-          })),
+          ...attachmentContents,
         ]
       }
 
-      return msg
-    })
+      result.push(msg)
+    }
+    return result
   }
 }

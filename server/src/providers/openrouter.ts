@@ -99,7 +99,7 @@ export class OpenRouterProvider extends OpenAICompatibleProvider {
 
     const body: Record<string, unknown> = {
       model: options.model,
-      messages: this.formatMessages(options.messages),
+      messages: await this.formatMessages(options.messages),
       stream: true,
       ...(options.sessionId ? { session_id: options.sessionId } : {}),
     }

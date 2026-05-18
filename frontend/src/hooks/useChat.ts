@@ -1,91 +1,216 @@
-import { useCallback } from 'react'
-import { useChatStore, generateUUID } from '../stores/chatStore'
-import { useSettingsStore } from '../stores/settingsStore'
-import { Message, Attachment, ToolCall, ToolResult } from '../stores/chatStore'
-import { getToolDisplay } from '../lib/toolDisplay'
-import { useUIStore } from '../stores/uiStore'
+import { useCallback } from "react";
+import { useChatStore, generateUUID } from "../stores/chatStore";
+import { useSettingsStore } from "../stores/settingsStore";
+import { Message, Attachment, ToolCall, ToolResult } from "../stores/chatStore";
+import { getToolDisplay } from "../lib/toolDisplay";
+import { useUIStore } from "../stores/uiStore";
 
 function safeJsonParse(json: string): any {
-  try { return JSON.parse(json) } catch {
-    let s = json.trim()
-    if (!s) return {}
+  try {
+    return JSON.parse(json);
+  } catch {
+    let s = json.trim();
+    if (!s) return {};
     // Strip trailing broken escapes
-    while (s.endsWith('\\')) s = s.slice(0, -1)
+    while (s.endsWith("\\")) s = s.slice(0, -1);
     // Find and close unterminated strings
-    let inStr = false, esc = false, lastQuoteIdx = -1
+    let inStr = false,
+      esc = false,
+      lastQuoteIdx = -1;
     for (let i = 0; i < s.length; i++) {
-      const c = s[i]
-      if (esc) { esc = false; continue }
-      if (c === '\\') { esc = true; continue }
-      if (c === '"') { inStr = !inStr; lastQuoteIdx = i }
-    }
-    if (inStr && lastQuoteIdx >= 0) s = s.slice(0, lastQuoteIdx) + '"'
-    // Remove trailing commas
-    s = s.replace(/,\s*([}\]])/g, '$1')
-    // Close open brackets
-    let openBraces = 0, openBrackets = 0
-    inStr = false; esc = false
-    for (let i = 0; i < s.length; i++) {
-      const c = s[i]
-      if (esc) { esc = false; continue }
-      if (c === '\\') { esc = true; continue }
-      if (c === '"') { inStr = !inStr; continue }
-      if (inStr) continue
-      if (c === '{') openBraces++
-      else if (c === '}') openBraces--
-      else if (c === '[') openBrackets++
-      else if (c === ']') openBrackets--
-    }
-    while (openBrackets > 0) { s += ']'; openBrackets-- }
-    while (openBraces > 0) { s += '}'; openBraces-- }
-    try { return JSON.parse(s) } catch {
-      // Last resort: extract the outermost JSON object
-      let depth = 0, start = -1
-      inStr = false; esc = false
-      for (let i = 0; i < json.length; i++) {
-        const c = json[i]
-        if (esc) { esc = false; continue }
-        if (c === '\\') { esc = true; continue }
-        if (c === '"') { inStr = !inStr; continue }
-        if (inStr) continue
-        if (c === '{') { if (depth === 0) start = i; depth++ }
-        else if (c === '}') { depth--; if (depth === 0 && start >= 0) {
-          try { return JSON.parse(json.slice(start, i + 1)) } catch {}
-        }}
+      const c = s[i];
+      if (esc) {
+        esc = false;
+        continue;
       }
-      throw new Error(`Invalid JSON: ${json.slice(0, 100)}`)
+      if (c === "\\") {
+        esc = true;
+        continue;
+      }
+      if (c === '"') {
+        inStr = !inStr;
+        lastQuoteIdx = i;
+      }
+    }
+    if (inStr && lastQuoteIdx >= 0) s = s.slice(0, lastQuoteIdx) + '"';
+    // Remove trailing commas
+    s = s.replace(/,\s*([}\]])/g, "$1");
+    // Close open brackets
+    let openBraces = 0,
+      openBrackets = 0;
+    inStr = false;
+    esc = false;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (esc) {
+        esc = false;
+        continue;
+      }
+      if (c === "\\") {
+        esc = true;
+        continue;
+      }
+      if (c === '"') {
+        inStr = !inStr;
+        continue;
+      }
+      if (inStr) continue;
+      if (c === "{") openBraces++;
+      else if (c === "}") openBraces--;
+      else if (c === "[") openBrackets++;
+      else if (c === "]") openBrackets--;
+    }
+    while (openBrackets > 0) {
+      s += "]";
+      openBrackets--;
+    }
+    while (openBraces > 0) {
+      s += "}";
+      openBraces--;
+    }
+    try {
+      return JSON.parse(s);
+    } catch {
+      // Last resort: extract the outermost JSON object
+      let depth = 0,
+        start = -1;
+      inStr = false;
+      esc = false;
+      for (let i = 0; i < json.length; i++) {
+        const c = json[i];
+        if (esc) {
+          esc = false;
+          continue;
+        }
+        if (c === "\\") {
+          esc = true;
+          continue;
+        }
+        if (c === '"') {
+          inStr = !inStr;
+          continue;
+        }
+        if (inStr) continue;
+        if (c === "{") {
+          if (depth === 0) start = i;
+          depth++;
+        } else if (c === "}") {
+          depth--;
+          if (depth === 0 && start >= 0) {
+            try {
+              return JSON.parse(json.slice(start, i + 1));
+            } catch {}
+          }
+        }
+      }
+      throw new Error(`Invalid JSON: ${json.slice(0, 100)}`);
     }
   }
 }
 
-function createChildAbortController(parentSignal: AbortSignal, timeoutMs: number) {
-  const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(new Error(`Timed out after ${timeoutMs / 1000}s`)), timeoutMs)
-  const abort = () => controller.abort(parentSignal.reason)
+function findMostRecentImageAttachment(
+  messages: Message[],
+): Attachment | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    const image = message.attachments?.find(
+      (attachment) =>
+        attachment.type === "image" ||
+        attachment.mimeType?.startsWith("image/"),
+    );
+    if (image?.url) return image;
+  }
+  return undefined;
+}
+
+function getMimeTypeFromImageUrl(url: string): string {
+  const cleanUrl = url.split("?")[0].toLowerCase();
+  if (cleanUrl.endsWith(".jpg") || cleanUrl.endsWith(".jpeg"))
+    return "image/jpeg";
+  if (cleanUrl.endsWith(".webp")) return "image/webp";
+  if (cleanUrl.endsWith(".gif")) return "image/gif";
+  return "image/png";
+}
+
+function getImageAttachmentsFromToolResults(
+  toolResults?: ToolResult[],
+): Attachment[] {
+  if (!toolResults?.length) return [];
+
+  const urls = new Set<string>();
+  toolResults.forEach((result) => {
+    if (result.name !== "generate_image") return;
+    const matches =
+      result.result.match(/(?:https?:\/\/[^\s)]+|\/uploads\/[^\s)]+)/g) || [];
+    matches.forEach((match) => {
+      const url = match.replace(/[.,;:!?]+$/, "");
+      if (/\.(png|jpe?g|webp|gif)(?:$|\?)/i.test(url)) urls.add(url);
+    });
+  });
+
+  return Array.from(urls).map((url, index) => {
+    const name = decodeURIComponent(
+      url.split("?")[0].split("/").pop() || `generated-image-${index + 1}.png`,
+    );
+    return {
+      id: `generated-image-${index}-${url}`,
+      type: "image" as const,
+      url,
+      name,
+      mimeType: getMimeTypeFromImageUrl(url),
+    };
+  });
+}
+
+function addGeneratedImageVisionMessages(
+  messages: any[],
+  toolResults?: ToolResult[],
+) {
+  const attachments = getImageAttachmentsFromToolResults(toolResults);
+  if (attachments.length === 0) return;
+
+  messages.push({
+    role: "user",
+    content:
+      "VISUAL CONTEXT ONLY: the previous image tool call produced the attached image result(s). This is not a new user request. Inspect these pixels for your final answer or for later follow-up edits, but do not call generate_image again unless the user explicitly asks for another change.",
+    attachments,
+  });
+}
+
+function createChildAbortController(
+  parentSignal: AbortSignal,
+  timeoutMs: number,
+) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(
+    () => controller.abort(new Error(`Timed out after ${timeoutMs / 1000}s`)),
+    timeoutMs,
+  );
+  const abort = () => controller.abort(parentSignal.reason);
 
   if (parentSignal.aborted) {
-    abort()
+    abort();
   } else {
-    parentSignal.addEventListener('abort', abort, { once: true })
+    parentSignal.addEventListener("abort", abort, { once: true });
   }
 
   return {
     signal: controller.signal,
     cleanup: () => {
-      window.clearTimeout(timeout)
-      parentSignal.removeEventListener('abort', abort)
+      window.clearTimeout(timeout);
+      parentSignal.removeEventListener("abort", abort);
     },
-  }
+  };
 }
 
 export function useChat() {
-  const { 
-    currentSessionId, 
-    addMessage, 
+  const {
+    currentSessionId,
+    addMessage,
     startGenerating,
     stopGenerating,
-    clearStreaming, 
-    appendStreamingContent, 
+    clearStreaming,
+    appendStreamingContent,
     setStreamingContent,
     appendStreamingThinking,
     setActiveToolCalls,
@@ -94,8 +219,8 @@ export function useChat() {
     updateSessionModel,
     setActiveSkill,
     clearMessages,
-    setStreamingGenerationInfo
-  } = useChatStore()
+    setStreamingGenerationInfo,
+  } = useChatStore();
 
   const {
     selectedModel,
@@ -110,485 +235,717 @@ export function useChat() {
     defaultSearchProvider,
     searchConfig,
     maxToolTurns,
-    setSelectedModelAndProvider
-  } = useSettingsStore()
+    setSelectedModelAndProvider,
+  } = useSettingsStore();
 
-  const runCompletion = useCallback(async (sessionId: string) => {
-    const abortController = new AbortController()
-    const signal = abortController.signal
+  const runCompletion = useCallback(
+    async (sessionId: string) => {
+      const abortController = new AbortController();
+      const signal = abortController.signal;
 
-    const unsubscribe = useChatStore.subscribe((state) => {
-      const exists = state.sessions.some(s => s.id === sessionId)
-      if (!exists) abortController.abort()
-    })
+      const unsubscribe = useChatStore.subscribe((state) => {
+        const exists = state.sessions.some((s) => s.id === sessionId);
+        if (!exists) abortController.abort();
+      });
 
-    try {
-      startGenerating(sessionId)
-      let hasToolCalls = false
-      let allToolCalls: ToolCall[] = []
-      let allToolResults: ToolResult[] = []
-      let finalContent = ''
-      let finalThinking = ''
-      let finalResponseId = ''
-      let finalGenInfo: any = undefined
-      let messageId = generateUUID()
-      let toolTurnCount = 0
-      const configuredMaxToolTurns = maxToolTurns ?? 0
-      
-      do {
-        hasToolCalls = false
-        const latestSession = useChatStore.getState().sessions.find(s => s.id === sessionId)
-        if (!latestSession) break
+      try {
+        startGenerating(sessionId);
+        let hasToolCalls = false;
+        let allToolCalls: ToolCall[] = [];
+        let allToolResults: ToolResult[] = [];
+        let finalContent = "";
+        let finalThinking = "";
+        let finalResponseId = "";
+        let finalGenInfo: any = undefined;
+        let messageId = generateUUID();
+        let toolTurnCount = 0;
+        const configuredMaxToolTurns = maxToolTurns ?? 0;
 
-        const chatMessages = latestSession.messages.filter(m => {
-           if (m.role === 'user') return true
-           if (m.role === 'assistant') return m.metadata?.active !== false
-           return true
-        })
-        
-        const currentModel = latestSession.model || selectedModel
-        const currentProvider = latestSession.provider || selectedProvider
+        do {
+          hasToolCalls = false;
+          const latestSession = useChatStore
+            .getState()
+            .sessions.find((s) => s.id === sessionId);
+          if (!latestSession) break;
 
-        console.log('[useChat] Turn starting:', { 
-          selectedModel, 
-          selectedProvider, 
-          sessionModel: latestSession.model, 
-          sessionProvider: latestSession.provider,
-          usingModel: currentModel,
-          usingProvider: currentProvider
-        })
+          const chatMessages = latestSession.messages.filter((m) => {
+            if (m.role === "user") return true;
+            if (m.role === "assistant") return m.metadata?.active !== false;
+            return true;
+          });
 
-        const apiMessages = chatMessages.map(m => ({
-          role: m.role, 
-          content: m.content, 
-          thinking: m.thinking, 
-          toolCalls: m.toolCalls, 
-          toolResults: m.toolResults,
-          attachments: m.attachments
-        }))
+          const currentModel = latestSession.model || selectedModel;
+          const currentProvider = latestSession.provider || selectedProvider;
 
-        if (allToolCalls.length > 0) {
-          apiMessages.push({
-            role: 'assistant',
-            content: finalContent,
-            thinking: finalThinking || undefined,
-            toolCalls: allToolCalls,
-            toolResults: allToolResults
-          } as any)
-        }
+          console.log("[useChat] Turn starting:", {
+            selectedModel,
+            selectedProvider,
+            sessionModel: latestSession.model,
+            sessionProvider: latestSession.provider,
+            usingModel: currentModel,
+            usingProvider: currentProvider,
+          });
 
-        const response = await fetch('/api/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal,
-          body: JSON.stringify({
-            messages: apiMessages,
+          const apiMessages: any[] = [];
+          chatMessages.forEach((m) => {
+            apiMessages.push({
+              role: m.role,
+              content: m.content,
+              thinking: m.thinking,
+              toolCalls: m.toolCalls,
+              toolResults: m.toolResults,
+              attachments: m.attachments,
+            });
+            addGeneratedImageVisionMessages(apiMessages, m.toolResults);
+          });
+
+          if (allToolCalls.length > 0) {
+            apiMessages.push({
+              role: "assistant",
+              content: finalContent,
+              thinking: finalThinking || undefined,
+              toolCalls: allToolCalls,
+              toolResults: allToolResults,
+            } as any);
+            addGeneratedImageVisionMessages(apiMessages, allToolResults);
+          }
+
+          const response = await fetch("/api/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal,
+            body: JSON.stringify({
+              messages: apiMessages,
+              model: currentModel,
+              provider: currentProvider,
+              systemPrompt: latestSession.systemPrompt || systemPrompt,
+              temperature,
+              maxTokens,
+              topP,
+              reasoningEffort,
+              stream: streamResponses,
+              disabledTools: tools.filter((t) => !t.enabled).map((t) => t.name),
+              sessionId: sessionId,
+            }),
+          });
+
+          if (!response.ok) throw new Error(await response.text());
+
+          let turnContent = "";
+          let turnThinking = "";
+          let responseId = "";
+          let generationInfo: any = {
             model: currentModel,
             provider: currentProvider,
-            systemPrompt: latestSession.systemPrompt || systemPrompt,
-            temperature,
-            maxTokens,
-            topP,
-            reasoningEffort,
-            stream: streamResponses,
-            disabledTools: tools.filter(t => !t.enabled).map(t => t.name),
-            sessionId: sessionId,
-          }),
-        })
+          };
 
-        if (!response.ok) throw new Error(await response.text())
+          const reader = response.body?.getReader();
+          if (!reader) throw new Error("No reader available");
 
-        let turnContent = ''
-        let turnThinking = ''
-        let responseId = ''
-        let generationInfo: any = { model: currentModel, provider: currentProvider }
-
-        const reader = response.body?.getReader()
-        if (!reader) throw new Error('No reader available')
-
-        const decoder = new TextDecoder()
-        let buffer = ''
-        try {
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-            buffer += decoder.decode(value, { stream: true })
-            const lines = buffer.split('\n')
-            buffer = lines.pop() || ''
-            for (const line of lines) {
-              const trimmedLine = line.trim()
-              if (!trimmedLine) continue
-              if (trimmedLine.startsWith('data: ')) {
-                const data = trimmedLine.slice(6)
-                if (data === '[DONE]') continue
-                let parsed: any
-                try {
-                  parsed = JSON.parse(data)
-                } catch {
-                  continue
-                }
-                if (parsed.error) {
-                  throw new Error(parsed.error)
-                }
-                if (parsed.content) {
-                  turnContent += parsed.content
-                  appendStreamingContent(sessionId, parsed.content)
-                }
-                if (parsed.thinking) {
-                  turnThinking += parsed.thinking
-                  appendStreamingThinking(sessionId, parsed.thinking)
-                }
-                if (parsed.toolCalls) setActiveToolCalls(sessionId, [...allToolCalls, ...parsed.toolCalls])
-                if (parsed.responseId) responseId = parsed.responseId
-                if (parsed.generationInfo) {
-                  generationInfo = parsed.generationInfo
-                  setStreamingGenerationInfo(sessionId, parsed.generationInfo)
+          const decoder = new TextDecoder();
+          let buffer = "";
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || "";
+              for (const line of lines) {
+                const trimmedLine = line.trim();
+                if (!trimmedLine) continue;
+                if (trimmedLine.startsWith("data: ")) {
+                  const data = trimmedLine.slice(6);
+                  if (data === "[DONE]") continue;
+                  let parsed: any;
+                  try {
+                    parsed = JSON.parse(data);
+                  } catch {
+                    continue;
+                  }
+                  if (parsed.error) {
+                    throw new Error(parsed.error);
+                  }
+                  if (parsed.content) {
+                    turnContent += parsed.content;
+                    appendStreamingContent(sessionId, parsed.content);
+                  }
+                  if (parsed.thinking) {
+                    turnThinking += parsed.thinking;
+                    appendStreamingThinking(sessionId, parsed.thinking);
+                  }
+                  if (parsed.toolCalls)
+                    setActiveToolCalls(sessionId, [
+                      ...allToolCalls,
+                      ...parsed.toolCalls,
+                    ]);
+                  if (parsed.responseId) responseId = parsed.responseId;
+                  if (parsed.generationInfo) {
+                    generationInfo = parsed.generationInfo;
+                    setStreamingGenerationInfo(
+                      sessionId,
+                      parsed.generationInfo,
+                    );
+                  }
                 }
               }
             }
+          } finally {
+            const tail = buffer.trim();
+            if (tail.startsWith("data: ")) {
+              const data = tail.slice(6);
+              if (data !== "[DONE]") {
+                try {
+                  const parsed = JSON.parse(data);
+                  if (parsed.error) {
+                    throw new Error(parsed.error);
+                  }
+                  if (parsed.content) {
+                    turnContent += parsed.content;
+                    appendStreamingContent(sessionId, parsed.content);
+                  }
+                  if (parsed.thinking) {
+                    turnThinking += parsed.thinking;
+                    appendStreamingThinking(sessionId, parsed.thinking);
+                  }
+                  if (parsed.toolCalls)
+                    setActiveToolCalls(sessionId, [
+                      ...allToolCalls,
+                      ...parsed.toolCalls,
+                    ]);
+                  if (parsed.responseId) responseId = parsed.responseId;
+                  if (parsed.generationInfo) {
+                    generationInfo = parsed.generationInfo;
+                    setStreamingGenerationInfo(
+                      sessionId,
+                      parsed.generationInfo,
+                    );
+                  }
+                } catch {}
+              }
+            }
+            reader.releaseLock();
           }
-        } finally {
-          const tail = buffer.trim()
-          if (tail.startsWith('data: ')) {
-            const data = tail.slice(6)
-            if (data !== '[DONE]') {
-              try {
-                const parsed = JSON.parse(data)
-                if (parsed.error) {
-                  throw new Error(parsed.error)
+
+          const streamState = useChatStore.getState().streaming[sessionId];
+          const currentToolCalls = streamState?.toolCalls || [];
+          const activeCalls = currentToolCalls.filter(
+            (tc) => !allToolCalls.some((a) => a.id === tc.id),
+          );
+
+          // Accumulate across turns
+          if (activeCalls.length > 0) {
+            setStreamingContent(sessionId, finalContent);
+          } else {
+            finalContent += turnContent;
+          }
+          if (turnThinking) {
+            finalThinking = finalThinking
+              ? finalThinking + "\n\n" + turnThinking
+              : turnThinking;
+          }
+          if (responseId) finalResponseId = responseId;
+          if (generationInfo) finalGenInfo = generationInfo;
+          allToolCalls = [...allToolCalls, ...activeCalls];
+
+          if (
+            useChatStore.getState().sessions.some((s) => s.id === sessionId)
+          ) {
+            if (
+              activeCalls.length > 0 &&
+              configuredMaxToolTurns > 0 &&
+              toolTurnCount >= configuredMaxToolTurns
+            ) {
+              const finalStoreState =
+                useChatStore.getState().streaming[sessionId];
+              const finalTimeline = finalStoreState?.timeline
+                ? [...finalStoreState.timeline]
+                : [];
+              const limitMessage = `Stopped after ${configuredMaxToolTurns} consecutive tool-call turns. The model kept requesting tools instead of answering.`;
+              finalContent = finalContent
+                ? `${finalContent}\n\n${limitMessage}`
+                : limitMessage;
+              stopGenerating(sessionId);
+              await addMessage(sessionId, {
+                id: messageId,
+                role: "assistant",
+                content: finalContent,
+                thinking: finalThinking || undefined,
+                toolCalls:
+                  allToolCalls.length > 0 ? [...allToolCalls] : undefined,
+                toolResults:
+                  allToolResults.length > 0 ? [...allToolResults] : undefined,
+                timeline: finalTimeline.length > 0 ? finalTimeline : undefined,
+                responseId: finalResponseId,
+                generationInfo: finalGenInfo,
+                timestamp: Date.now(),
+                metadata: {
+                  active: true,
+                  model: currentModel,
+                  provider: currentProvider,
+                },
+              });
+              if (
+                useUIStore.getState().activeActivityMessageId === "streaming"
+              ) {
+                useUIStore.getState().setActiveActivityMessageId(messageId);
+              }
+              break;
+            }
+
+            if (activeCalls.length === 0) {
+              // Final turn - capture timeline from store then stop
+              const finalStoreState =
+                useChatStore.getState().streaming[sessionId];
+              const finalTimeline = finalStoreState?.timeline
+                ? [...finalStoreState.timeline]
+                : [];
+              stopGenerating(sessionId);
+              const assistantMessage: Message = {
+                id: messageId,
+                role: "assistant",
+                content: finalContent,
+                thinking: finalThinking || undefined,
+                toolCalls:
+                  allToolCalls.length > 0 ? [...allToolCalls] : undefined,
+                toolResults:
+                  allToolResults.length > 0 ? [...allToolResults] : undefined,
+                timeline: finalTimeline.length > 0 ? finalTimeline : undefined,
+                responseId: finalResponseId,
+                generationInfo: {
+                  ...finalGenInfo,
+                  isGatheringCost:
+                    currentProvider === "openrouter" &&
+                    finalGenInfo?.totalCost === undefined &&
+                    !!finalResponseId,
+                },
+                timestamp: Date.now(),
+                metadata: {
+                  active: true,
+                  model: currentModel,
+                  provider: currentProvider,
+                },
+              };
+              await addMessage(sessionId, assistantMessage);
+              if (
+                useUIStore.getState().activeActivityMessageId === "streaming"
+              ) {
+                useUIStore.getState().setActiveActivityMessageId(messageId);
+              }
+            } else {
+              // More turns coming - execute tools but preserve timeline
+              hasToolCalls = true;
+              toolTurnCount += 1;
+              const toolResults = [];
+              let currentSourceCount = 0;
+              const sessionForTools = useChatStore
+                .getState()
+                .sessions.find((s) => s.id === sessionId);
+              sessionForTools?.messages.forEach((m) => {
+                if (m.toolResults)
+                  m.toolResults.forEach((tr) => {
+                    if (tr.name === "web_search") {
+                      const matches = tr.result.match(
+                        /URL:\s*(https?:\/\/[^\s]+)/g,
+                      );
+                      if (matches) currentSourceCount += matches.length;
+                    } else if (
+                      tr.name === "read_url" ||
+                      tr.name === "read_browser_page"
+                    )
+                      currentSourceCount += 1;
+                  });
+              });
+
+              for (const tc of activeCalls) {
+                if (signal.aborted) break;
+                try {
+                  let parsedArgs =
+                    typeof tc.arguments === "string"
+                      ? safeJsonParse(tc.arguments)
+                      : tc.arguments;
+                  if (tc.name === "web_search") {
+                    parsedArgs.provider = defaultSearchProvider;
+                    parsedArgs.searchConfig = {
+                      searxngUrl: "http://192.168.1.70:8888",
+                      ...searchConfig,
+                    };
+                    if (!parsedArgs.searchConfig.searxngUrl) {
+                      parsedArgs.searchConfig.searxngUrl =
+                        "http://192.168.1.70:8888";
+                    }
+                    parsedArgs.startIndex = currentSourceCount;
+                  } else if (tc.name === "read_url") {
+                    parsedArgs.startIndex = currentSourceCount;
+                  } else if (tc.name === "generate_image") {
+                    const sourceImageUrl =
+                      typeof parsedArgs.sourceImageUrl === "string"
+                        ? parsedArgs.sourceImageUrl.trim()
+                        : "";
+                    if (!sourceImageUrl && sessionForTools) {
+                      const latestImage = findMostRecentImageAttachment(
+                        sessionForTools.messages,
+                      );
+                      if (latestImage?.url)
+                        parsedArgs.sourceImageUrl = latestImage.url;
+                    }
+                  }
+
+                  allToolCalls = allToolCalls.map((call) =>
+                    call.id === tc.id
+                      ? {
+                          ...call,
+                          arguments: parsedArgs,
+                          display: getToolDisplay(tc.name, parsedArgs),
+                        }
+                      : call,
+                  );
+                  useChatStore
+                    .getState()
+                    .setActiveToolCalls(sessionId, allToolCalls);
+
+                  const toolTimeoutMs =
+                    tc.name === "generate_image" ? 300000 : 20000;
+                  const toolRequest = createChildAbortController(
+                    signal,
+                    toolTimeoutMs,
+                  );
+                  let res: Response;
+                  try {
+                    res = await fetch("/api/chat/tool-call", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      signal: toolRequest.signal,
+                      body: JSON.stringify({
+                        name: tc.name,
+                        arguments: parsedArgs,
+                      }),
+                    });
+                  } finally {
+                    toolRequest.cleanup();
+                  }
+                  const data = await res.json();
+                  const result = res.ok
+                    ? data.result
+                    : `Error: ${data.error || res.statusText}`;
+                  toolResults.push({
+                    toolCallId: tc.id,
+                    name: tc.name,
+                    result,
+                  });
+                  useChatStore
+                    .getState()
+                    .setActiveToolResults(sessionId, [
+                      ...allToolResults,
+                      ...toolResults,
+                    ]);
+
+                  if (tc.name === "web_search") {
+                    const matches = result.match(/URL:\s*(https?:\/\/[^\s]+)/g);
+                    if (matches) currentSourceCount += matches.length;
+                  } else if (
+                    tc.name === "read_url" ||
+                    tc.name === "read_browser_page"
+                  )
+                    currentSourceCount += 1;
+                } catch (err: any) {
+                  toolResults.push({
+                    toolCallId: tc.id,
+                    name: tc.name,
+                    result: `Error: ${err.message}`,
+                  });
+                  useChatStore
+                    .getState()
+                    .setActiveToolResults(sessionId, [
+                      ...allToolResults,
+                      ...toolResults,
+                    ]);
                 }
-                if (parsed.content) {
-                  turnContent += parsed.content
-                  appendStreamingContent(sessionId, parsed.content)
-                }
-                if (parsed.thinking) {
-                  turnThinking += parsed.thinking
-                  appendStreamingThinking(sessionId, parsed.thinking)
-                }
-                if (parsed.toolCalls) setActiveToolCalls(sessionId, [...allToolCalls, ...parsed.toolCalls])
-                if (parsed.responseId) responseId = parsed.responseId
-                if (parsed.generationInfo) {
-                  generationInfo = parsed.generationInfo
-                  setStreamingGenerationInfo(sessionId, parsed.generationInfo)
-                }
-              } catch {}
+              }
+              allToolResults = [...allToolResults, ...toolResults];
+              // Keep the live stream state intact between tool rounds so open process
+              // panels and already-rendered tool results do not collapse or remount.
+              useChatStore
+                .getState()
+                .setActiveToolCalls(sessionId, allToolCalls);
+              useChatStore
+                .getState()
+                .setActiveToolResults(sessionId, allToolResults);
             }
           }
-          reader.releaseLock()
+        } while (hasToolCalls && !signal.aborted);
+      } catch (error: any) {
+        if (error.name !== "AbortError") {
+          console.error("Chat error:", error);
+          addMessage(sessionId, {
+            id: generateUUID(),
+            role: "assistant",
+            content: `Error: ${error.message}`,
+            timestamp: Date.now(),
+          });
         }
+      } finally {
+        unsubscribe();
+        stopGenerating(sessionId);
 
-        const streamState = useChatStore.getState().streaming[sessionId]
-        const currentToolCalls = streamState?.toolCalls || []
-        const activeCalls = currentToolCalls.filter(tc => !allToolCalls.some(a => a.id === tc.id))
+        // Post-generation background tasks (e.g. OpenRouter cost polling)
+        const lastMessage = useChatStore
+          .getState()
+          .sessions.find((s) => s.id === sessionId)
+          ?.messages.slice(-1)[0];
+        const lastFinalGenInfo = lastMessage?.generationInfo;
+        const lastFinalMsgId = lastMessage?.id;
+        const lastResponseId = lastMessage?.responseId;
 
-        // Accumulate across turns
-        if (activeCalls.length > 0) {
-          setStreamingContent(sessionId, finalContent)
-        } else {
-          finalContent += turnContent
+        if (
+          lastFinalMsgId &&
+          lastResponseId &&
+          lastFinalGenInfo?.provider === "openrouter" &&
+          lastFinalGenInfo?.totalCost === undefined
+        ) {
+          // Start background polling for cost
+          (async () => {
+            try {
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                await new Promise((resolve) =>
+                  setTimeout(
+                    resolve,
+                    attempt === 1 ? 2000 : attempt === 2 ? 4000 : 6000,
+                  ),
+                );
+                const res = await fetch(
+                  `/api/chat/messages/${lastFinalMsgId}/poll-cost?provider=openrouter&responseId=${lastResponseId}`,
+                );
+                if (res.ok) {
+                  const data = await res.json();
+                  if (data.cost !== null) {
+                    const session = useChatStore
+                      .getState()
+                      .sessions.find((s) => s.id === sessionId);
+                    const msg = session?.messages.find(
+                      (m) => m.id === lastFinalMsgId,
+                    );
+                    if (msg && msg.generationInfo) {
+                      const newInfo = {
+                        ...msg.generationInfo,
+                        totalCost: data.cost,
+                        isGatheringCost: false,
+                      };
+                      updateMessage(sessionId, lastFinalMsgId, {
+                        generationInfo: newInfo,
+                      });
+                    }
+                    break;
+                  }
+                }
+              }
+            } catch (err) {
+              console.error("[useChat] Cost poll background error:", err);
+            }
+          })();
         }
-        if (turnThinking) {
-          finalThinking = finalThinking ? finalThinking + '\n\n' + turnThinking : turnThinking
-        }
-        if (responseId) finalResponseId = responseId
-        if (generationInfo) finalGenInfo = generationInfo
-        allToolCalls = [...allToolCalls, ...activeCalls]
+      }
+    },
+    [
+      selectedModel,
+      selectedProvider,
+      systemPrompt,
+      temperature,
+      maxTokens,
+      topP,
+      reasoningEffort,
+      streamResponses,
+      tools,
+      defaultSearchProvider,
+      searchConfig,
+      maxToolTurns,
+      addMessage,
+      startGenerating,
+      stopGenerating,
+      clearStreaming,
+      appendStreamingContent,
+      setStreamingContent,
+      appendStreamingThinking,
+      setActiveToolCalls,
+      updateMessage,
+    ],
+  );
 
-        if (useChatStore.getState().sessions.some(s => s.id === sessionId)) {
-          if (activeCalls.length > 0 && configuredMaxToolTurns > 0 && toolTurnCount >= configuredMaxToolTurns) {
-            const finalStoreState = useChatStore.getState().streaming[sessionId]
-            const finalTimeline = finalStoreState?.timeline ? [...finalStoreState.timeline] : []
-            const limitMessage = `Stopped after ${configuredMaxToolTurns} consecutive tool-call turns. The model kept requesting tools instead of answering.`
-            finalContent = finalContent ? `${finalContent}\n\n${limitMessage}` : limitMessage
-            stopGenerating(sessionId)
-            await addMessage(sessionId, {
-              id: messageId,
-              role: 'assistant',
-              content: finalContent,
-              thinking: finalThinking || undefined,
-              toolCalls: allToolCalls.length > 0 ? [...allToolCalls] : undefined,
-              toolResults: allToolResults.length > 0 ? [...allToolResults] : undefined,
-              timeline: finalTimeline.length > 0 ? finalTimeline : undefined,
-              responseId: finalResponseId,
-              generationInfo: finalGenInfo,
+  const sendMessage = useCallback(
+    async (content: string, attachments?: Attachment[]) => {
+      let sessionId = currentSessionId;
+      if (!sessionId)
+        sessionId = await useChatStore
+          .getState()
+          .createSession(selectedModel, selectedProvider);
+
+      // Intercept slash commands
+      if (content.startsWith("/")) {
+        const parts = content.split(" ");
+        const command = parts[0].slice(1).toLowerCase();
+        const args = parts.slice(1).join(" ").trim();
+
+        if (command === "model" && args) {
+          // Find the provider and model by splitting at the first slash
+          const slashIdx = args.indexOf("/");
+          if (slashIdx !== -1) {
+            const provider = args.slice(0, slashIdx).trim();
+            const model = args.slice(slashIdx + 1).trim();
+
+            updateSessionModel(sessionId, model, provider);
+            setSelectedModelAndProvider(model, provider);
+
+            // Force a server sync for the session model
+            await fetch(`/api/chat/sessions/${sessionId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ model, provider }),
+            });
+
+            addMessage(sessionId, {
+              id: generateUUID(),
+              role: "system",
+              content: `Model changed to ${model} (${provider})`,
               timestamp: Date.now(),
-              metadata: { active: true, model: currentModel, provider: currentProvider }
-            })
-            if (useUIStore.getState().activeActivityMessageId === 'streaming') {
-              useUIStore.getState().setActiveActivityMessageId(messageId)
-            }
-            break
+              metadata: { active: true },
+            });
+            return;
           }
+        } else if (command === "skill" && args) {
+          setActiveSkill(sessionId, args);
+          addMessage(sessionId, {
+            id: generateUUID(),
+            role: "system",
+            content: `Skill loaded: ${args}`,
+            timestamp: Date.now(),
+            metadata: { active: true },
+          });
+          return;
+        } else if (command === "clear") {
+          clearMessages(sessionId);
+          return;
+        }
+      }
 
-          if (activeCalls.length === 0) {
-            // Final turn - capture timeline from store then stop
-            const finalStoreState = useChatStore.getState().streaming[sessionId]
-            const finalTimeline = finalStoreState?.timeline ? [...finalStoreState.timeline] : []
-            stopGenerating(sessionId)
-            const assistantMessage: Message = {
-              id: messageId,
-              role: 'assistant',
-              content: finalContent,
-              thinking: finalThinking || undefined,
-              toolCalls: allToolCalls.length > 0 ? [...allToolCalls] : undefined,
-              toolResults: allToolResults.length > 0 ? [...allToolResults] : undefined,
-              timeline: finalTimeline.length > 0 ? finalTimeline : undefined,
-              responseId: finalResponseId,
-              generationInfo: { ...finalGenInfo, isGatheringCost: currentProvider === 'openrouter' && finalGenInfo?.totalCost === undefined && !!finalResponseId },
-              timestamp: Date.now(),
-              metadata: { active: true, model: currentModel, provider: currentProvider }
-            }
-            await addMessage(sessionId, assistantMessage)
-            if (useUIStore.getState().activeActivityMessageId === 'streaming') {
-              useUIStore.getState().setActiveActivityMessageId(messageId)
+      const userMessage: Message = {
+        id: generateUUID(),
+        role: "user",
+        content,
+        attachments,
+        timestamp: Date.now(),
+        metadata: { active: true },
+      };
+      await addMessage(sessionId, userMessage);
+
+      await runCompletion(sessionId);
+
+      // Auto-naming for new sessions (after completion to avoid concurrent LM Studio requests)
+      const session2 = useChatStore
+        .getState()
+        .sessions.find((s) => s.id === sessionId);
+      if (session2 && (session2.title === "New Chat" || !session2.title)) {
+        try {
+          const res = await fetch("/api/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "You are a title generator. Output ONLY the title text. No quotes, no explanations, no markdown, no numbers, no bullet points.",
+                },
+                {
+                  role: "user",
+                  content: `Create a short 2-5 word title for this chat: ${content}`,
+                },
+              ],
+              model:
+                session2.model && session2.model !== "default-model"
+                  ? session2.model
+                  : selectedModel,
+              provider:
+                session2.provider && session2.provider !== "default-provider"
+                  ? session2.provider
+                  : selectedProvider,
+              temperature: 0.3,
+              maxTokens: 9999,
+              stream: false,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            let rawTitle = data.content || data.thinking || "";
+            let title = rawTitle
+              .replace(/^["'`]+|["'`]+$/g, "")
+              .replace(/^Title:\s*/i, "")
+              .replace(/^\d+\.\s*/, "")
+              .replace(/\*\*(.+?)\*\*/, "$1")
+              .split("\n")[0]
+              .trim();
+            if (title && title.length > 2 && title.length < 100) {
+              if (title.length > 40) title = title.slice(0, 40) + "...";
+              await useChatStore.getState().renameSession(sessionId, title);
             }
           } else {
-            // More turns coming - execute tools but preserve timeline
-            hasToolCalls = true
-            toolTurnCount += 1
-            const toolResults = []
-            let currentSourceCount = 0
-            const sessionForTools = useChatStore.getState().sessions.find(s => s.id === sessionId)
-            sessionForTools?.messages.forEach(m => {
-              if (m.toolResults) m.toolResults.forEach(tr => {
-                if (tr.name === 'web_search') {
-                  const matches = tr.result.match(/URL:\s*(https?:\/\/[^\s]+)/g)
-                  if (matches) currentSourceCount += matches.length
-                } else if (tr.name === 'read_url' || tr.name === 'read_browser_page') currentSourceCount += 1
-              })
-            })
-
-            for (const tc of activeCalls) {
-              if (signal.aborted) break
-              try {
-                let parsedArgs = typeof tc.arguments === 'string' ? safeJsonParse(tc.arguments) : tc.arguments
-                if (tc.name === 'web_search') {
-                  parsedArgs.provider = defaultSearchProvider
-                  parsedArgs.searchConfig = {
-                    searxngUrl: 'http://192.168.1.70:8888',
-                    ...searchConfig,
-                  }
-                  if (!parsedArgs.searchConfig.searxngUrl) {
-                    parsedArgs.searchConfig.searxngUrl = 'http://192.168.1.70:8888'
-                  }
-                  parsedArgs.startIndex = currentSourceCount
-                } else if (tc.name === 'read_url') parsedArgs.startIndex = currentSourceCount
-
-                allToolCalls = allToolCalls.map(call =>
-                  call.id === tc.id ? { ...call, arguments: parsedArgs, display: getToolDisplay(tc.name, parsedArgs) } : call
-                )
-                useChatStore.getState().setActiveToolCalls(sessionId, allToolCalls)
-
-                const toolRequest = createChildAbortController(signal, 20000)
-                let res: Response
-                try {
-                  res = await fetch('/api/chat/tool-call', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    signal: toolRequest.signal,
-                    body: JSON.stringify({ name: tc.name, arguments: parsedArgs }),
-                  })
-                } finally {
-                  toolRequest.cleanup()
-                }
-                const data = await res.json()
-                const result = res.ok ? data.result : `Error: ${data.error || res.statusText}`
-                toolResults.push({ toolCallId: tc.id, name: tc.name, result })
-                useChatStore.getState().setActiveToolResults(sessionId, [...allToolResults, ...toolResults])
-                
-                if (tc.name === 'web_search') {
-                  const matches = result.match(/URL:\s*(https?:\/\/[^\s]+)/g)
-                  if (matches) currentSourceCount += matches.length
-                } else if (tc.name === 'read_url' || tc.name === 'read_browser_page') currentSourceCount += 1
-              } catch (err: any) {
-                toolResults.push({ toolCallId: tc.id, name: tc.name, result: `Error: ${err.message}` })
-                useChatStore.getState().setActiveToolResults(sessionId, [...allToolResults, ...toolResults])
-              }
-            }
-            allToolResults = [...allToolResults, ...toolResults]
-            // Keep the live stream state intact between tool rounds so open process
-            // panels and already-rendered tool results do not collapse or remount.
-            useChatStore.getState().setActiveToolCalls(sessionId, allToolCalls)
-            useChatStore.getState().setActiveToolResults(sessionId, allToolResults)
+            console.error(
+              "[auto-name] Request failed:",
+              res.status,
+              await res.text(),
+            );
           }
+        } catch (err) {
+          console.error("[auto-name] Failed:", err);
         }
-      } while (hasToolCalls && !signal.aborted)
-    } catch (error: any) {
-      if (error.name !== 'AbortError') {
-        console.error('Chat error:', error)
-        addMessage(sessionId, { id: generateUUID(), role: 'assistant', content: `Error: ${error.message}`, timestamp: Date.now() })
       }
-    } finally {
-      unsubscribe()
-      stopGenerating(sessionId)
-      
-      // Post-generation background tasks (e.g. OpenRouter cost polling)
-      const lastMessage = useChatStore.getState().sessions.find(s => s.id === sessionId)?.messages.slice(-1)[0]
-      const lastFinalGenInfo = lastMessage?.generationInfo
-      const lastFinalMsgId = lastMessage?.id
-      const lastResponseId = lastMessage?.responseId
-      
-      if (lastFinalMsgId && lastResponseId && lastFinalGenInfo?.provider === 'openrouter' && lastFinalGenInfo?.totalCost === undefined) {
-        // Start background polling for cost
-        (async () => {
-          try {
-            for (let attempt = 1; attempt <= 3; attempt++) {
-              await new Promise(resolve => setTimeout(resolve, attempt === 1 ? 2000 : attempt === 2 ? 4000 : 6000))
-              const res = await fetch(`/api/chat/messages/${lastFinalMsgId}/poll-cost?provider=openrouter&responseId=${lastResponseId}`)
-              if (res.ok) {
-                const data = await res.json()
-                if (data.cost !== null) {
-                  const session = useChatStore.getState().sessions.find(s => s.id === sessionId)
-                  const msg = session?.messages.find(m => m.id === lastFinalMsgId)
-                  if (msg && msg.generationInfo) {
-                    const newInfo = { ...msg.generationInfo, totalCost: data.cost, isGatheringCost: false }
-                    updateMessage(sessionId, lastFinalMsgId, { generationInfo: newInfo })
-                  }
-                  break
-                }
-              }
-            }
-          } catch (err) {
-            console.error('[useChat] Cost poll background error:', err)
-          }
-        })()
-      }
-    }
-  }, [selectedModel, selectedProvider, systemPrompt, temperature, maxTokens, topP, reasoningEffort, streamResponses, tools, defaultSearchProvider, searchConfig, maxToolTurns, addMessage, startGenerating, stopGenerating, clearStreaming, appendStreamingContent, setStreamingContent, appendStreamingThinking, setActiveToolCalls, updateMessage])
+    },
+    [
+      currentSessionId,
+      addMessage,
+      runCompletion,
+      updateSessionModel,
+      setActiveSkill,
+      setSelectedModelAndProvider,
+      clearMessages,
+      selectedModel,
+      selectedProvider,
+    ],
+  );
 
-  const sendMessage = useCallback(async (content: string, attachments?: Attachment[]) => {
-    let sessionId = currentSessionId
-    if (!sessionId) sessionId = await useChatStore.getState().createSession(selectedModel, selectedProvider)
-    
-    // Intercept slash commands
-    if (content.startsWith('/')) {
-      const parts = content.split(' ')
-      const command = parts[0].slice(1).toLowerCase()
-      const args = parts.slice(1).join(' ').trim()
+  const regenerateMessage = useCallback(
+    async (messageId: string) => {
+      if (!currentSessionId) return;
+      const session = sessions.find((s) => s.id === currentSessionId);
+      if (!session) return;
 
-      if (command === 'model' && args) {
-        // Find the provider and model by splitting at the first slash
-        const slashIdx = args.indexOf('/')
-        if (slashIdx !== -1) {
-          const provider = args.slice(0, slashIdx).trim()
-          const model = args.slice(slashIdx + 1).trim()
-          
-          updateSessionModel(sessionId, model, provider)
-          setSelectedModelAndProvider(model, provider)
-          
-          // Force a server sync for the session model
-          await fetch(`/api/chat/sessions/${sessionId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model, provider }),
-          })
+      const messageIndex = session.messages.findIndex(
+        (m) => m.id === messageId,
+      );
+      if (messageIndex === -1) return;
 
-          addMessage(sessionId, { 
-            id: generateUUID(), 
-            role: 'system', 
-            content: `Model changed to ${model} (${provider})`, 
-            timestamp: Date.now(),
-            metadata: { active: true }
-          })
-          return
+      let userMsgIndex = -1;
+      for (let i = messageIndex; i >= 0; i--) {
+        if (session.messages[i].role === "user") {
+          userMsgIndex = i;
+          break;
         }
-      } else if (command === 'skill' && args) {
-        setActiveSkill(sessionId, args)
-        addMessage(sessionId, { 
-          id: generateUUID(), 
-          role: 'system', 
-          content: `Skill loaded: ${args}`, 
-          timestamp: Date.now(),
-          metadata: { active: true }
-        })
-        return
-      } else if (command === 'clear') {
-        clearMessages(sessionId)
-        return
       }
-    }
+      if (userMsgIndex === -1) return;
 
-    const userMessage: Message = {
-      id: generateUUID(),
-      role: 'user',
-      content,
-      attachments,
-      timestamp: Date.now(),
-      metadata: { active: true }
-    }
-    await addMessage(sessionId, userMessage)
-
-    await runCompletion(sessionId)
-
-    // Auto-naming for new sessions (after completion to avoid concurrent LM Studio requests)
-    const session2 = useChatStore.getState().sessions.find(s => s.id === sessionId)
-    if (session2 && (session2.title === 'New Chat' || !session2.title)) {
-      try {
-        const res = await fetch('/api/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: [
-              { role: 'system', content: 'You are a title generator. Output ONLY the title text. No quotes, no explanations, no markdown, no numbers, no bullet points.' },
-              { role: 'user', content: `Create a short 2-5 word title for this chat: ${content}` }
-            ],
-            model: (session2.model && session2.model !== 'default-model') ? session2.model : selectedModel,
-            provider: (session2.provider && session2.provider !== 'default-provider') ? session2.provider : selectedProvider,
-            temperature: 0.3,
-            maxTokens: 9999,
-            stream: false
-          }),
-        })
-        if (res.ok) {
-          const data = await res.json()
-          let rawTitle = data.content || data.thinking || ''
-          let title = rawTitle
-            .replace(/^["'`]+|["'`]+$/g, '')
-            .replace(/^Title:\s*/i, '')
-            .replace(/^\d+\.\s*/, '')
-            .replace(/\*\*(.+?)\*\*/, '$1')
-            .split('\n')[0]
-            .trim()
-          if (title && title.length > 2 && title.length < 100) {
-            if (title.length > 40) title = title.slice(0, 40) + '...'
-            await useChatStore.getState().renameSession(sessionId, title)
-          }
-        } else {
-          console.error('[auto-name] Request failed:', res.status, await res.text())
+      const turnId = session.messages[userMsgIndex].id;
+      for (let i = userMsgIndex + 1; i < session.messages.length; i++) {
+        const m = session.messages[i];
+        if (m.role === "assistant") {
+          await updateMessage(currentSessionId, m.id, {
+            metadata: { ...m.metadata, active: false, turnId },
+          });
         }
-      } catch (err) {
-        console.error('[auto-name] Failed:', err)
       }
-    }
-  }, [currentSessionId, addMessage, runCompletion, updateSessionModel, setActiveSkill, setSelectedModelAndProvider, clearMessages, selectedModel, selectedProvider])
 
-  const regenerateMessage = useCallback(async (messageId: string) => {
-    if (!currentSessionId) return
-    const session = sessions.find(s => s.id === currentSessionId)
-    if (!session) return
+      await runCompletion(currentSessionId);
+    },
+    [currentSessionId, sessions, runCompletion, updateMessage],
+  );
 
-    const messageIndex = session.messages.findIndex(m => m.id === messageId)
-    if (messageIndex === -1) return
-
-    let userMsgIndex = -1
-    for (let i = messageIndex; i >= 0; i--) {
-      if (session.messages[i].role === 'user') {
-        userMsgIndex = i
-        break
-      }
-    }
-    if (userMsgIndex === -1) return
-
-    const turnId = session.messages[userMsgIndex].id
-    for (let i = userMsgIndex + 1; i < session.messages.length; i++) {
-        const m = session.messages[i]
-        if (m.role === 'assistant') {
-            await updateMessage(currentSessionId, m.id, { metadata: { ...m.metadata, active: false, turnId } })
-        }
-    }
-    
-    await runCompletion(currentSessionId)
-  }, [currentSessionId, sessions, runCompletion, updateMessage])
-
-  return { sendMessage, regenerateMessage }
+  return { sendMessage, regenerateMessage };
 }

@@ -1,4 +1,25 @@
+import fs from 'fs'
+import path from 'path'
 import { BaseProvider, CompletionOptions, CompletionChunk } from './base'
+
+async function resolveLocalImageToBase64(url: string): Promise<string> {
+  if (url.startsWith('http') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
+    return url
+  }
+  let filePath = url
+  if (url.startsWith('http')) {
+    try { filePath = new URL(url).pathname } catch { /* ignore */ }
+  }
+  const absolutePath = path.join(process.cwd(), filePath.replace(/^\/+/, ''))
+  if (!fs.existsSync(absolutePath)) return url
+  const buffer = fs.readFileSync(absolutePath)
+  const ext = path.extname(absolutePath).toLowerCase()
+  const mimeType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+    : ext === '.webp' ? 'image/webp'
+      : ext === '.gif' ? 'image/gif'
+        : 'image/png'
+  return `data:${mimeType};base64,${buffer.toString('base64')}`
+}
 
 export class OllamaProvider extends BaseProvider {
   id = 'ollama'
@@ -10,18 +31,29 @@ export class OllamaProvider extends BaseProvider {
   }
 
   async *chatCompletion(options: CompletionOptions): AsyncGenerator<CompletionChunk> {
+    const messages = await Promise.all(
+      options.messages.map(async (m) => ({
+        role: m.role,
+        content: m.content,
+        images: m.attachments
+          ? await Promise.all(
+              m.attachments
+                .filter((a) => a.type === 'image')
+                .map(async (a) => {
+                  const url = a.url.startsWith('http') ? a.url : `http://localhost:3456${a.url}`
+                  return resolveLocalImageToBase64(url)
+                })
+            )
+          : undefined,
+      }))
+    )
+
     const response = await fetch(`${this.baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: options.model,
-        messages: options.messages.map(m => ({
-          role: m.role,
-          content: m.content,
-          images: m.attachments?.filter(a => a.type === 'image').map(a => 
-            a.url.startsWith('http') ? a.url : `http://localhost:3456${a.url}`
-          ),
-        })),
+        messages,
         options: {
           temperature: options.temperature,
           num_predict: options.maxTokens || undefined,

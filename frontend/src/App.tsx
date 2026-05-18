@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Sidebar } from './components/Sidebar'
 import { SidebarToggle } from './components/SidebarToggle'
 import { ChatWindow } from './components/ChatWindow'
@@ -8,8 +9,10 @@ import { ActivityPanel } from './components/ActivityPanel'
 import { SettingsModal } from './components/SettingsModal'
 import { ToolsModal } from './components/ToolsModal'
 import { ModelSelector } from './components/ModelSelector'
+import { ImageStudio } from './components/ImageStudio'
 import { useChatStore } from './stores/chatStore'
 import { useSettingsStore } from './stores/settingsStore'
+import { getViewFromPathname, useUIStore } from './stores/uiStore'
 import { cn } from './lib/utils'
 
 function ThemeSync() {
@@ -159,6 +162,13 @@ function SharedSettingsSync() {
 
 function App() {
   const { sessions, currentSessionId, createSession, setCurrentSession, streaming, loadSessions } = useChatStore()
+  const { setCurrentView } = useUIStore()
+  const location = useLocation()
+  const currentView = getViewFromPathname(location.pathname)
+
+  useEffect(() => {
+    setCurrentView(currentView)
+  }, [currentView, setCurrentView])
 
   useEffect(() => {
     loadSessions().then(() => {
@@ -185,15 +195,26 @@ function App() {
         <SidebarToggle />
 
         <main className={cn(
-          "flex-1 flex flex-col min-w-0 overflow-hidden relative",
-          isEmpty ? "justify-center pb-[10vh]" : ""
+          "flex-1 flex flex-col min-w-0 relative",
+          currentView === 'chat' ? 'overflow-hidden' : 'overflow-y-auto',
+          currentView === 'chat' && isEmpty ? "justify-center pb-[10vh]" : ""
         )}>
-          <ChatWindow />
-          <MessageInput isLanding={isEmpty} />
+          {currentView === 'chat' ? (
+            <>
+              <ChatWindow />
+              <MessageInput isLanding={isEmpty} />
+            </>
+          ) : (
+            <ImageStudio />
+          )}
         </main>
 
-        <ActivityPanel />
-        <ArtifactPanel />
+        {currentView === 'chat' && (
+          <>
+            <ActivityPanel />
+            <ArtifactPanel />
+          </>
+        )}
         <SettingsModal />
         <ToolsModal />
         <ModelSelector />

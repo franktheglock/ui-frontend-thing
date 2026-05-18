@@ -4,6 +4,7 @@ import { ReadURLTool } from './read-url'
 import { PythonTool, CodeEditTool } from './python'
 import { TerminalTool } from './terminal'
 import { ListSkillsTool, ReadSkillTool, MakeSkillTool } from './skill-tools'
+import { ImageGenerationTool } from './image-generation'
 import { mcpManager } from '../mcp/mcp-manager'
 
 const tools: BaseTool[] = [
@@ -12,6 +13,7 @@ const tools: BaseTool[] = [
   new PythonTool(),
   new CodeEditTool(),
   new TerminalTool(),
+  new ImageGenerationTool(),
   new ListSkillsTool(),
   new ReadSkillTool(),
   new MakeSkillTool(),

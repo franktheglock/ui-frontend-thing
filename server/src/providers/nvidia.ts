@@ -19,7 +19,7 @@ export class NimProvider extends OpenAICompatibleProvider {
       },
       body: JSON.stringify({
         model: options.model,
-        messages: this.formatMessages(options.messages),
+        messages: await this.formatMessages(options.messages),
         temperature: options.temperature,
         max_tokens: options.maxTokens || undefined,
         top_p: options.topP,

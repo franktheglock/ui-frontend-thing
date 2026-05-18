@@ -1,5 +1,58 @@
 import { BaseTool } from './base'
 import * as cheerio from 'cheerio'
+import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+
+interface Crawl4AiResponse {
+  success: boolean
+  url: string
+  title?: string
+  content?: string
+  error?: string
+}
+
+function execFileAsync(file: string, args: string[], timeout: number) {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    execFile(file, args, { timeout, encoding: 'utf8', maxBuffer: 1024 * 1024 * 8 }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr?.trim() || error.message))
+        return
+      }
+      resolve({ stdout, stderr })
+    })
+  })
+}
+
+function resolvePythonExecutable() {
+  const configured = process.env.CRAWL4AI_PYTHON || process.env.PYTHON_PATH
+  if (configured) {
+    return configured
+  }
+
+  const candidates = [
+    path.resolve(process.cwd(), '../.venv/Scripts/python.exe'),
+    path.resolve(process.cwd(), '.venv/Scripts/python.exe'),
+    path.resolve(__dirname, '../../../.venv/Scripts/python.exe'),
+    path.resolve(__dirname, '../../../../.venv/Scripts/python.exe'),
+  ]
+
+  const discovered = candidates.find((candidate) => existsSync(candidate))
+  return discovered || 'python'
+}
+
+async function readWithCrawl4Ai(url: string) {
+  const pythonExecutable = resolvePythonExecutable()
+  const scriptPath = path.resolve(__dirname, '../../crawl4ai_read_url.py')
+  const { stdout } = await execFileAsync(pythonExecutable, [scriptPath, url], 45000)
+  const parsed = JSON.parse(stdout.trim() || '{}') as Crawl4AiResponse
+
+  if (!parsed.success) {
+    throw new Error(parsed.error || 'Crawl4AI crawl failed')
+  }
+
+  return parsed
+}
 
 export class ReadURLTool extends BaseTool {
   id = 'read_url'
@@ -26,6 +79,15 @@ export class ReadURLTool extends BaseTool {
     }
     const startIndex = (args.startIndex as number) || 0
     const sourceNum = startIndex + 1
+
+    try {
+      const crawlResult = await readWithCrawl4Ai(url)
+      const title = crawlResult.title?.trim() || 'Untitled page'
+      const content = (crawlResult.content || '').trim()
+      return `Source ${sourceNum}:\nTitle: ${title}\nURL: ${crawlResult.url || url}\n\n${content}`
+    } catch (crawlError: any) {
+      console.warn(`[read_url] Crawl4AI failed for ${url}: ${crawlError.message}`)
+    }
 
     try {
       const controller = new AbortController()

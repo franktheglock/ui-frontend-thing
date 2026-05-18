@@ -1,33 +1,43 @@
-import { Router, Request, Response } from 'express'
-import { v4 as uuidv4 } from 'uuid'
-import path from 'path'
-import fs from 'fs'
-import { getDb } from '../db'
-import { getProvider } from '../providers'
-import { executeTool, listTools } from '../tools'
-import { safeJsonParse } from '../utils/json'
+import { Router, Request, Response } from "express";
+import { v4 as uuidv4 } from "uuid";
+import path from "path";
+import fs from "fs";
+import { getDb } from "../db";
+import { getProvider } from "../providers";
+import { executeTool, listTools } from "../tools";
+import { safeJsonParse } from "../utils/json";
 
-const router = Router()
+const router = Router();
 
-router.get('/sessions', async (_req, res) => {
-  const db = await getDb()
-  const sessions = await db.all('SELECT * FROM sessions ORDER BY updated_at DESC')
-  res.json(sessions.map(s => ({
-    ...s,
-    createdAt: s.created_at,
-    updatedAt: s.updated_at,
-    systemPrompt: s.system_prompt,
-    lastResponseId: s.last_response_id,
-    messages: [],
-  })))
-})
+router.get("/sessions", async (_req, res) => {
+  const db = await getDb();
+  const sessions = await db.all(
+    "SELECT * FROM sessions ORDER BY updated_at DESC",
+  );
+  res.json(
+    sessions.map((s) => ({
+      ...s,
+      createdAt: s.created_at,
+      updatedAt: s.updated_at,
+      systemPrompt: s.system_prompt,
+      lastResponseId: s.last_response_id,
+      messages: [],
+    })),
+  );
+});
 
-router.get('/sessions/:id', async (req, res) => {
-  const db = await getDb()
-  const session = await db.get('SELECT * FROM sessions WHERE id = ?', req.params.id)
-  if (!session) return res.status(404).json({ error: 'Session not found' })
+router.get("/sessions/:id", async (req, res) => {
+  const db = await getDb();
+  const session = await db.get(
+    "SELECT * FROM sessions WHERE id = ?",
+    req.params.id,
+  );
+  if (!session) return res.status(404).json({ error: "Session not found" });
 
-  const messages = await db.all('SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp', req.params.id)
+  const messages = await db.all(
+    "SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp",
+    req.params.id,
+  );
   res.json({
     ...session,
     createdAt: session.created_at,
@@ -39,377 +49,545 @@ router.get('/sessions/:id', async (req, res) => {
       toolCalls: m.tool_calls ? JSON.parse(m.tool_calls) : undefined,
       toolResults: m.tool_results ? JSON.parse(m.tool_results) : undefined,
       attachments: m.attachments ? JSON.parse(m.attachments) : undefined,
-      generationInfo: m.generation_info ? JSON.parse(m.generation_info) : undefined,
+      generationInfo: m.generation_info
+        ? JSON.parse(m.generation_info)
+        : undefined,
       timeline: m.timeline ? JSON.parse(m.timeline) : undefined,
     })),
-  })
-})
+  });
+});
 
-router.post('/sessions', async (req, res) => {
-  const db = await getDb()
-  const id = req.body.id || uuidv4()
-  const { title, model, provider, systemPrompt } = req.body
-  const now = Date.now()
+router.post("/sessions", async (req, res) => {
+  const db = await getDb();
+  const id = req.body.id || uuidv4();
+  const { title, model, provider, systemPrompt } = req.body;
+  const now = Date.now();
 
   try {
     await db.run(
-      'INSERT INTO sessions (id, title, model, provider, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      id, title || 'New Chat', model, provider, systemPrompt || null, now, now
-    )
-    res.json({ id, title: title || 'New Chat', model, provider, systemPrompt, createdAt: now, updatedAt: now, messages: [] })
+      "INSERT INTO sessions (id, title, model, provider, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      id,
+      title || "New Chat",
+      model,
+      provider,
+      systemPrompt || null,
+      now,
+      now,
+    );
+    res.json({
+      id,
+      title: title || "New Chat",
+      model,
+      provider,
+      systemPrompt,
+      createdAt: now,
+      updatedAt: now,
+      messages: [],
+    });
   } catch (error: any) {
-    console.error('[api/chat] Failed to create session:', error)
-    res.status(500).json({ error: 'Failed to create session' })
+    console.error("[api/chat] Failed to create session:", error);
+    res.status(500).json({ error: "Failed to create session" });
   }
-})
+});
 
-router.delete('/sessions/:id', async (req, res) => {
-  const db = await getDb()
-  await db.run('DELETE FROM sessions WHERE id = ?', req.params.id)
-  res.json({ success: true })
-})
+router.delete("/sessions/:id", async (req, res) => {
+  const db = await getDb();
+  await db.run("DELETE FROM sessions WHERE id = ?", req.params.id);
+  res.json({ success: true });
+});
 
-router.patch('/sessions/:id', async (req, res) => {
-  const db = await getDb()
-  const { title, lastResponseId, model, provider } = req.body
-  const updates: string[] = []
-  const values: any[] = []
+router.patch("/sessions/:id", async (req, res) => {
+  const db = await getDb();
+  const { title, lastResponseId, model, provider } = req.body;
+  const updates: string[] = [];
+  const values: any[] = [];
 
   if (title !== undefined) {
-    updates.push('title = ?')
-    values.push(title)
+    updates.push("title = ?");
+    values.push(title);
   }
   if (lastResponseId !== undefined) {
-    updates.push('last_response_id = ?')
-    values.push(lastResponseId)
+    updates.push("last_response_id = ?");
+    values.push(lastResponseId);
   }
   if (model !== undefined) {
-    updates.push('model = ?')
-    values.push(model)
+    updates.push("model = ?");
+    values.push(model);
   }
   if (provider !== undefined) {
-    updates.push('provider = ?')
-    values.push(provider)
+    updates.push("provider = ?");
+    values.push(provider);
   }
   if (updates.length === 0) {
-    return res.json({ success: true })
+    return res.json({ success: true });
   }
 
-  updates.push('updated_at = ?')
-  values.push(Date.now())
-  values.push(req.params.id)
+  updates.push("updated_at = ?");
+  values.push(Date.now());
+  values.push(req.params.id);
 
-  await db.run(`UPDATE sessions SET ${updates.join(', ')} WHERE id = ?`, values)
-  res.json({ success: true })
-})
+  await db.run(
+    `UPDATE sessions SET ${updates.join(", ")} WHERE id = ?`,
+    values,
+  );
+  res.json({ success: true });
+});
 
-router.post('/sessions/:id/messages', async (req, res) => {
-  const db = await getDb()
-  const { id: msgId, role, content, thinking, toolCalls, toolResults, attachments, generationInfo, timeline } = req.body
-  const id = msgId || uuidv4()
-  const timestamp = Date.now()
+router.post("/sessions/:id/messages", async (req, res) => {
+  const db = await getDb();
+  const {
+    id: msgId,
+    role,
+    content,
+    thinking,
+    toolCalls,
+    toolResults,
+    attachments,
+    generationInfo,
+    timeline,
+  } = req.body;
+  const id = msgId || uuidv4();
+  const timestamp = Date.now();
 
   try {
     await db.run(
       `INSERT INTO messages (id, session_id, role, content, thinking, tool_calls, tool_results, attachments, generation_info, timeline, timestamp)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id, req.params.id, role, content,
+      id,
+      req.params.id,
+      role,
+      content,
       thinking || null,
       toolCalls ? JSON.stringify(toolCalls) : null,
       toolResults ? JSON.stringify(toolResults) : null,
       attachments ? JSON.stringify(attachments) : null,
       generationInfo ? JSON.stringify(generationInfo) : null,
       timeline ? JSON.stringify(timeline) : null,
-      timestamp
-    )
-    await db.run('UPDATE sessions SET updated_at = ? WHERE id = ?', Date.now(), req.params.id)
-    res.json({ id, role, content, thinking, toolCalls, toolResults, attachments, generationInfo, timeline, timestamp })
+      timestamp,
+    );
+    await db.run(
+      "UPDATE sessions SET updated_at = ? WHERE id = ?",
+      Date.now(),
+      req.params.id,
+    );
+    res.json({
+      id,
+      role,
+      content,
+      thinking,
+      toolCalls,
+      toolResults,
+      attachments,
+      generationInfo,
+      timeline,
+      timestamp,
+    });
   } catch (error: any) {
-    console.error('[api/chat] Failed to save message:', error)
-    res.status(500).json({ error: error.message || 'Failed to save message' })
+    console.error("[api/chat] Failed to save message:", error);
+    res.status(500).json({ error: error.message || "Failed to save message" });
   }
-})
+});
 
-router.patch('/sessions/:sessionId/messages/:messageId', async (req, res) => {
-  const db = await getDb()
-  const { thinking, toolCalls, toolResults, attachments, generationInfo, content, timeline } = req.body
-  const updates: string[] = []
-  const values: any[] = []
+router.patch("/sessions/:sessionId/messages/:messageId", async (req, res) => {
+  const db = await getDb();
+  const {
+    thinking,
+    toolCalls,
+    toolResults,
+    attachments,
+    generationInfo,
+    content,
+    timeline,
+  } = req.body;
+  const updates: string[] = [];
+  const values: any[] = [];
 
   if (content !== undefined) {
-    updates.push('content = ?')
-    values.push(content)
+    updates.push("content = ?");
+    values.push(content);
   }
   if (thinking !== undefined) {
-    updates.push('thinking = ?')
-    values.push(thinking)
+    updates.push("thinking = ?");
+    values.push(thinking);
   }
   if (toolCalls !== undefined) {
-    updates.push('tool_calls = ?')
-    values.push(JSON.stringify(toolCalls))
+    updates.push("tool_calls = ?");
+    values.push(JSON.stringify(toolCalls));
   }
   if (toolResults !== undefined) {
-    updates.push('tool_results = ?')
-    values.push(JSON.stringify(toolResults))
+    updates.push("tool_results = ?");
+    values.push(JSON.stringify(toolResults));
   }
   if (attachments !== undefined) {
-    updates.push('attachments = ?')
-    values.push(JSON.stringify(attachments))
+    updates.push("attachments = ?");
+    values.push(JSON.stringify(attachments));
   }
   if (generationInfo !== undefined) {
-    updates.push('generation_info = ?')
-    values.push(JSON.stringify(generationInfo))
+    updates.push("generation_info = ?");
+    values.push(JSON.stringify(generationInfo));
   }
   if (timeline !== undefined) {
-    updates.push('timeline = ?')
-    values.push(JSON.stringify(timeline))
+    updates.push("timeline = ?");
+    values.push(JSON.stringify(timeline));
   }
   if (updates.length === 0) {
-    return res.json({ success: true })
+    return res.json({ success: true });
   }
 
-  values.push(req.params.messageId)
-  await db.run(`UPDATE messages SET ${updates.join(', ')} WHERE id = ?`, values)
-  res.json({ success: true })
-})
+  values.push(req.params.messageId);
+  await db.run(
+    `UPDATE messages SET ${updates.join(", ")} WHERE id = ?`,
+    values,
+  );
+  res.json({ success: true });
+});
 
-router.get('/messages/:id/poll-cost', async (req, res) => {
-  const db = await getDb()
-  const { provider, responseId } = req.query
-  const { id } = req.params
+router.get("/messages/:id/poll-cost", async (req, res) => {
+  const db = await getDb();
+  const { provider, responseId } = req.query;
+  const { id } = req.params;
 
   if (!provider || !responseId) {
-    return res.status(400).json({ error: 'Missing provider or responseId' })
+    return res.status(400).json({ error: "Missing provider or responseId" });
   }
 
   try {
-    const providerInstance = await getProvider(provider as string)
-    if (!providerInstance || provider !== 'openrouter') {
-      return res.status(400).json({ error: 'Invalid provider for cost polling' })
+    const providerInstance = await getProvider(provider as string);
+    if (!providerInstance || provider !== "openrouter") {
+      return res
+        .status(400)
+        .json({ error: "Invalid provider for cost polling" });
     }
 
-    const apiKey = providerInstance.apiKey || process.env.OPENROUTER_API_KEY
+    const apiKey = providerInstance.apiKey || process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: 'Missing OpenRouter API key for cost polling' })
+      return res
+        .status(500)
+        .json({ error: "Missing OpenRouter API key for cost polling" });
     }
 
     // Single poll attempt
-    const statsRes = await fetch(`https://openrouter.ai/api/v1/generation?id=${responseId}`, {
-      headers: { 'Authorization': `Bearer ${apiKey}` }
-    })
-    
+    const statsRes = await fetch(
+      `https://openrouter.ai/api/v1/generation?id=${responseId}`,
+      {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      },
+    );
+
     if (statsRes.ok) {
-      const stats = await statsRes.json() as any
-      const rawCost = stats.data?.total_cost ?? stats.total_cost ?? stats.data?.cost ?? stats.cost
-      const foundCost = typeof rawCost === 'string' ? Number(rawCost) : rawCost
-      if (typeof foundCost === 'number' && Number.isFinite(foundCost)) {
+      const stats = (await statsRes.json()) as any;
+      const rawCost =
+        stats.data?.total_cost ??
+        stats.total_cost ??
+        stats.data?.cost ??
+        stats.cost;
+      const foundCost = typeof rawCost === "string" ? Number(rawCost) : rawCost;
+      if (typeof foundCost === "number" && Number.isFinite(foundCost)) {
         // Update DB
-        const msg = await db.get('SELECT generation_info FROM messages WHERE id = ?', id)
+        const msg = await db.get(
+          "SELECT generation_info FROM messages WHERE id = ?",
+          id,
+        );
         if (msg) {
-          const info = JSON.parse(msg.generation_info || '{}')
-          info.totalCost = foundCost
-          info.isGatheringCost = false
-          await db.run('UPDATE messages SET generation_info = ? WHERE id = ?', JSON.stringify(info), id)
+          const info = JSON.parse(msg.generation_info || "{}");
+          info.totalCost = foundCost;
+          info.isGatheringCost = false;
+          await db.run(
+            "UPDATE messages SET generation_info = ? WHERE id = ?",
+            JSON.stringify(info),
+            id,
+          );
         }
-        return res.json({ cost: foundCost })
+        return res.json({ cost: foundCost });
       }
     }
-    res.json({ cost: null })
+    res.json({ cost: null });
   } catch (error: any) {
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: error.message });
   }
-})
+});
 
 function getErrorStatusCode(errorMessage: string): number {
-  const msg = errorMessage.toLowerCase()
-  if (msg.includes('api key') || msg.includes('unauthorized') || msg.includes('authentication') || msg.includes('invalid_key')) {
-    return 401
+  const msg = errorMessage.toLowerCase();
+  if (
+    msg.includes("api key") ||
+    msg.includes("unauthorized") ||
+    msg.includes("authentication") ||
+    msg.includes("invalid_key")
+  ) {
+    return 401;
   }
-  if (msg.includes('not found') || msg.includes('model') && msg.includes('does not exist')) {
-    return 404
+  if (
+    msg.includes("not found") ||
+    (msg.includes("model") && msg.includes("does not exist"))
+  ) {
+    return 404;
   }
-  if (msg.includes('rate limit') || msg.includes('too many requests')) {
-    return 429
+  if (msg.includes("rate limit") || msg.includes("too many requests")) {
+    return 429;
   }
-  if (msg.includes('bad request') || msg.includes('invalid')) {
-    return 400
+  if (msg.includes("bad request") || msg.includes("invalid")) {
+    return 400;
   }
-  return 500
+  return 500;
 }
 
 function getCleanErrorMessage(error: any, provider: string): string {
-  let message = error.message || 'Unknown error'
-  
+  let message = error.message || "Unknown error";
+
   // Try to parse nested JSON error messages
   try {
-    if (message.includes('{')) {
-      const jsonStart = message.indexOf('{')
-      const jsonStr = message.substring(jsonStart)
-      const parsed = JSON.parse(jsonStr)
-      const rawNested = parsed.error?.metadata?.raw
-      if (typeof rawNested === 'string') {
+    if (message.includes("{")) {
+      const jsonStart = message.indexOf("{");
+      const jsonStr = message.substring(jsonStart);
+      const parsed = JSON.parse(jsonStr);
+      const rawNested = parsed.error?.metadata?.raw;
+      if (typeof rawNested === "string") {
         try {
-          const nestedParsed = JSON.parse(rawNested)
+          const nestedParsed = JSON.parse(rawNested);
           if (nestedParsed.error?.message) {
-            message = nestedParsed.error.message
+            message = nestedParsed.error.message;
           }
         } catch {}
       }
       if (parsed.error?.message) {
-        message = parsed.error.message
+        message = parsed.error.message;
       }
     }
   } catch {}
-  
+
   // Add provider context
   if (!message.toLowerCase().includes(provider.toLowerCase())) {
-    message = `${provider}: ${message}`
+    message = `${provider}: ${message}`;
   }
-  
-  return message
+
+  return message;
 }
 
-router.post('/completions', async (req, res) => {
-  const { messages, model, provider, systemPrompt, temperature, maxTokens, topP, reasoningEffort, disabledTools, lastResponseId, sessionId } = req.body
-    
-    console.log(`[chat] /completions - Request: { model: "${model}", provider: "${provider}", sessionId: "${sessionId}" }`)
+router.post("/completions", async (req, res) => {
+  const {
+    messages,
+    model,
+    provider,
+    systemPrompt,
+    temperature,
+    maxTokens,
+    topP,
+    reasoningEffort,
+    disabledTools,
+    lastResponseId,
+    sessionId,
+  } = req.body;
 
-    try {
-      const providerInstance = await getProvider(provider)
-      if (!providerInstance) {
-        console.error(`[chat] Provider "${provider}" not found or disabled in DB`)
-        return res.status(404).json({ error: `Provider "${provider}" not found or disabled` })
-      }
-      
-      console.log(`[chat] Using provider instance: ${providerInstance.name} (${providerInstance.type})`)
-  
-      const disabledToolNames = Array.isArray(disabledTools) ? (disabledTools as string[]) : []
-      const allTools = listTools().filter(t => !disabledToolNames.includes(t.name))
+  console.log(
+    `[chat] /completions - Request: { model: "${model}", provider: "${provider}", sessionId: "${sessionId}" }`,
+  );
 
-    const dateStr = `Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`
-    const enhancedSystemPrompt = systemPrompt 
+  try {
+    const providerInstance = await getProvider(provider);
+    if (!providerInstance) {
+      console.error(
+        `[chat] Provider "${provider}" not found or disabled in DB`,
+      );
+      return res
+        .status(404)
+        .json({ error: `Provider "${provider}" not found or disabled` });
+    }
+
+    console.log(
+      `[chat] Using provider instance: ${providerInstance.name} (${providerInstance.type})`,
+    );
+
+    const disabledToolNames = Array.isArray(disabledTools)
+      ? (disabledTools as string[])
+      : [];
+    const allTools = listTools().filter(
+      (t) => !disabledToolNames.includes(t.name),
+    );
+
+    const dateStr = `Today is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.`;
+    const enhancedSystemPrompt = systemPrompt
       ? `${dateStr}\n${systemPrompt}`
-      : dateStr
+      : dateStr;
 
-    // Process attachments: Read text files and append to message content
-    const processedMessages = await Promise.all((messages || []).map(async (m: any) => {
-      if (m.attachments && m.attachments.length > 0) {
-        let content = m.content || ''
-        const attachmentsToKeep = []
+    // Process attachments: Read text files and append to message content.
+    // Also expose image attachment URLs as plain text so tool-calling models can pass
+    // the exact local URL to generate_image.sourceImageUrl when the user asks to edit
+    // an uploaded image. The vision payload still remains attached for providers that
+    // can see images directly.
+    const processedMessages = await Promise.all(
+      (messages || []).map(async (m: any) => {
+        if (m.attachments && m.attachments.length > 0) {
+          let content = m.content || "";
+          const attachmentsToKeep = [];
+          const imageAttachments = m.attachments.filter(
+            (a: any) =>
+              a?.type === "image" ||
+              String(a?.mimeType || "").startsWith("image/"),
+          );
 
-        for (const a of m.attachments) {
-          // Resolve file path correctly relative to the uploads directory
-          const filename = path.basename(a.url)
-          
-          // Check multiple potential locations for the uploads folder
-          const possiblePaths = [
-            path.resolve(process.cwd(), 'uploads', filename),
-            path.resolve(process.cwd(), 'server', 'uploads', filename),
-            path.resolve(__dirname, '../../uploads', filename),
-            path.resolve(__dirname, '../../../uploads', filename)
-          ]
-          
-          let filePath = possiblePaths.find(p => fs.existsSync(p))
-          
-          // List of text-based extensions to read
-          const textExtensions = ['.txt', '.md', '.json', '.js', '.ts', '.tsx', '.css', '.html', '.py', '.c', '.cpp', '.rs', '.go', '.sh', '.yaml', '.yml']
-          const ext = path.extname(a.name).toLowerCase()
-          
-          if (textExtensions.includes(ext) && filePath) {
-            try {
-              console.log(`[chat] Extracting text from ${a.name} (Path: ${filePath})`)
-              const textContent = fs.readFileSync(filePath, 'utf-8')
-              content += `\n\n[File Attachment: ${a.name}]\n\`\`\`${ext.slice(1) || 'text'}\n${textContent}\n\`\`\``
-            } catch (err) {
-              console.error(`[chat] Failed to read text file ${a.name}:`, err)
-              attachmentsToKeep.push(a)
-            }
-          } else {
-            if (textExtensions.includes(ext)) {
-              console.warn(`[chat] Text file ${a.name} found but path could not be resolved. Tried:`, possiblePaths)
-            }
-            attachmentsToKeep.push(a)
+          if (imageAttachments.length > 0) {
+            const imageLines = imageAttachments.map((a: any, index: number) => {
+              const label = a.name ? `${a.name}` : `image ${index + 1}`;
+              return `- ${label}: image_url=${a.url}`;
+            });
+            const isVisualContextOnly = content.includes("VISUAL CONTEXT ONLY");
+            const imageInstruction = isVisualContextOnly
+              ? "These image_url values are visual context from a completed image tool call, not a new user request. Do not edit them again unless the user explicitly asks for another change."
+              : "When editing an uploaded image with the generate_image tool, pass the exact image_url value as sourceImageUrl.";
+            content += `\n\n[Image Attachments]\n${imageLines.join("\n")}\n${imageInstruction}`;
           }
+
+          for (const a of m.attachments) {
+            // Resolve file path correctly relative to the uploads directory
+            const filename = path.basename(a.url);
+
+            // Check multiple potential locations for the uploads folder
+            const possiblePaths = [
+              path.resolve(process.cwd(), "uploads", filename),
+              path.resolve(process.cwd(), "server", "uploads", filename),
+              path.resolve(__dirname, "../../uploads", filename),
+              path.resolve(__dirname, "../../../uploads", filename),
+            ];
+
+            let filePath = possiblePaths.find((p) => fs.existsSync(p));
+
+            // List of text-based extensions to read
+            const textExtensions = [
+              ".txt",
+              ".md",
+              ".json",
+              ".js",
+              ".ts",
+              ".tsx",
+              ".css",
+              ".html",
+              ".py",
+              ".c",
+              ".cpp",
+              ".rs",
+              ".go",
+              ".sh",
+              ".yaml",
+              ".yml",
+            ];
+            const ext = path.extname(a.name).toLowerCase();
+
+            if (textExtensions.includes(ext) && filePath) {
+              try {
+                console.log(
+                  `[chat] Extracting text from ${a.name} (Path: ${filePath})`,
+                );
+                const textContent = fs.readFileSync(filePath, "utf-8");
+                content += `\n\n[File Attachment: ${a.name}]\n\`\`\`${ext.slice(1) || "text"}\n${textContent}\n\`\`\``;
+              } catch (err) {
+                console.error(
+                  `[chat] Failed to read text file ${a.name}:`,
+                  err,
+                );
+                attachmentsToKeep.push(a);
+              }
+            } else {
+              if (textExtensions.includes(ext)) {
+                console.warn(
+                  `[chat] Text file ${a.name} found but path could not be resolved. Tried:`,
+                  possiblePaths,
+                );
+              }
+              attachmentsToKeep.push(a);
+            }
+          }
+          return { ...m, content, attachments: attachmentsToKeep };
         }
-        return { ...m, content, attachments: attachmentsToKeep }
-      }
-      return m
-    }))
+        return m;
+      }),
+    );
 
     const stream = providerInstance.chatCompletion({
       model,
-      messages: [{ role: 'system', content: enhancedSystemPrompt }, ...processedMessages],
+      messages: [
+        { role: "system", content: enhancedSystemPrompt },
+        ...processedMessages,
+      ],
       temperature,
       maxTokens,
       topP,
       reasoningEffort,
-      tools: allTools.length > 0 ? allTools.map(t => ({ ...t, id: t.name })) : undefined,
+      tools:
+        allTools.length > 0
+          ? allTools.map((t) => ({ ...t, id: t.name }))
+          : undefined,
       stream: true,
       lastResponseId,
       sessionId,
-    })
+    });
 
     if (req.body.stream === false) {
-      let fullContent = ''
-      let fullThinking = ''
-      let lastResponseId = ''
-      let lastGenInfo = undefined
+      let fullContent = "";
+      let fullThinking = "";
+      let lastResponseId = "";
+      let lastGenInfo = undefined;
 
       for await (const chunk of stream) {
-        if (chunk.content) fullContent += chunk.content
-        if (chunk.thinking) fullThinking += chunk.thinking
-        if (chunk.responseId) lastResponseId = chunk.responseId
-        if (chunk.generationInfo) lastGenInfo = chunk.generationInfo
+        if (chunk.content) fullContent += chunk.content;
+        if (chunk.thinking) fullThinking += chunk.thinking;
+        if (chunk.responseId) lastResponseId = chunk.responseId;
+        if (chunk.generationInfo) lastGenInfo = chunk.generationInfo;
       }
-      return res.json({ content: fullContent, thinking: fullThinking, responseId: lastResponseId, generationInfo: lastGenInfo })
+      return res.json({
+        content: fullContent,
+        thinking: fullThinking,
+        responseId: lastResponseId,
+        generationInfo: lastGenInfo,
+      });
     }
 
-    res.setHeader('Content-Type', 'text/event-stream')
-    res.setHeader('Cache-Control', 'no-cache')
-    res.setHeader('Connection', 'keep-alive')
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
 
-    let headersSent = false
+    let headersSent = false;
     for await (const chunk of stream) {
       if (!headersSent) {
-        headersSent = true
+        headersSent = true;
       }
       try {
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`)
+        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
       } catch {
-        break
+        break;
       }
     }
 
     if (headersSent && !res.writableEnded) {
-      res.write('data: [DONE]\n\n')
-      res.end()
+      res.write("data: [DONE]\n\n");
+      res.end();
     }
   } catch (error: any) {
-    console.error(`[chat] ${provider} error:`, error.message)
+    console.error(`[chat] ${provider} error:`, error.message);
     if (!res.headersSent) {
-      const cleanMessage = getCleanErrorMessage(error, provider)
-      const statusCode = getErrorStatusCode(cleanMessage)
-      res.status(statusCode).json({ error: cleanMessage })
+      const cleanMessage = getCleanErrorMessage(error, provider);
+      const statusCode = getErrorStatusCode(cleanMessage);
+      res.status(statusCode).json({ error: cleanMessage });
     } else {
       // Stream already started, send error as SSE event
       try {
-        res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`)
-        res.write('data: [DONE]\n\n')
-        res.end()
+        res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+        res.write("data: [DONE]\n\n");
+        res.end();
       } catch {}
     }
   }
-})
+});
 
-router.post('/tool-call', async (req, res) => {
-  const { name, arguments: args } = req.body
+router.post("/tool-call", async (req, res) => {
+  const { name, arguments: args } = req.body;
   try {
-    const parsedArgs = typeof args === 'string' ? safeJsonParse(args) : args
-    const result = await executeTool(name, parsedArgs)
-    res.json({ result })
+    const parsedArgs = typeof args === "string" ? safeJsonParse(args) : args;
+    const result = await executeTool(name, parsedArgs);
+    res.json({ result });
   } catch (error: any) {
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: error.message });
   }
-})
+});
 
-export default router
+export default router;

@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Settings, Key, Wrench, Download, Loader2, Trash2, Sparkles } from 'lucide-react'
+import { X, Settings, Key, Wrench, Download, Loader2, Trash2, Sparkles, Image as ImageIcon, RefreshCcw } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useImageStudioStore } from '../stores/imageStudioStore'
 import { useUIStore } from '../stores/uiStore'
 import { cn } from '../lib/utils'
 
@@ -114,6 +115,80 @@ function LocalTextarea({ value, onChange, ...props }: any) {
   )
 }
 
+function ModelSearchSelect({ value, options, onChange, placeholder }: { value: string; options: string[]; onChange: (val: string) => void; placeholder?: string }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const containerRef = React.useRef<HTMLDivElement>(null)
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return options
+    return options.filter((m) => m.toLowerCase().includes(q))
+  }, [options, query])
+
+  React.useEffect(() => {
+    if (open) setQuery('')
+  }, [open])
+
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    if (open) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [open])
+
+  const handleSelect = (model: string) => {
+    onChange(model)
+    setOpen(false)
+    setQuery('')
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        value={open ? query : value}
+        placeholder={placeholder || 'Search models...'}
+        onFocus={() => { setOpen(true); setQuery('') }}
+        onChange={(e) => { setQuery(e.target.value); if (!open) setOpen(true) }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { setOpen(false); inputRef.current?.blur() }
+          if (e.key === 'Enter' && filtered.length > 0) { handleSelect(filtered[0]); e.preventDefault() }
+        }}
+        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+      />
+      {open && (
+        <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto border border-border bg-card shadow-lg">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">No models match "{query}"</div>
+          ) : (
+            filtered.map((model) => (
+              <button
+                key={model}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); handleSelect(model) }}
+                className={cn(
+                  'w-full px-3 py-2 text-left text-sm transition-colors',
+                  model === value ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-secondary'
+                )}
+              >
+                {model}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function SettingsModal() {
   const { settingsOpen, setSettingsOpen } = useUIStore()
   const {
@@ -163,6 +238,17 @@ export function SettingsModal() {
   const [skillError, setSkillError] = useState<string | null>(null)
   const [skillUrl, setSkillUrl] = useState('')
   const [installingUrl, setInstallingUrl] = useState(false)
+  const [imageProviderModels, setImageProviderModels] = useState<Record<string, string[]>>({})
+  const [imageProviderModelsLoading, setImageProviderModelsLoading] = useState<Record<string, boolean>>({})
+  const [imageProviderModelsError, setImageProviderModelsError] = useState<Record<string, string | null>>({})
+  const {
+    selectedProvider: selectedImageProvider,
+    providers: imageProviders,
+    settingsLoaded: imageSettingsLoaded,
+    loadSettings: loadImageSettings,
+    setSelectedProvider: setSelectedImageProvider,
+    updateProvider: updateImageProvider,
+  } = useImageStudioStore()
 
   const loadInstalledSkills = async () => {
     try {
@@ -275,6 +361,53 @@ export function SettingsModal() {
       loadBrowseSkills()
     }
   }, [skillView])
+
+  React.useEffect(() => {
+    if (settingsOpen && !imageSettingsLoaded) {
+      loadImageSettings().catch(console.error)
+    }
+  }, [imageSettingsLoaded, loadImageSettings, settingsOpen])
+
+  const loadModelsForImageProvider = React.useCallback(async (providerId: string, force = false) => {
+    if (!force && imageProviderModels[providerId]?.length) {
+      return
+    }
+
+    setImageProviderModelsLoading((current) => ({ ...current, [providerId]: true }))
+    setImageProviderModelsError((current) => ({ ...current, [providerId]: null }))
+
+    try {
+      const response = await fetch(`/api/images/providers/${encodeURIComponent(providerId)}/models`)
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to load models')
+      }
+
+      setImageProviderModels((current) => ({
+        ...current,
+        [providerId]: Array.isArray(payload.models) ? payload.models : [],
+      }))
+    } catch (error: any) {
+      setImageProviderModelsError((current) => ({
+        ...current,
+        [providerId]: error.message || 'Failed to load models',
+      }))
+    } finally {
+      setImageProviderModelsLoading((current) => ({ ...current, [providerId]: false }))
+    }
+  }, [imageProviderModels])
+
+  React.useEffect(() => {
+    if (activeTab !== 'providers' || !imageSettingsLoaded) return
+
+    imageProviders
+      .filter((provider) => provider.enabled)
+      .forEach((provider) => {
+        if (!imageProviderModels[provider.id]?.length && !imageProviderModelsLoading[provider.id]) {
+          void loadModelsForImageProvider(provider.id)
+        }
+      })
+  }, [activeTab, imageProviderModels, imageProviderModelsLoading, imageProviders, imageSettingsLoaded, loadModelsForImageProvider])
 
   const handleSurpriseHeroText = () => {
     const randomOption = heroTextOptions[Math.floor(Math.random() * heroTextOptions.length)]
@@ -785,6 +918,116 @@ export function SettingsModal() {
                       ))}
                     </div>
                   )}
+
+                  <div className="border-t border-border pt-4">
+                    <div className="mb-4 flex items-center gap-2">
+                      <ImageIcon className="h-4 w-4 text-accent" />
+                      <div>
+                        <h3 className="text-sm font-medium text-foreground">Image Providers</h3>
+                        <p className="text-xs text-muted-foreground">The user chooses the active image backend here and in the studio. The model tool follows this selection.</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      {imageProviders.map((provider) => (
+                        <div key={provider.id} className="border border-border rounded-sm p-4 space-y-3 bg-secondary/10">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-sm font-medium text-foreground">{provider.name}</h4>
+                                {selectedImageProvider === provider.id && (
+                                  <span className="rounded-sm bg-accent px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-accent-foreground">Active</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">{provider.id}</p>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <input
+                                  type="checkbox"
+                                  checked={provider.enabled}
+                                  onChange={(event) => updateImageProvider(provider.id, { enabled: event.target.checked }).catch(console.error)}
+                                  className="rounded border-border"
+                                />
+                                Enabled
+                              </label>
+                              <button
+                                onClick={() => setSelectedImageProvider(provider.id).catch(console.error)}
+                                disabled={!provider.enabled}
+                                className={cn(
+                                  'px-3 py-1.5 text-xs transition-colors',
+                                  selectedImageProvider === provider.id
+                                    ? 'bg-accent text-accent-foreground'
+                                    : 'border border-border bg-secondary text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50'
+                                )}
+                              >
+                                Use This Provider
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="space-y-2 md:col-span-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <label className="text-xs font-medium text-muted-foreground">Model</label>
+                                <button
+                                  onClick={() => loadModelsForImageProvider(provider.id, true).catch(console.error)}
+                                  className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                                >
+                                  {imageProviderModelsLoading[provider.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCcw className="h-3 w-3" />}
+                                  Refresh models
+                                </button>
+                              </div>
+
+                              {imageProviderModels[provider.id]?.length ? (
+                                <ModelSearchSelect
+                                  value={provider.model}
+                                  options={imageProviderModels[provider.id]}
+                                  onChange={(val) => updateImageProvider(provider.id, { model: val }).catch(console.error)}
+                                  placeholder="Type to search models..."
+                                />
+                              ) : (
+                                <LocalInput
+                                  type="text"
+                                  value={provider.model}
+                                  onChange={(val: string) => updateImageProvider(provider.id, { model: val }).catch(console.error)}
+                                  placeholder="Model id"
+                                  className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                                />
+                              )}
+
+                              {imageProviderModelsError[provider.id] && (
+                                <p className="text-xs text-destructive">{imageProviderModelsError[provider.id]}</p>
+                              )}
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">Base URL</label>
+                              <LocalInput
+                                type="text"
+                                value={provider.baseUrl}
+                                onChange={(val: string) => updateImageProvider(provider.id, { baseUrl: val }).catch(console.error)}
+                                placeholder="Provider endpoint"
+                                className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">API Key</label>
+                              <LocalInput
+                                type="password"
+                                value={provider.apiKey}
+                                onChange={(val: string) => updateImageProvider(provider.id, { apiKey: val }).catch(console.error)}
+                                placeholder="API Key"
+                                className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
