@@ -21,6 +21,9 @@ def _normalize_backend_name(raw_backend: str | None) -> str | None:
         "dml": "directml",
         "amd": "directml",
         "intel": "directml",
+        "mps": "mps",
+        "metal": "mps",
+        "apple": "mps",
         "cpu": "cpu",
     }
     return aliases.get(normalized)
@@ -31,6 +34,8 @@ def _config_for_backend(backend: str) -> BackendConfig:
         return BackendConfig(backend="cuda", label="NVIDIA CUDA")
     if backend == "directml":
         return BackendConfig(backend="directml", label="DirectML")
+    if backend == "mps":
+        return BackendConfig(backend="mps", label="Apple Metal (MPS)")
     return BackendConfig(backend="cpu", label="CPU")
 
 
@@ -49,6 +54,12 @@ def get_backend_config() -> BackendConfig:
         return _config_for_backend("cuda")
 
     try:
+        if torch.backends.mps.is_available():
+            return _config_for_backend("mps")
+    except Exception:
+        pass
+
+    try:
         import torch_directml
 
         torch_directml.device()
@@ -64,6 +75,9 @@ def get_model_dtype(torch):
         if callable(is_bf16_supported) and is_bf16_supported():
             return torch.bfloat16
         return torch.float16
+    if backend == "mps":
+        # float16 is well-supported on Apple Silicon
+        return torch.float16
     if backend == "directml":
         return torch.float16
     return torch.float32
@@ -73,9 +87,10 @@ def get_runtime_device(torch):
     backend = get_backend_config().backend
     if backend == "cuda":
         return torch.device("cuda")
+    if backend == "mps":
+        return torch.device("mps")
     if backend == "directml":
         import torch_directml
-
         return torch_directml.device()
     return torch.device("cpu")
 

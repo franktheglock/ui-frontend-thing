@@ -375,8 +375,17 @@ async function getStatus(installDir: string, port: number) {
 }
 
 router.get("/status", async (req, res) => {
-  const installDir = getInstallDir(req.query.installDir);
-  res.json(await getStatus(installDir, normalizePort(req.query.port)));
+  const db = await getDb();
+  const row = (await db.get("SELECT value FROM app_settings WHERE id = ?", "global")) as any;
+  const saved = row?.value ? JSON.parse(row.value || "{}") : {};
+  const installDir = getInstallDir(req.query.installDir ?? saved.localImageServerInstallDir);
+  const port = normalizePort(req.query.port ?? saved.localImageServerPort);
+  const status = await getStatus(installDir, port);
+  res.json({
+    ...status,
+    autoRun: saved.localImageServerAutoRun === true,
+    port,
+  });
 });
 
 router.post("/setup", async (req, res) => {
@@ -408,7 +417,10 @@ router.post("/start", async (req, res) => {
   const modelVariant = String(req.body?.modelVariant || "").trim();
   const port = normalizePort(req.body?.port);
   // Auto-detect first run: if no venv exists, do a full install; otherwise skip pip reinstalls.
-  const venvReady = fs.existsSync(path.join(installDir, "venv", "Scripts", "activate.bat"));
+  const venvReady =
+    process.platform === "win32"
+      ? fs.existsSync(path.join(installDir, "venv", "Scripts", "activate.bat"))
+      : fs.existsSync(path.join(installDir, "venv", "bin", "activate"));
   const fastMode = req.body?.fastMode !== undefined ? req.body.fastMode !== false : venvReady;
 
   if (!exists(installDir)) {
@@ -429,7 +441,12 @@ router.post("/start", async (req, res) => {
 
   patchLocalImageStartupScripts(installDir);
 
-  runningProcess = spawn("cmd.exe", ["/c", "start.bat"], {
+  const [spawnCmd, spawnArgs] =
+    process.platform === "win32"
+      ? (["cmd.exe", ["/c", "start.bat"]] as const)
+      : (["bash", ["start.sh"]] as const);
+
+  runningProcess = spawn(spawnCmd, spawnArgs, {
     cwd: installDir,
     env,
     detached: true,
@@ -484,7 +501,11 @@ export async function maybeAutoStartLocalImageServer() {
     if (!exists(installDir) || runningProcess) return;
     const port = normalizePort(settings.localImageServerPort);
     patchLocalImageStartupScripts(installDir);
-    runningProcess = spawn("cmd.exe", ["/c", "start.bat"], {
+    const [autoCmd, autoArgs] =
+      process.platform === "win32"
+        ? (["cmd.exe", ["/c", "start.bat"]] as const)
+        : (["bash", ["start.sh"]] as const);
+    runningProcess = spawn(autoCmd, autoArgs, {
       cwd: installDir,
       env: buildLocalImageEnv(installDir, { fastMode: true, port }),
       detached: true,

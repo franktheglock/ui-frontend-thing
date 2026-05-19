@@ -458,6 +458,9 @@ export function SettingsModal() {
   const [imageProviderModelsError, setImageProviderModelsError] = useState<
     Record<string, string | null>
   >({});
+  const [localImageAutoRun, setLocalImageAutoRun] = useState(false);
+  const [localImagePort, setLocalImagePort] = useState("8000");
+  const [localImageSaving, setLocalImageSaving] = useState(false);
   const {
     selectedProvider: selectedImageProvider,
     providers: imageProviders,
@@ -629,6 +632,32 @@ export function SettingsModal() {
       loadImageSettings().catch(console.error);
     }
   }, [imageSettingsLoaded, loadImageSettings, settingsOpen]);
+
+  React.useEffect(() => {
+    if (!settingsOpen) return;
+    fetch("/api/local-image-server/status")
+      .then((r) => r.json())
+      .then((data) => {
+        setLocalImageAutoRun(!!data.autoRun);
+        setLocalImagePort(String(data.port || 8000));
+      })
+      .catch(() => {});
+  }, [settingsOpen]);
+
+  const saveLocalImageSettings = async () => {
+    setLocalImageSaving(true);
+    try {
+      await fetch("/api/local-image-server/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          autoRun: localImageAutoRun,
+          port: parseInt(localImagePort) || 8000,
+        }),
+      });
+    } catch {}
+    setLocalImageSaving(false);
+  };
 
   const loadModelsForImageProvider = React.useCallback(
     async (providerId: string, force = false) => {
@@ -1611,6 +1640,78 @@ export function SettingsModal() {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border pt-4">
+                    <div className="mb-4 flex items-center gap-2">
+                      <Settings className="h-4 w-4 text-accent" />
+                      <div>
+                        <h3 className="text-sm font-medium text-foreground">
+                          Local Image Server
+                        </h3>
+                        <p className="text-xs text-muted-foreground">
+                          FLUX.2-klein-4B — bundled server settings.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-medium">Auto-start on boot</p>
+                          <p className="text-xs text-muted-foreground">
+                            Launch the local image server automatically when this app starts.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={localImageAutoRun}
+                          onClick={() => setLocalImageAutoRun(!localImageAutoRun)}
+                          className="flex shrink-0 items-center gap-2 text-sm text-foreground"
+                        >
+                          <span
+                            className={cn(
+                              "relative inline-flex h-6 w-11 items-center rounded-full border transition-colors",
+                              localImageAutoRun
+                                ? "border-accent bg-accent/80"
+                                : "border-border bg-secondary",
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-transform",
+                                localImageAutoRun ? "translate-x-5" : "translate-x-1",
+                              )}
+                            />
+                          </span>
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Port</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={65535}
+                          value={localImagePort}
+                          onChange={(e) => setLocalImagePort(e.target.value)}
+                          className="w-full border border-border bg-secondary px-3 py-2 text-sm outline-none focus:border-accent"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Pick an unused port if something is already on 8000.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={saveLocalImageSettings}
+                        disabled={localImageSaving}
+                        className="inline-flex items-center gap-1.5 bg-accent px-3 py-1.5 text-xs text-accent-foreground disabled:opacity-50"
+                      >
+                        {localImageSaving && (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        )}
+                        Save
+                      </button>
                     </div>
                   </div>
                 </div>
