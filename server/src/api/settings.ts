@@ -21,6 +21,7 @@ const DEFAULT_SHARED_SETTINGS = {
   toolDisplayMode: "individual",
   maxToolTurns: 0,
   memoryEnabled: true,
+  setupComplete: false,
 };
 
 const SYNCABLE_KEYS = new Set(Object.keys(DEFAULT_SHARED_SETTINGS));
@@ -31,13 +32,25 @@ function mergeSettings(
 ) {
   if (!incoming) return base;
 
+  const migratedIncoming: Record<string, unknown> = {
+    ...incoming,
+    setupComplete:
+      incoming.setupComplete === undefined
+        ? !!(
+            typeof incoming.selectedProvider === "string" &&
+            incoming.selectedProvider
+          )
+        : incoming.setupComplete !== false,
+  };
+
   return {
     ...base,
-    ...incoming,
+    ...migratedIncoming,
     searchConfig: {
       ...base.searchConfig,
-      ...(incoming.searchConfig && typeof incoming.searchConfig === "object"
-        ? (incoming.searchConfig as Record<string, string>)
+      ...(migratedIncoming.searchConfig &&
+      typeof migratedIncoming.searchConfig === "object"
+        ? (migratedIncoming.searchConfig as Record<string, string>)
         : {}),
     },
   };

@@ -55,3 +55,6 @@ coverage/
 # Misc
 *.tar.gz
 *.tgz
+
+# Bundled FLUX server — skip CI config
+flux 4b frontend/.github/

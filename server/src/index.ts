@@ -12,6 +12,9 @@ import skillRoutes from "./api/skills";
 import mcpRoutes from "./api/mcp";
 import imageRoutes from "./api/images";
 import memoryRoutes from "./api/memory";
+import localImageServerRoutes, {
+  maybeAutoStartLocalImageServer,
+} from "./api/local-image-server";
 import { getDb } from "./db";
 import { mcpManager } from "./mcp/mcp-manager";
 
@@ -53,6 +56,7 @@ async function main() {
   app.use("/api/mcp", mcpRoutes);
   app.use("/api/images", imageRoutes);
   app.use("/api/memory", memoryRoutes);
+  app.use("/api/local-image-server", localImageServerRoutes);
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", version: "0.1.0" });
@@ -70,6 +74,11 @@ async function main() {
   app.listen(PORT, "0.0.0.0", async () => {
     console.log(`[server] Running on port ${PORT}`);
     // Initialize MCP servers after server is ready
+    try {
+      await maybeAutoStartLocalImageServer();
+    } catch (err: any) {
+      console.error("[local-image-server] Failed to auto-start:", err.message);
+    }
     try {
       await mcpManager.loadFromDb();
     } catch (err: any) {

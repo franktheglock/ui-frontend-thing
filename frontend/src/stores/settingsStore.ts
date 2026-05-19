@@ -56,6 +56,7 @@ type SharedSettingsSlice = Pick<
   | "toolDisplayMode"
   | "maxToolTurns"
   | "memoryEnabled"
+  | "setupComplete"
 >;
 
 export interface SettingsState {
@@ -101,6 +102,7 @@ export interface SettingsState {
   toolDisplayMode: "individual" | "grouped" | "timeline";
   maxToolTurns: number;
   memoryEnabled: boolean;
+  setupComplete: boolean;
 
   setTheme: (
     theme:
@@ -157,6 +159,7 @@ export interface SettingsState {
   setToolDisplayMode: (mode: "individual" | "grouped" | "timeline") => void;
   setMaxToolTurns: (turns: number) => void;
   setMemoryEnabled: (enabled: boolean) => void;
+  setSetupComplete: (complete: boolean) => void;
 }
 
 const SHARED_SETTINGS_KEYS = [
@@ -176,6 +179,7 @@ const SHARED_SETTINGS_KEYS = [
   "toolDisplayMode",
   "maxToolTurns",
   "memoryEnabled",
+  "setupComplete",
 ] as const satisfies ReadonlyArray<keyof SharedSettingsSlice>;
 
 function syncSharedSettings(updates: Partial<SharedSettingsSlice>) {
@@ -228,6 +232,7 @@ export const useSettingsStore = create<SettingsState>()(
       toolDisplayMode: "individual",
       maxToolTurns: 0,
       memoryEnabled: true,
+      setupComplete: false,
 
       setTheme: (theme) => set({ theme }),
       toggleSidebar: () =>
@@ -392,6 +397,10 @@ export const useSettingsStore = create<SettingsState>()(
       setMemoryEnabled: (memoryEnabled) => {
         set({ memoryEnabled });
         syncSharedSettings({ memoryEnabled });
+      },
+      setSetupComplete: (setupComplete) => {
+        set({ setupComplete });
+        syncSharedSettings({ setupComplete });
       },
     }),
     {

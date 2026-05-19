@@ -1082,15 +1082,32 @@ export function SettingsModal() {
                           </p>
                         )}
                       </div>
-                      <label className="flex shrink-0 items-center gap-2 text-sm cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={memoryEnabled}
-                          onChange={(e) => setMemoryEnabled(e.target.checked)}
-                          className="rounded border-border"
-                        />
-                        Enabled
-                      </label>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={memoryEnabled}
+                        onClick={() => setMemoryEnabled(!memoryEnabled)}
+                        className="flex shrink-0 items-center gap-2 text-sm text-foreground"
+                      >
+                        <span className="inline-block w-16 shrink-0 text-right">
+                          {memoryEnabled ? "Enabled" : "Disabled"}
+                        </span>
+                        <span
+                          className={cn(
+                            "relative inline-flex h-6 w-11 items-center rounded-full border transition-colors",
+                            memoryEnabled
+                              ? "border-accent bg-accent/80"
+                              : "border-border bg-secondary",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-transform",
+                              memoryEnabled ? "translate-x-5" : "translate-x-1",
+                            )}
+                          />
+                        </span>
+                      </button>
                     </div>
                     <p className="text-xs text-muted-foreground">
                       When disabled, the memory markdown is not added to prompts

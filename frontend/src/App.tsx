@@ -1,37 +1,48 @@
-import { useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
-import { Sidebar } from './components/Sidebar'
-import { SidebarToggle } from './components/SidebarToggle'
-import { ChatWindow } from './components/ChatWindow'
-import { MessageInput } from './components/MessageInput'
-import { ArtifactPanel } from './components/ArtifactPanel'
-import { ActivityPanel } from './components/ActivityPanel'
-import { SettingsModal } from './components/SettingsModal'
-import { ToolsModal } from './components/ToolsModal'
-import { ModelSelector } from './components/ModelSelector'
-import { ImageStudio } from './components/ImageStudio'
-import { useChatStore } from './stores/chatStore'
-import { useSettingsStore } from './stores/settingsStore'
-import { getViewFromPathname, useUIStore } from './stores/uiStore'
-import { cn } from './lib/utils'
+import { useEffect } from "react";
+import { useLocation } from "react-router-dom";
+import { Sidebar } from "./components/Sidebar";
+import { SidebarToggle } from "./components/SidebarToggle";
+import { ChatWindow } from "./components/ChatWindow";
+import { MessageInput } from "./components/MessageInput";
+import { ArtifactPanel } from "./components/ArtifactPanel";
+import { ActivityPanel } from "./components/ActivityPanel";
+import { SettingsModal } from "./components/SettingsModal";
+import { ToolsModal } from "./components/ToolsModal";
+import { ModelSelector } from "./components/ModelSelector";
+import { ImageStudio } from "./components/ImageStudio";
+import { SetupWizard } from "./components/SetupWizard";
+import { useChatStore } from "./stores/chatStore";
+import { useSettingsStore } from "./stores/settingsStore";
+import { getViewFromPathname, useUIStore } from "./stores/uiStore";
+import { cn } from "./lib/utils";
 
 function ThemeSync() {
-  const { theme } = useSettingsStore()
+  const { theme } = useSettingsStore();
 
   useEffect(() => {
-    const root = document.documentElement
-    const allThemes = ['dark', 'light', 'midnight', 'emerald', 'rose', 'violet', 'sunset']
-    root.classList.remove(...allThemes)
+    const root = document.documentElement;
+    const allThemes = [
+      "dark",
+      "light",
+      "midnight",
+      "emerald",
+      "rose",
+      "violet",
+      "sunset",
+    ];
+    root.classList.remove(...allThemes);
 
-    if (theme === 'system') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-      root.classList.add(prefersDark ? 'dark' : 'light')
+    if (theme === "system") {
+      const prefersDark = window.matchMedia(
+        "(prefers-color-scheme: dark)",
+      ).matches;
+      root.classList.add(prefersDark ? "dark" : "light");
     } else {
-      root.classList.add(theme)
+      root.classList.add(theme);
     }
-  }, [theme])
+  }, [theme]);
 
-  return null
+  return null;
 }
 
 function ModelSync() {
@@ -41,30 +52,32 @@ function ModelSync() {
     sharedSettingsLoaded,
     setProviders,
     setSelectedModelAndProvider,
-  } = useSettingsStore()
+  } = useSettingsStore();
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
 
     async function loadProvidersAndModels() {
       try {
-        const res = await fetch('/api/providers')
-        if (!res.ok) return
-        const backendProviders = await res.json()
-        if (cancelled) return
+        const res = await fetch("/api/providers");
+        if (!res.ok) return;
+        const backendProviders = await res.json();
+        if (cancelled) return;
 
-        setProviders(backendProviders)
+        setProviders(backendProviders);
 
         // Fetch models for each provider
-        const updatedProviders = [...backendProviders]
+        const updatedProviders = [...backendProviders];
         for (let i = 0; i < updatedProviders.length; i++) {
-          const p = updatedProviders[i]
+          const p = updatedProviders[i];
           try {
-            const modelRes = await fetch(`/api/providers/${encodeURIComponent(p.id)}/models`)
+            const modelRes = await fetch(
+              `/api/providers/${encodeURIComponent(p.id)}/models`,
+            );
             if (modelRes.ok) {
-              const models = await modelRes.json()
+              const models = await modelRes.json();
               if (Array.isArray(models) && models.length > 0) {
-                updatedProviders[i] = { ...p, models }
+                updatedProviders[i] = { ...p, models };
               }
             }
           } catch {
@@ -72,118 +85,154 @@ function ModelSync() {
           }
         }
 
-        if (cancelled) return
-        setProviders(updatedProviders)
+        if (cancelled) return;
+        setProviders(updatedProviders);
 
         // Auto-select first model if none selected
         if (sharedSettingsLoaded && (!selectedProvider || !selectedModel)) {
-          const firstWithModels = updatedProviders.find((p: any) => p.enabled && p.models && p.models.length > 0)
+          const firstWithModels = updatedProviders.find(
+            (p: any) => p.enabled && p.models && p.models.length > 0,
+          );
           if (firstWithModels) {
-            setSelectedModelAndProvider(firstWithModels.models[0], firstWithModels.id)
+            setSelectedModelAndProvider(
+              firstWithModels.models[0],
+              firstWithModels.id,
+            );
           }
         }
       } catch (err) {
-        console.error('[app] Failed to load providers:', err)
+        console.error("[app] Failed to load providers:", err);
       }
     }
 
-    loadProvidersAndModels()
-    return () => { cancelled = true }
-  }, [selectedModel, selectedProvider, sharedSettingsLoaded, setProviders, setSelectedModelAndProvider])
+    loadProvidersAndModels();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedModel,
+    selectedProvider,
+    sharedSettingsLoaded,
+    setProviders,
+    setSelectedModelAndProvider,
+  ]);
 
-  return null
+  return null;
 }
 
 function SharedSettingsSync() {
-  const { hydrateSharedSettings, markSharedSettingsLoaded, markToolsLoaded, setTools } = useSettingsStore()
+  const {
+    hydrateSharedSettings,
+    markSharedSettingsLoaded,
+    markToolsLoaded,
+    setTools,
+  } = useSettingsStore();
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
 
     const loadSharedState = async () => {
       try {
         const [settingsRes, toolsRes] = await Promise.all([
-          fetch('/api/settings'),
-          fetch('/api/tools'),
-        ])
+          fetch("/api/settings"),
+          fetch("/api/tools"),
+        ]);
 
-        if (cancelled) return
+        if (cancelled) return;
 
         if (settingsRes.ok) {
-          const payload = await settingsRes.json()
+          const payload = await settingsRes.json();
           if (!cancelled) {
-            hydrateSharedSettings(payload.settings || {})
+            hydrateSharedSettings(payload.settings || {});
           }
         } else {
-          markSharedSettingsLoaded()
+          markSharedSettingsLoaded();
         }
 
         if (toolsRes.ok) {
-          const backendTools = await toolsRes.json()
+          const backendTools = await toolsRes.json();
           if (!cancelled && Array.isArray(backendTools)) {
-            setTools(backendTools.map((tool: any) => ({
-              id: tool.name,
-              name: tool.name,
-              enabled: tool.enabled !== false,
-              config: tool.config || {},
-            })))
+            setTools(
+              backendTools.map((tool: any) => ({
+                id: tool.name,
+                name: tool.name,
+                enabled: tool.enabled !== false,
+                config: tool.config || {},
+              })),
+            );
           }
         } else if (!cancelled) {
-          markToolsLoaded()
+          markToolsLoaded();
         }
       } catch (err) {
-        console.error('[app] Failed to sync shared settings:', err)
+        console.error("[app] Failed to sync shared settings:", err);
         if (!cancelled) {
-          markSharedSettingsLoaded()
-          markToolsLoaded()
+          markSharedSettingsLoaded();
+          markToolsLoaded();
         }
       }
-    }
+    };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        loadSharedState()
+      if (document.visibilityState === "visible") {
+        loadSharedState();
       }
-    }
+    };
 
-    loadSharedState()
-    window.addEventListener('focus', loadSharedState)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
+    loadSharedState();
+    window.addEventListener("focus", loadSharedState);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      cancelled = true
-      window.removeEventListener('focus', loadSharedState)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [hydrateSharedSettings, markSharedSettingsLoaded, markToolsLoaded, setTools])
+      cancelled = true;
+      window.removeEventListener("focus", loadSharedState);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [
+    hydrateSharedSettings,
+    markSharedSettingsLoaded,
+    markToolsLoaded,
+    setTools,
+  ]);
 
-  return null
+  return null;
 }
 
 function App() {
-  const { sessions, currentSessionId, createSession, setCurrentSession, streaming, loadSessions } = useChatStore()
-  const { setCurrentView } = useUIStore()
-  const location = useLocation()
-  const currentView = getViewFromPathname(location.pathname)
+  const {
+    sessions,
+    currentSessionId,
+    createSession,
+    setCurrentSession,
+    streaming,
+    loadSessions,
+  } = useChatStore();
+  const { setCurrentView } = useUIStore();
+  const location = useLocation();
+  const currentView = getViewFromPathname(location.pathname);
 
   useEffect(() => {
-    setCurrentView(currentView)
-  }, [currentView, setCurrentView])
+    setCurrentView(currentView);
+  }, [currentView, setCurrentView]);
 
   useEffect(() => {
     loadSessions().then(() => {
-      const { sessions, currentSessionId } = useChatStore.getState()
+      const { sessions, currentSessionId } = useChatStore.getState();
       if (sessions.length === 0 && !currentSessionId) {
-        createSession().then(id => setCurrentSession(id))
+        createSession().then((id) => setCurrentSession(id));
       } else if (!currentSessionId && sessions.length > 0) {
-        setCurrentSession(sessions[0].id)
+        setCurrentSession(sessions[0].id);
       }
-    })
-  }, [loadSessions, createSession, setCurrentSession])
+    });
+  }, [loadSessions, createSession, setCurrentSession]);
 
-  const currentSession = sessions.find(s => s.id === currentSessionId)
-  const isCurrentGenerating = currentSessionId ? streaming[currentSessionId]?.isGenerating ?? false : false
-  const isEmpty = !currentSession || (currentSession.messages.length === 0 && !isCurrentGenerating)
+  const currentSession = sessions.find((s) => s.id === currentSessionId);
+  const isCurrentGenerating = currentSessionId
+    ? (streaming[currentSessionId]?.isGenerating ?? false)
+    : false;
+  const isEmpty =
+    !currentSession ||
+    (currentSession.messages.length === 0 && !isCurrentGenerating);
 
   return (
     <>
@@ -194,12 +243,14 @@ function App() {
         <Sidebar />
         <SidebarToggle />
 
-        <main className={cn(
-          "flex-1 flex flex-col min-w-0 relative",
-          currentView === 'chat' ? 'overflow-hidden' : 'overflow-y-auto',
-          currentView === 'chat' && isEmpty ? "justify-center pb-[10vh]" : ""
-        )}>
-          {currentView === 'chat' ? (
+        <main
+          className={cn(
+            "flex-1 flex flex-col min-w-0 relative",
+            currentView === "chat" ? "overflow-hidden" : "overflow-y-auto",
+            currentView === "chat" && isEmpty ? "justify-center pb-[10vh]" : "",
+          )}
+        >
+          {currentView === "chat" ? (
             <>
               <ChatWindow />
               <MessageInput isLanding={isEmpty} />
@@ -209,7 +260,7 @@ function App() {
           )}
         </main>
 
-        {currentView === 'chat' && (
+        {currentView === "chat" && (
           <>
             <ActivityPanel />
             <ArtifactPanel />
@@ -218,9 +269,10 @@ function App() {
         <SettingsModal />
         <ToolsModal />
         <ModelSelector />
+        <SetupWizard />
       </div>
     </>
-  )
+  );
 }
 
-export default App
+export default App;
