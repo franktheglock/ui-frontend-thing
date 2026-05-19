@@ -1,10 +1,11 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { User, Copy, Check, Terminal, RotateCcw, ChevronLeft, ChevronRight, FileText, Download, ExternalLink } from 'lucide-react'
 import { useChatStore, Message, GenerationInfo as GenInfo, Attachment } from '../stores/chatStore'
 import { ToolCallBlock } from './ToolCallBlock'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { ThinkingBlock } from './ThinkingBlock'
 import { GenerationInfo } from './GenerationInfo'
+import { SourcesBlock } from './SourcesBlock'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { cn, copyTextToClipboard } from '../lib/utils'
@@ -108,6 +109,28 @@ export function MessageBubble({
   const { toolDisplayMode } = useSettingsStore()
   const { sessions } = useChatStore()
   const session = sessions.find(s => s.id === sessionId)
+
+  const sourceUrls = useMemo(() => {
+    const urls: string[] = []
+    if (!message.toolResults) return urls
+    for (const tr of message.toolResults) {
+      const resultText = typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result)
+      const urlRegex = /URL:\s*(https?:\/\/[^\s]+)/g
+      let match
+      while ((match = urlRegex.exec(resultText)) !== null) {
+        urls.push(match[1])
+      }
+      const hasUrlLine = /URL:\s*https?:\/\//.test(resultText)
+      if (!hasUrlLine && (tr.name === 'read_url' || tr.name === 'read_browser_page')) {
+        const toolCall = message.toolCalls?.find(tc => tc.id === tr.toolCallId)
+        if (toolCall) {
+          const args = typeof toolCall.arguments === 'string' ? JSON.parse(toolCall.arguments) : toolCall.arguments
+          if (args.url) urls.push(args.url)
+        }
+      }
+    }
+    return urls
+  }, [message.toolResults, message.toolCalls])
 
   const handleCopy = async () => {
     try {
@@ -236,6 +259,12 @@ export function MessageBubble({
                 <MarkdownRenderer content={message.content} searchHighlight={searchHighlight} />
               )}
             </div>
+
+            {!isUser && sourceUrls.length > 0 && (
+              <div className="mt-1.5">
+                <SourcesBlock urls={sourceUrls} />
+              </div>
+            )}
 
             {message.attachments && message.attachments.length > 0 && (
               <div className={cn('flex flex-wrap gap-2 mt-2', isUser ? 'justify-end' : '')}>

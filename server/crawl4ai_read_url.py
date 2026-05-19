@@ -1,8 +1,10 @@
 import asyncio
 import contextlib
+import gc
 import io
 import json
 import sys
+import warnings
 from typing import Any
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
@@ -44,9 +46,14 @@ async def _crawl(url: str) -> dict[str, Any]:
         ),
     )
 
+    result = None
     with contextlib.redirect_stdout(io.StringIO()):
         async with AsyncWebCrawler(config=browser_config) as crawler:
             result = await crawler.arun(url=url, config=run_config)
+        # Allow pending subprocess transport cleanup callbacks to drain
+        # before the event loop shuts down (avoids "Event loop is closed"
+        # errors on Windows ProactorEventLoop).
+        await asyncio.sleep(0.1)
 
     if not result.success:
         return {
@@ -76,7 +83,15 @@ def main() -> None:
 
     url = sys.argv[1]
     try:
-        payload = asyncio.run(_crawl(url))
+        # Suppress "unclosed transport" ResourceWarning that fires on
+        # Windows when Crawl4AI's browser subprocess pipes are GC'd after
+        # the event loop closes.  The transports are harmless leftovers.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ResourceWarning)
+            payload = asyncio.run(_crawl(url))
+        # Force GC while nothing depends on the closed loop, so transport
+        # __del__ methods don't stumble on a closed loop later.
+        gc.collect()
         sys.stdout.write(json.dumps(payload, ensure_ascii=True))
     except Exception as error:  # pragma: no cover - runtime integration guard
         sys.stdout.write(json.dumps({
