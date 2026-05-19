@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A beautiful and aesthetic interface for the FLUX.2-klein-4B model. Generate and edit images with power."
+    />
+    <title>FLUX.2-klein-4B Studio</title>
+    <meta name="theme-color" content="#080806" />
+    <!-- Fonts loaded via @import in style.css -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- Feather Icons for lightweight, sharp iconography -->
+    <script src="https://unpkg.com/feather-icons"></script>
+
+    <link rel="stylesheet" href="style.css?v=8" />
+    <link rel="stylesheet" href="gallery.css?v=6" />
+  </head>
+  <body>
+    <div id="model-status-overlay" class="status-overlay hidden">
+        <div class="status-card">
+            <i data-feather="download-cloud" class="loading-icon"></i>
+        <h3 id="status-title">Downloading Model Assets</h3>
+            <p id="status-message">Initializing...</p>
+        <p id="status-hardware" class="status-hardware hidden"></p>
+        <div id="status-progress-bar" class="status-progress-bar">
+                <div id="status-progress-fill" class="progress-fill"></div>
+            </div>
+        <div id="status-terminal" class="status-terminal">
+                <div class="terminal-header">
+                    <span>Live Console Output</span>
+                    <div class="terminal-dots"><span></span><span></span><span></span></div>
+                </div>
+                <div id="terminal-content" class="terminal-content">
+                    Initializing logs...
+                </div>
+            </div>
+        <div id="download-prompt" class="download-prompt hidden">
+          <div class="download-prompt-copy">
+            <p class="download-prompt-kicker">No cached model detected</p>
+            <p class="download-prompt-note">Choose a model to download. Fit estimates are rough and based on detected total VRAM.</p>
+          </div>
+          <div id="download-model-list" class="download-model-list"></div>
+        </div>
+        </div>
+    </div>
+
+    <div class="background-effects">
+      <div class="glow-orb orb-1"></div>
+      <div class="glow-orb orb-2"></div>
+      <div class="glow-orb orb-3"></div>
+    </div>
+
+    <main class="app-container">
+      <header class="app-header">
+        <div class="logo">
+          <i data-feather="zap"></i>
+          <div class="brand-copy">
+            <p class="eyebrow">Local image atelier</p>
+            <h1><span class="gradient-text">FLUX.2</span>-klein-4B</h1>
+            <div class="variant-row">
+              <span id="variant-badge" class="variant-badge">Q8_0 GGUF</span>
+              <label class="variant-selector" for="model-variant">
+                <span class="variant-selector-label">Variant</span>
+                <select id="model-variant" class="variant-select">
+                  <option value="bf16">BF16</option>
+                  <option value="fp8">FP8</option>
+                  <option value="gguf-bf16">BF16 GGUF</option>
+                  <option value="gguf-f16">F16 GGUF</option>
+                  <option value="gguf-q2-k">Q2_K GGUF</option>
+                  <option value="gguf-q3-k-m">Q3_K_M GGUF</option>
+                  <option value="gguf-q3-k-s">Q3_K_S GGUF</option>
+                  <option value="gguf-q4-0">Q4_0 GGUF</option>
+                  <option value="gguf-q4-1">Q4_1 GGUF</option>
+                  <option value="gguf-q4-k-m">Q4_K_M GGUF</option>
+                  <option value="gguf-q4-k-s">Q4_K_S GGUF</option>
+                  <option value="gguf-q5-0">Q5_0 GGUF</option>
+                  <option value="gguf-q5-1">Q5_1 GGUF</option>
+                  <option value="gguf-q5-k-m">Q5_K_M GGUF</option>
+                  <option value="gguf-q5-k-s">Q5_K_S GGUF</option>
+                  <option value="gguf-q6-k">Q6_K GGUF</option>
+                  <option value="gguf-q8-0" selected>Q8_0 GGUF</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="mode-toggle">
+          <button
+            class="mode-btn active"
+            id="btn-t2i"
+            aria-label="Text to Image"
+          >
+            Text to Image
+          </button>
+          <button class="mode-btn" id="btn-i2i" aria-label="Image to Image">
+            Image to Image
+          </button>
+        </div>
+      </header>
+
+      <div class="content-wrapper">
+        <!-- Left Column: Controls -->
+        <section class="controls-panel glass-panel">
+          <div class="controls-scroll">
+          <!-- Prompt Input -->
+          <div class="control-group">
+            <label for="prompt">Prompt</label>
+            <div class="textarea-wrapper">
+              <textarea
+                id="prompt"
+                placeholder="A futuristic cyberpunk city at night, highly detailed, neon pink and cyans..."
+                rows="4"
+              ></textarea>
+            </div>
+          </div>
+
+          <!-- Init Image (Hidden by default, shown in I2I mode) -->
+          <div class="control-group hidden" id="init-image-group">
+            <label>Conditioning Image</label>
+            <div class="upload-area" id="upload-area">
+              <i data-feather="upload-cloud"></i>
+              <p>Drag & drop or <span>browse</span></p>
+              <input type="file" id="image-upload" accept="image/*" class="hidden-input">
+              <img id="upload-preview" class="upload-preview hidden" alt="Uploaded preview">
+              <button class="clear-upload hidden" id="clear-upload" title="Remove image">
+                <i data-feather="x"></i>
+              </button>
+            </div>
+            <small class="helper-copy">Use a clean source image for stronger structural continuity.</small>
+          </div>
+
+          <!-- Reference Image (Optional, hidden by default) -->
+          <div class="control-group hidden" id="ref-image-group">
+            <label>Reference Image (Optional)</label>
+            <div class="upload-area" id="ref-upload-area">
+              <i data-feather="plus"></i>
+              <p>Drag & drop or <span>browse</span></p>
+              <input type="file" id="ref-image-upload" accept="image/*" class="hidden-input">
+              <img id="ref-upload-preview" class="upload-preview hidden" alt="Reference preview">
+              <button class="clear-upload hidden" id="clear-ref-upload" title="Remove image">
+                <i data-feather="x"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Basic Settings -->
+          <div class="settings-grid">
+            <div class="control-group t2i-only full-width">
+              <label>Aspect Ratio</label>
+              <div class="preset-chips" id="aspect-ratio-chips">
+                <button type="button" class="preset-btn active" data-ratio="1.0" title="1:1">1:1</button>
+                <button type="button" class="preset-btn" data-ratio="1.333333" title="4:3">4:3</button>
+                <button type="button" class="preset-btn" data-ratio="0.75" title="3:4">3:4</button>
+                <button type="button" class="preset-btn" data-ratio="1.777777" title="16:9">16:9</button>
+                <button type="button" class="preset-btn" data-ratio="0.5625" title="9:16">9:16</button>
+                <button type="button" class="preset-btn" data-ratio="2.333333" title="21:9">21:9</button>
+              </div>
+            </div>
+
+            <div class="control-group t2i-only full-width">
+              <label>Megapixels <span class="helper-copy" style="font-weight:normal;">(Total Resolution)</span></label>
+              <div class="preset-chips" id="resolution-chips">
+                <button type="button" class="preset-btn" data-area="524288" title="~768x768">0.5 MP</button>
+                <button type="button" class="preset-btn active" data-area="1048576" title="~1024x1024">1 MP</button>
+                <button type="button" class="preset-btn" data-area="2073600" title="~1440x1440">2 MP</button>
+                <button type="button" class="preset-btn" data-area="4194304" title="~2048x2048">4 MP</button>
+                <button type="button" class="preset-btn" data-area="8294400" title="~4K Native">8 MP</button>
+              </div>
+            </div>
+
+            <div class="control-group t2i-only">
+              <label for="width"
+                >Width
+                <input type="number" class="val-display-input" id="num-width" value="1024" min="256" max="4096" step="64" />
+              </label>
+              <input
+                type="range"
+                id="width"
+                min="256"
+                max="4096"
+                step="64"
+                value="1024"
+              />
+            </div>
+
+            <div class="control-group t2i-only">
+              <label for="height"
+                >Height
+                <input type="number" class="val-display-input" id="num-height" value="1024" min="256" max="4096" step="64" />
+              </label>
+              <input
+                type="range"
+                id="height"
+                min="256"
+                max="4096"
+                step="64"
+                value="1024"
+              />
+            </div>
+
+            <div class="control-group">
+              <label for="steps">
+                Steps <span class="val-display" id="val-steps">8</span>
+                <button id="steps-info-btn" class="info-btn" aria-haspopup="dialog" aria-controls="steps-hint" title="Why steps/guidance behave this way">i</button>
+              </label>
+              <input
+                type="range"
+                id="steps"
+                min="1"
+                max="100"
+                step="1"
+                value="8"
+              />
+            </div>
+
+            <div class="control-group">
+              <label for="guidance"
+                >Guidance Scale
+                <span class="val-display" id="val-guidance">3.5</span></label
+              >
+              <input
+                type="range"
+                id="guidance"
+                min="1.0"
+                max="20.0"
+                step="0.1"
+                value="3.5"
+              />
+            </div>
+
+            <div class="control-group">
+              <label for="variations"
+                >Variations <span class="val-display" id="val-variations">1</span></label
+              >
+              <input
+                type="range"
+                id="variations"
+                min="1"
+                max="4"
+                step="1"
+                value="1"
+              />
+            </div>
+
+            <div class="control-group full-width">
+              <label for="seed">Seed (-1 for random)</label>
+              <input type="number" id="seed" value="-1" class="number-input" />
+            </div>
+          </div>
+
+          </div><!-- /.controls-scroll -->
+
+          <!-- Generate Button -->
+          <button id="generate-btn" class="generate-btn">
+            <span class="btn-text">Generate Image</span>
+            <i data-feather="loader" class="spinner hidden"></i>
+          </button>
+        </section>
+
+        <!-- Results Canvas -->
+        <section class="results-panel glass-panel" id="results-panel" data-state="idle">
+          <div class="result-placeholder" id="result-placeholder">
+            <div class="result-empty" id="result-empty">
+              <div class="placeholder-icon">
+                <i data-feather="image"></i>
+              </div>
+              <p>Your image will appear here</p>
+              <span class="placeholder-subcopy">Each generation is saved to your history below.</span>
+            </div>
+
+            <div class="result-loading" id="result-loading" aria-live="polite">
+              <div class="loading-rings" aria-hidden="true">
+                <span></span>
+                <span></span>
+              </div>
+              <p>Generating…</p>
+              <div class="progress-container">
+                  <div id="step-progress-bar" class="status-progress-bar">
+                      <div id="step-progress-fill" class="progress-fill"></div>
+                  </div>
+                  <span id="step-counter" class="placeholder-subcopy">Step 0 / 0</span>
+              </div>
+              <span id="result-loading-meta" class="placeholder-subcopy">Starting up…</span>
+            </div>
+          </div>
+
+          <div class="result-container" id="result-container">
+            <div id="variations-grid" class="variations-grid hidden"></div>
+            <img id="result-image" alt="" />
+            <div class="result-actions">
+              <button
+                id="download-btn"
+                class="action-btn"
+                aria-label="Download image"
+              >
+                <i data-feather="download"></i>
+              </button>
+              <button
+                id="fullscreen-btn"
+                class="action-btn"
+                aria-label="Fullscreen image"
+              >
+                <i data-feather="maximize"></i>
+              </button>
+            </div>
+            <div id="result-meta" class="result-meta" aria-live="polite"></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- History Gallery — full-width filmstrip -->
+      <section class="gallery-panel">
+        <div class="gallery-header">
+          <h3><i data-feather="layers"></i> History</h3>
+          <div class="gallery-header-actions">
+            <button id="expand-gallery" class="text-btn" aria-label="Expand gallery">
+              <i data-feather="grid"></i> Expand
+            </button>
+            <button id="clear-history" class="text-btn">Clear</button>
+          </div>
+        </div>
+        <div id="gallery-grid" class="gallery-grid">
+          <!-- History items will be injected here -->
+        </div>
+      </section>
+    </main>
+
+    <!-- Gallery Fullscreen Modal -->
+    <div class="gallery-modal hidden" id="gallery-modal">
+      <div class="gallery-modal-header">
+        <h2><i data-feather="layers"></i> History</h2>
+        <button class="gallery-modal-close" id="close-gallery-modal" aria-label="Close gallery">
+          <i data-feather="x"></i>
+        </button>
+      </div>
+      <div class="gallery-modal-body">
+        <div id="gallery-modal-grid" class="gallery-modal-grid"></div>
+      </div>
+      <!-- Lightbox within gallery modal -->
+      <div class="gallery-lightbox hidden" id="gallery-lightbox">
+        <button class="lightbox-nav lightbox-prev" id="lightbox-prev" aria-label="Previous"><i data-feather="chevron-left"></i></button>
+        <div class="lightbox-img-wrap">
+          <img id="lightbox-img" src="" alt="" />
+          <p class="lightbox-prompt" id="lightbox-prompt"></p>
+        </div>
+        <button class="lightbox-nav lightbox-next" id="lightbox-next" aria-label="Next"><i data-feather="chevron-right"></i></button>
+      <button class="lightbox-close" id="lightbox-close" aria-label="Close"><i data-feather="x"></i></button>
+      <div class="lightbox-toolbar">
+        <button id="lightbox-edit" class="lightbox-tool-btn" title="Edit this image">
+          <i data-feather="edit-2"></i> Edit
+        </button>
+        <button id="lightbox-download" class="lightbox-tool-btn" title="Download image">
+          <i data-feather="download"></i> Download
+        </button>
+      </div>
+    </div>
+
+    <!-- Fullscreen Modal -->
+    <div class="modal hidden" id="fullscreen-modal">
+      <button class="close-modal" id="close-modal">
+        <i data-feather="x"></i>
+      </button>
+      <img id="modal-image" class="modal-image" alt="Fullscreen View" />
+    </div>
+
+    <!-- Error Toast -->
+    <div class="toast hidden" id="error-toast">
+      <i data-feather="alert-circle"></i>
+      <span id="toast-message">An error occurred</span>
+    </div>
+
+    <!-- Steps Guidance Popup -->
+    <div id="steps-hint" class="hint-popup hidden" role="dialog" aria-modal="false" aria-labelledby="steps-hint-title">
+      <div class="hint-inner">
+        <h4 id="steps-hint-title">About Steps & Guidance</h4>
+        <p>Because this interface uses a distilled image model, running beyond ~8 steps usually yields little to no quality improvement. The model is optimized for shorter sampling. Also, guidance scale has no effect on this distilled model — guidance is disabled for these weights.</p>
+        <div class="hint-actions">
+          <button id="close-steps-hint" class="text-btn">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="main.js?v=5"></script>
+  </body>
+</html>
