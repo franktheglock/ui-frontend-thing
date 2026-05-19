@@ -5,6 +5,7 @@ import fs from "fs";
 import { getDb } from "../db";
 import { getProvider } from "../providers";
 import { executeTool, listTools } from "../tools";
+import { readMemory } from "../memory";
 import { safeJsonParse } from "../utils/json";
 
 const router = Router();
@@ -398,17 +399,33 @@ router.post("/completions", async (req, res) => {
       `[chat] Using provider instance: ${providerInstance.name} (${providerInstance.type})`,
     );
 
+    const db = await getDb();
+    const settingsRow = (await db.get(
+      "SELECT value FROM app_settings WHERE id = ?",
+      "global",
+    )) as any;
+    const appSettings = settingsRow?.value
+      ? JSON.parse(settingsRow.value || "{}")
+      : {};
+    const memoryEnabled = appSettings.memoryEnabled !== false;
+
     const disabledToolNames = Array.isArray(disabledTools)
       ? (disabledTools as string[])
       : [];
+    if (!memoryEnabled && !disabledToolNames.includes("memory")) {
+      disabledToolNames.push("memory");
+    }
     const allTools = listTools().filter(
       (t) => !disabledToolNames.includes(t.name),
     );
 
     const dateStr = `Today is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.`;
+    const memoryInstructions = memoryEnabled
+      ? `\n\n## Memory\nThe following markdown file contains durable memories about the user. Use it to personalize responses when relevant.\n\n${readMemory()}\n\nMemory policy:\n- Use the memory tool sparingly for stable, useful user facts and preferences: name, likes/dislikes, hobbies, long-term projects, communication preferences, and current life context.\n- Do not save ordinary one-off requests, temporary facts, secrets, passwords, API keys, financial/medical/legal details, or sensitive personal data unless the user explicitly asks you to remember it.\n- If the user says to remember, update, correct, or forget something, use the memory tool.\n- If a new stable preference or profile fact is clearly useful for future conversations, you may save one concise memory.\n- Prefer concise memories; avoid duplicating existing memories.`
+      : "";
     const enhancedSystemPrompt = systemPrompt
-      ? `${dateStr}\n${systemPrompt}`
-      : dateStr;
+      ? `${dateStr}\n${systemPrompt}${memoryInstructions}`
+      : `${dateStr}${memoryInstructions}`;
 
     // Process attachments: Read text files and append to message content.
     // Also expose image attachment URLs as plain text so tool-calling models can pass
