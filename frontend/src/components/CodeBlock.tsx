@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Copy, Check, Code, ExternalLink, Eye } from 'lucide-react'
 import { useUIStore } from '../stores/uiStore'
 import { generateUUID } from '../stores/chatStore'
-import { cn } from '../lib/utils'
+import { cn, copyTextToClipboard } from '../lib/utils'
 
 interface CodeBlockProps {
   language: string
@@ -19,10 +19,14 @@ export function CodeBlock({ language, content, highlighted }: CodeBlockProps) {
     content.includes('<!DOCTYPE html>') || 
     content.includes('<html')
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(content)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  const handleCopy = async () => {
+    try {
+      await copyTextToClipboard(content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (error) {
+      console.error('Failed to copy code:', error)
+    }
   }
 
   const handleOpenArtifact = () => {
