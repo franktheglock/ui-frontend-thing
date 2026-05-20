@@ -18,14 +18,13 @@ A powerful, extensible, and beautiful web frontend for LLMs. Built for power use
 ![Interactive Code Artifacts & UI Execution](docs/readme-images/wLHsEDjmhg.png)
 
 - **Streaming Responses**: Real-time token streaming with detailed generation statistics (cost, tokens/sec, prompt evaluation).
-- **Thinking & Reasoning**: Collapsible reasoning blocks for reasoning models (e.g. DeepSeek R1).
+- **Thinking & Reasoning**: Collapsible reasoning blocks for reasoning models.
 - **Flexible Tool Views**: Multiple tool call display modes including **Timeline Mode** (default vertical step-by-step history), Individual Mode (interleaved thoughts and tool calls chronologically), and Combined Mode.
 - **Web Search & Read URL**: Brave Search, DuckDuckGo, SearxNG, and Google PSE integrations with inline citations, plus tools to scrape web page contents.
 - **Python & Terminal Execution**: Execute code blocks and run shell commands in safe sandboxed environments with configurable execution timeouts.
 - **Conversation Branching**: Spin up a new session starting from any specific historical message.
 - **Performance & Optimization**: Lightweight lazy-loading engine that fetches messages on-demand, combined with asynchronous debounced syntax highlighting and an LRU cache.
 - **Extensible Tool & Skills System**: Easily configure custom tools, load MCP servers, and install custom conversational Skills.
-- **Industrial Design**: Sleek dark theme with JetBrains Mono typography.
 
 ## Quick Start
 
