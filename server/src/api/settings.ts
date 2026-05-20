@@ -18,7 +18,8 @@ const DEFAULT_SHARED_SETTINGS = {
   defaultSearchProvider: "searxng",
   searchConfig: { searxngUrl: "http://192.168.1.70:8888" },
   artifactsEnabled: true,
-  toolDisplayMode: "individual",
+  toolDisplayMode: "timeline",
+  migratedToTimelineDefault: true,
   maxToolTurns: 0,
   memoryEnabled: true,
   setupComplete: false,
@@ -73,6 +74,23 @@ async function loadSharedSettings() {
     parsed = JSON.parse(row.value || "{}");
   } catch {
     parsed = {};
+  }
+
+  // Migrate old default of "individual" to the new default "timeline"
+  if (!parsed.migratedToTimelineDefault) {
+    parsed.toolDisplayMode = "timeline";
+    parsed.migratedToTimelineDefault = true;
+
+    // Proactively save this migration back to the database
+    const nextSettings = mergeSettings(DEFAULT_SHARED_SETTINGS, parsed);
+    await db.run(
+      `INSERT INTO app_settings (id, value, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      "global",
+      JSON.stringify(nextSettings),
+      Date.now(),
+    );
   }
 
   return {

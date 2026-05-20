@@ -97,6 +97,70 @@ router.delete("/sessions/:id", async (req, res) => {
   res.json({ success: true });
 });
 
+router.post("/sessions/:id/branch", async (req, res) => {
+  const db = await getDb();
+  const { messageId } = req.body;
+  const sourceSessionId = req.params.id;
+
+  try {
+    const session = await db.get("SELECT * FROM sessions WHERE id = ?", sourceSessionId);
+    if (!session) {
+      return res.status(404).json({ error: "Source session not found" });
+    }
+
+    const messages = await db.all(
+      "SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC",
+      sourceSessionId
+    );
+
+    const targetIndex = messages.findIndex((m) => m.id === messageId);
+    if (targetIndex === -1) {
+      return res.status(400).json({ error: "Target message not found in this session" });
+    }
+
+    const messagesToClone = messages.slice(0, targetIndex + 1);
+
+    const newSessionId = uuidv4();
+    const now = Date.now();
+    const newTitle = `Branch: ${session.title}`;
+
+    await db.run(
+      "INSERT INTO sessions (id, title, model, provider, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      newSessionId,
+      newTitle,
+      session.model,
+      session.provider,
+      session.system_prompt || null,
+      now,
+      now
+    );
+
+    for (const msg of messagesToClone) {
+      const newMsgId = uuidv4();
+      await db.run(
+        `INSERT INTO messages (id, session_id, role, content, thinking, tool_calls, tool_results, attachments, generation_info, timeline, timestamp)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        newMsgId,
+        newSessionId,
+        msg.role,
+        msg.content,
+        msg.thinking || null,
+        msg.tool_calls || null,
+        msg.tool_results || null,
+        msg.attachments || null,
+        msg.generation_info || null,
+        msg.timeline || null,
+        msg.timestamp
+      );
+    }
+
+    res.json({ id: newSessionId, title: newTitle });
+  } catch (error: any) {
+    console.error("[api/chat] Failed to branch session:", error);
+    res.status(500).json({ error: error.message || "Failed to branch session" });
+  }
+});
+
 router.patch("/sessions/:id", async (req, res) => {
   const db = await getDb();
   const { title, lastResponseId, model, provider } = req.body;
@@ -423,9 +487,11 @@ router.post("/completions", async (req, res) => {
     const memoryInstructions = memoryEnabled
       ? `\n\n## Memory\nThe following markdown file contains durable memories about the user. Use it to personalize responses when relevant.\n\n${readMemory()}\n\nMemory policy:\n- Use the memory tool sparingly for stable, useful user facts and preferences: name, likes/dislikes, hobbies, long-term projects, communication preferences, and current life context.\n- Do not save ordinary one-off requests, temporary facts, secrets, passwords, API keys, financial/medical/legal details, or sensitive personal data unless the user explicitly asks you to remember it.\n- If the user says to remember, update, correct, or forget something, use the memory tool.\n- If a new stable preference or profile fact is clearly useful for future conversations, you may save one concise memory.\n- Prefer concise memories; avoid duplicating existing memories.`
       : "";
+    const mermaidInstructions = `\n\n## Rich Flowcharts & Diagrams (Mermaid)\nYou can render flowcharts, sequence diagrams, state diagrams, class diagrams, pie charts, and gantt charts using Mermaid syntax.\nTo display a diagram to the user, write it as a code block of type "mermaid" or wrap it in a markdown artifact. The frontend will automatically detect it and render an interactive preview.\nExample:\n\`\`\`mermaid\ngraph TD\n    A[Start] --> B(Process)\n    B --> C{Decision}\n    C -->|Yes| D[Result 1]\n    C -->|No| E[Result 2]\n\`\`\`\nUse Mermaid blocks whenever visualizing processes, system architectures, workflows, state transitions, or relationships.`;
+
     const enhancedSystemPrompt = systemPrompt
-      ? `${dateStr}\n${systemPrompt}${memoryInstructions}`
-      : `${dateStr}${memoryInstructions}`;
+      ? `${dateStr}\n${systemPrompt}${memoryInstructions}${mermaidInstructions}`
+      : `${dateStr}${memoryInstructions}${mermaidInstructions}`;
 
     // Process attachments: Read text files and append to message content.
     // Also expose image attachment URLs as plain text so tool-calling models can pass

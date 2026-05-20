@@ -3,7 +3,6 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
-import rehypeHighlight from 'rehype-highlight'
 import { CodeBlock } from './CodeBlock'
 import { CitationPill } from './CitationPill'
 import { Message, useChatStore } from '../stores/chatStore'
@@ -325,7 +324,6 @@ export function MarkdownRenderer({ content, streaming = false, searchHighlight }
           <CodeBlock
             language={language}
             content={rawText.replace(/\n$/, '')}
-            highlighted={childProps.children}
           />
         )
       }
@@ -346,7 +344,7 @@ export function MarkdownRenderer({ content, streaming = false, searchHighlight }
     <div className={cn("prose prose-sm dark:prose-invert max-w-none break-words", streaming && "streaming-fade")}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[[rehypeKatex, { strict: false }], ...(streaming ? [] : [rehypeHighlight])]}
+        rehypePlugins={[[rehypeKatex, { strict: false }]]}
         components={components}
       >
         {cleanedContent}

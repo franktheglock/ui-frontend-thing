@@ -8,25 +8,24 @@ A powerful, extensible, and beautiful web frontend for LLMs. Built for power use
 
 ## Features
 
-- **Multi-Provider Support**: OpenAI, Anthropic, Google Gemini, Ollama, OpenRouter, NVIDIA NIM, LM Studio, and custom OpenAI-compatible providers
-- **Streaming Responses**: Real-time token streaming with generation statistics
-- **Thinking/Reasoning Display**: Collapsible reasoning blocks for supported models
-- **Web Search**: DuckDuckGo, SearxNG, Brave Search, and Google PSE integrations with inline citations
+- **Multi-Provider Support**: OpenAI, Anthropic, Google Gemini, Ollama, OpenRouter, NVIDIA NIM, LM Studio, and custom OpenAI-compatible providers.
+- **Image Studio**: A dedicated workspace for text-to-image and image-to-image generation. Compare up to 4 image generation models/providers side-by-side (e.g. FLUX, fal.ai, Grok, Gemini, OpenAI) with aspect ratio, resolution, seed, guidance controls, and local generation history.
 
-- **Read URL Tool**: Fetch and extract content from any URL
-- **Python & Terminal Tools**: Execute code and shell commands directly with configurable timeouts
-- **File & Image Uploads**: Drag-and-drop support with image preview
-- **Code Artifacts**: Interactive code blocks with preview, sidebar view, and new window support
+![Image Studio - Multi-Provider Image Generation](docs/readme-images/image_studio_demo.png)
+
+- **Interactive Code Artifacts**: Real-time preview streaming of HTML, SVG, Markdown, and sandboxed Mermaid.js flowcharts. Features a tabbed view (Code/Preview), checkerboard grids for transparent SVGs, and a draggable resizable sidebar.
 
 ![Interactive Code Artifacts & UI Execution](docs/readme-images/wLHsEDjmhg.png)
 
-- **Extensible Tool System**: Easy-to-add tools and MCP servers
-
-![Tools & MCP Configuration](docs/readme-images/rCfFWR28N8.png)
-- **Skills System**: Create, search, and load skills that inject specialized knowledge into conversations
-- **Skills.sh Integration**: Browse, search, and install skills from the skills.sh catalog **(BROKEN ATM)**
-- **Slash Commands**: `/skill`, `/model` commands with autocomplete and keyboard navigation
-- **Industrial Design**: Dark, high-contrast theme with JetBrains Mono typography
+- **Streaming Responses**: Real-time token streaming with detailed generation statistics (cost, tokens/sec, prompt evaluation).
+- **Thinking & Reasoning**: Collapsible reasoning blocks for reasoning models (e.g. DeepSeek R1).
+- **Flexible Tool Views**: Multiple tool call display modes including **Timeline Mode** (default vertical step-by-step history), Individual Mode (interleaved thoughts and tool calls chronologically), and Combined Mode.
+- **Web Search & Read URL**: Brave Search, DuckDuckGo, SearxNG, and Google PSE integrations with inline citations, plus tools to scrape web page contents.
+- **Python & Terminal Execution**: Execute code blocks and run shell commands in safe sandboxed environments with configurable execution timeouts.
+- **Conversation Branching**: Spin up a new session starting from any specific historical message.
+- **Performance & Optimization**: Lightweight lazy-loading engine that fetches messages on-demand, combined with asynchronous debounced syntax highlighting and an LRU cache.
+- **Extensible Tool & Skills System**: Easily configure custom tools, load MCP servers, and install custom conversational Skills.
+- **Industrial Design**: Sleek dark theme with JetBrains Mono typography.
 
 ## Quick Start
 

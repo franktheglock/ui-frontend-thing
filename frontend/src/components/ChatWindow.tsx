@@ -1,6 +1,6 @@
 import { useRef, useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useChatStore, Message, ToolCall, ToolResult, GenerationInfo as GenInfo } from '../stores/chatStore'
+import { useChatStore, Message, ToolCall, ToolResult, TimelineEvent, GenerationInfo as GenInfo } from '../stores/chatStore'
 import { useUIStore } from '../stores/uiStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { MessageBubble } from './MessageBubble'
@@ -17,7 +17,7 @@ import { getProviderIcon } from '../lib/providerIcons'
 type RenderItem = 
   | { type: 'message', message: Message, aggregatedGenInfo?: GenInfo, onRegenerate?: () => void, versionInfo?: { current: number, total: number, onPrev: () => void, onNext: () => void } }
   | { type: 'aggregated_tools', toolType: string, calls: ToolCall[], results: ToolResult[], turnId: number, isFirstInTurn: boolean, key: string }
-  | { type: 'streaming_preview', content: string, thinking: string, activeCalls: ToolCall[], activeToolResults: ToolResult[], generationInfo?: GenInfo }
+  | { type: 'streaming_preview', content: string, thinking: string, activeCalls: ToolCall[], activeToolResults: ToolResult[], timeline: TimelineEvent[], generationInfo?: GenInfo }
 
 export function ChatWindow() {
   const { sessions, currentSessionId, streaming } = useChatStore()
@@ -95,6 +95,7 @@ export function ChatWindow() {
       // CRITICAL CHANGE: We only 'hide' history during regeneration if it's NOT the version we are currently building.
       // But for grouped mode, we actually want to show ALL tools in the current version.
       const isRegeneratingOldContent = isActuallyStreamingThisTurn && assistantMessages.some(m => m.metadata?.active === true) && turn.assistantVersions.length > 1 && activeVersionIdx < turn.assistantVersions.length - 1
+      const isRegeneratingActiveVersion = isActuallyStreamingThisTurn && activeVersionIdx === turn.assistantVersions.length - 1 && assistantMessages.length > 0
 
       if (toolDisplayMode === 'grouped') {
         const turnTools: Record<string, { calls: ToolCall[], results: ToolResult[] }> = {}
@@ -151,7 +152,7 @@ export function ChatWindow() {
         })
 
         // Push assistant messages
-        if (!isRegeneratingOldContent) {
+        if (!isRegeneratingOldContent && !isRegeneratingActiveVersion) {
           const filtered = assistantMessages.filter(msg => {
             const hasContent = msg.content && msg.content.trim().length > 0
             const isFinalAnswer = !msg.toolCalls || msg.toolCalls.length === 0
@@ -195,13 +196,34 @@ export function ChatWindow() {
               thinking: streamingThinking, 
               activeCalls: [], 
               activeToolResults,
+              timeline: streamState?.timeline || [],
               generationInfo: currentSessionId ? streaming[currentSessionId]?.generationInfo : undefined
             })
           }
         }
       } else {
         // Individual tool mode (standard)
-        assistantMessages.forEach(msg => items.push({ type: 'message', message: msg }))
+        if (!isRegeneratingActiveVersion) {
+          assistantMessages.forEach((msg, idx) => {
+            const isLast = idx === assistantMessages.length - 1
+            items.push({ 
+              type: 'message', 
+              message: msg,
+              onRegenerate: isLast ? () => {
+                regenerateMessage(msg.id)
+                setTurnVersions(prev => {
+                  const next = { ...prev }; delete next[turnKey]; return next
+                })
+              } : undefined,
+              versionInfo: isLast && turn.assistantVersions.length > 1 ? {
+                current: activeVersionIdx + 1,
+                total: turn.assistantVersions.length,
+                onPrev: () => setTurnVersions(p => ({ ...p, [turnKey]: activeVersionIdx - 1 })),
+                onNext: () => setTurnVersions(p => ({ ...p, [turnKey]: activeVersionIdx + 1 }))
+              } : undefined
+            })
+          })
+        }
         if (isActuallyStreamingThisTurn) {
           items.push({ 
             type: 'streaming_preview', 
@@ -209,6 +231,7 @@ export function ChatWindow() {
             thinking: streamingThinking, 
             activeCalls: activeToolCalls, 
             activeToolResults: activeToolResults,
+            timeline: streamState?.timeline || [],
             generationInfo: currentSessionId ? streaming[currentSessionId]?.generationInfo : undefined
           })
         }
@@ -399,8 +422,33 @@ export function ChatWindow() {
                       })()}
                     </div>
                     <div className="flex-1 space-y-2 min-w-0">
-                      {item.thinking && <ThinkingBlock thinking={item.thinking} done={!!item.content} />}
-                      {item.activeCalls.length > 0 && <div className="space-y-2 mb-2"><ToolCallBlock toolCalls={item.activeCalls} results={item.activeToolResults} /></div>}
+                      {toolDisplayMode === 'individual' && item.timeline && item.timeline.length > 0 ? (
+                        <div className="space-y-3.5 mb-4">
+                          {item.timeline.map((event, idx) => {
+                            if (event.type === 'thinking') {
+                              const isThinkingDone = !!item.content || idx < item.timeline.length - 1
+                              return <ThinkingBlock key={`think-${idx}`} thinking={event.content} done={isThinkingDone} />
+                            }
+                            if (event.type === 'tool_call') {
+                              const tc: ToolCall = {
+                                id: event.toolCallId || '',
+                                name: event.toolName || '',
+                                arguments: event.toolArgs || {},
+                                display: event.display
+                              }
+                              const result = item.activeToolResults?.find(tr => tr.toolCallId === tc.id)
+                              const isRunning = !result
+                              return <ToolCallBlock key={`tc-${tc.id}-${idx}`} toolCalls={[tc]} results={result ? [result] : []} defaultOpen={isRunning} />
+                            }
+                            return null
+                          })}
+                        </div>
+                      ) : (
+                        <>
+                          {item.thinking && <ThinkingBlock thinking={item.thinking} done={!!item.content} />}
+                          {item.activeCalls.length > 0 && <div className="space-y-3.5 mb-4"><ToolCallBlock toolCalls={item.activeCalls} results={item.activeToolResults} defaultOpen={true} /></div>}
+                        </>
+                      )}
                       {item.content && <MarkdownRenderer content={item.content} streaming />}
                       {(item.generationInfo || (item.content && !isCurrentStreaming)) && (
                         <div className="flex items-center gap-4 mt-2">

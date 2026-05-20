@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { getToolDisplay } from '../lib/toolDisplay'
+import { useSettingsStore } from './settingsStore'
 
 export interface TimelineEvent {
   type: 'thinking' | 'tool_call' | 'tool_result' | 'content'
@@ -102,12 +103,13 @@ interface ChatState {
 
   loadSessions: () => Promise<void>
   createSession: (model?: string, provider?: string) => Promise<string>
-  setCurrentSession: (id: string) => void
+  setCurrentSession: (id: string) => Promise<void>
   deleteSession: (id: string) => Promise<void>
   renameSession: (id: string, title: string) => Promise<void>
   addMessage: (sessionId: string, message: Message) => Promise<void>
   updateMessage: (sessionId: string, messageId: string, updates: Partial<Message>) => Promise<void>
   clearMessages: (sessionId: string) => void
+  branchSession: (sessionId: string, messageId: string) => Promise<string | undefined>
 
   // Per-session streaming actions
   startGenerating: (sessionId: string) => void
@@ -153,41 +155,17 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       if (!res.ok) return
       const sessions: any[] = await res.json()
 
-      // Load messages for each session
-      const fullSessions: ChatSession[] = await Promise.all(
-        sessions.map(async (s: any) => {
-          try {
-            const msgRes = await fetch(`/api/chat/sessions/${s.id}`)
-            if (!msgRes.ok) return { ...s, messages: [] }
-            const data = await msgRes.json()
-            return {
-              id: data.id,
-              title: data.title,
-              model: data.model,
-              provider: data.provider,
-              systemPrompt: data.systemPrompt || data.system_prompt,
-              createdAt: data.createdAt || data.created_at,
-              updatedAt: data.updatedAt || data.updated_at,
-              lastResponseId: data.lastResponseId || data.last_response_id,
-              messages: (data.messages || []).map((m: any) => ({
-                id: m.id,
-                role: m.role,
-                content: m.content,
-                thinking: m.thinking,
-                toolCalls: m.toolCalls,
-                toolResults: m.toolResults,
-                attachments: m.attachments,
-                generationInfo: m.generationInfo,
-                timeline: m.timeline,
-                timestamp: m.timestamp,
-                responseId: m.responseId,
-              })),
-            }
-          } catch {
-            return { ...s, messages: [] }
-          }
-        })
-      )
+      const fullSessions: ChatSession[] = sessions.map((s: any) => ({
+        id: s.id,
+        title: s.title,
+        model: s.model,
+        provider: s.provider,
+        systemPrompt: s.systemPrompt || s.system_prompt,
+        createdAt: s.createdAt || s.created_at,
+        updatedAt: s.updatedAt || s.updated_at,
+        lastResponseId: s.lastResponseId || s.last_response_id,
+        messages: [],
+      }))
 
       set({ sessions: fullSessions })
     } catch (err) {
@@ -198,14 +176,33 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   createSession: async (model?: string, provider?: string) => {
     const id = generateUUID()
     
-    // If no model/provider passed, try to inherit from current session or use placeholders
-    // We avoid 'openai' / 'gpt-4o' hardcoded strings here to prevent accidental fallbacks
+    let resolvedModel = model
+    let resolvedProvider = provider
+    
+    if (!resolvedModel || !resolvedProvider) {
+      const activeSession = get().sessions.find(s => s.id === get().currentSessionId)
+      if (activeSession) {
+        resolvedModel = resolvedModel || activeSession.model
+        resolvedProvider = resolvedProvider || activeSession.provider
+      }
+    }
+    
+    if (!resolvedModel || !resolvedProvider) {
+      try {
+        const settings = useSettingsStore.getState()
+        resolvedModel = resolvedModel || settings.selectedModel
+        resolvedProvider = resolvedProvider || settings.selectedProvider
+      } catch (e) {
+        // settingsStore might not be initialized yet
+      }
+    }
+
     const session: ChatSession = {
       id,
       title: 'New Chat',
       messages: [],
-      model: model || get().sessions.find(s => s.id === get().currentSessionId)?.model || '',
-      provider: provider || get().sessions.find(s => s.id === get().currentSessionId)?.provider || '',
+      model: resolvedModel || '',
+      provider: resolvedProvider || '',
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
@@ -235,8 +232,38 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     return id
   },
 
-  setCurrentSession: (id) => {
+  setCurrentSession: async (id) => {
     set({ currentSessionId: id })
+
+    const session = get().sessions.find(s => s.id === id)
+    if (session && session.messages.length === 0) {
+      try {
+        const msgRes = await fetch(`/api/chat/sessions/${id}`)
+        if (msgRes.ok) {
+          const data = await msgRes.json()
+          const messages = (data.messages || []).map((m: any) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            thinking: m.thinking,
+            toolCalls: m.toolCalls,
+            toolResults: m.toolResults,
+            attachments: m.attachments,
+            generationInfo: m.generationInfo,
+            timeline: m.timeline,
+            timestamp: m.timestamp,
+            responseId: m.responseId,
+          }))
+          set(state => ({
+            sessions: state.sessions.map(s => 
+              s.id === id ? { ...s, messages } : s
+            )
+          }))
+        }
+      } catch (err) {
+        console.error('[chatStore] Failed to load messages for session:', id, err)
+      }
+    }
   },
 
   deleteSession: async (id) => {
@@ -249,6 +276,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         currentSessionId: state.currentSessionId === id ? (sessions[0]?.id || null) : state.currentSessionId,
       }
     })
+
+    const nextSessionId = get().currentSessionId
+    if (nextSessionId) {
+      await get().setCurrentSession(nextSessionId)
+    }
 
     try {
       await fetch(`/api/chat/sessions/${id}`, { method: 'DELETE' })
@@ -507,5 +539,26 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         s.id === sessionId ? { ...s, activeSkill: skillName } : s
       ),
     }))
+  },
+
+  branchSession: async (sessionId, messageId) => {
+    try {
+      const res = await fetch(`/api/chat/sessions/${sessionId}/branch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageId }),
+      })
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to branch session')
+      }
+      const data = await res.json()
+      await get().loadSessions()
+      await get().setCurrentSession(data.id)
+      return data.id
+    } catch (err) {
+      console.error('[chatStore] Failed to branch session:', err)
+      throw err
+    }
   },
 }))

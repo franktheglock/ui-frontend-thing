@@ -45,7 +45,7 @@ export function ThinkingBlock({ thinking, done = false }: ThinkingBlockProps) {
   }, [isOpen, thinking, updateHeight])
 
   return (
-    <div className="border border-border rounded-none overflow-hidden flex flex-col w-full max-w-2xl">
+    <div className="border border-border rounded-md overflow-hidden flex flex-col w-full max-w-2xl">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(

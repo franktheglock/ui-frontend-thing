@@ -102,6 +102,7 @@ export function ImageStudio() {
     settingsLoaded,
     historyLoaded,
     selectedProvider,
+    selectedProviders,
     providers,
     history,
     isGenerating,
@@ -109,7 +110,8 @@ export function ImageStudio() {
     loadSettings,
     loadHistory,
     setSelectedProvider,
-    generateImage,
+    toggleSelectedProvider,
+    generateMultiImages,
     editImage,
     deleteHistoryImage,
   } = useImageStudioStore()
@@ -457,11 +459,10 @@ export function ImageStudio() {
     const trimmedPrompt = prompt.trim()
     if (!trimmedPrompt) return
 
-    let result
     if (mode === 'generate') {
-      result = await generateImage({
+      const payloads = selectedProviders.map((provId) => ({
         prompt: trimmedPrompt,
-        providerId: selectedProvider,
+        providerId: provId,
         width,
         height,
         steps,
@@ -469,6 +470,31 @@ export function ImageStudio() {
         seed,
         variations,
         aspectRatio,
+      }))
+
+      const multiRes = await generateMultiImages(payloads)
+
+      const combinedImages: any[] = []
+      multiRes.results.forEach((res) => {
+        if (res && Array.isArray(res.images)) {
+          res.images.forEach((img: any) => {
+            combinedImages.push({
+              ...img,
+              providerId: res.provider,
+              model: res.model,
+            })
+          })
+        }
+      })
+
+      setPreviewRecord({
+        id: `preview-${Date.now()}`,
+        prompt: trimmedPrompt,
+        providerId: selectedProviders[0],
+        model: selectedProviders.length > 1 ? 'multi-provider' : (multiRes.results[0]?.model || 'model'),
+        images: combinedImages,
+        params: { providers: selectedProviders },
+        createdAt: Date.now(),
       })
     } else {
       if (!sourceImage && !historySourceImageUrl) {
@@ -481,7 +507,7 @@ export function ImageStudio() {
       const sourceAttachment = sourceImage ? uploaded[0] : null
       const referenceAttachment = sourceImage ? uploaded[1] : uploaded[0]
 
-      result = await editImage({
+      const result = await editImage({
         prompt: trimmedPrompt,
         providerId: selectedProvider,
         sourceImageUrl: sourceAttachment?.url || historySourceImageUrl,
@@ -494,17 +520,21 @@ export function ImageStudio() {
         variations,
         aspectRatio,
       })
-    }
 
-    setPreviewRecord({
-      id: `preview-${Date.now()}`,
-      prompt: trimmedPrompt,
-      providerId: result.provider,
-      model: result.model,
-      images: result.images,
-      params: result.params,
-      createdAt: Date.now(),
-    })
+      setPreviewRecord({
+        id: `preview-${Date.now()}`,
+        prompt: trimmedPrompt,
+        providerId: result.provider,
+        model: result.model,
+        images: result.images.map((img: any) => ({
+          ...img,
+          providerId: result.provider,
+          model: result.model,
+        })),
+        params: result.params,
+        createdAt: Date.now(),
+      })
+    }
   }
 
   const expandedHistoryItem = expandedHistoryIndex === null ? null : historyItems[expandedHistoryIndex] || null
@@ -578,6 +608,20 @@ export function ImageStudio() {
                               <a href={image.url} target="_blank" rel="noreferrer" className="flex h-full w-full items-center justify-center">
                                 <img src={image.url} alt={previewRecord?.prompt || 'Generated image'} className="h-full w-full object-contain" />
                               </a>
+                              {((image as any).providerId || previewRecord?.providerId) && (
+                                <div className="absolute left-2 top-2 z-10 flex items-center gap-1 bg-background/85 border border-border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-foreground">
+                                  {(() => {
+                                    const provId = (image as any).providerId || previewRecord?.providerId
+                                    const ProvIcon = getProviderIcon(provId)
+                                    return (
+                                      <>
+                                        <ProvIcon className="h-3 w-3 text-accent" />
+                                        <span>{provId}</span>
+                                      </>
+                                    )
+                                  })()}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -715,98 +759,148 @@ export function ImageStudio() {
                       </div>
                     )}
                   </div>
-                </div>
-
-                {/* Provider — popup on mobile, full grid on lg+ */}
-                <div className="space-y-1.5">
-                  <label className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Provider</label>
-
-                  {/* Mobile: compact trigger + popup */}
-                  <div className="relative lg:hidden">
-                    <button
-                      type="button"
-                      onClick={() => setProviderPopupOpen((v) => !v)}
-                      className="flex w-full items-center gap-2.5 border border-border bg-secondary/25 px-2.5 py-2 text-left transition-colors hover:border-accent/30 hover:text-foreground"
-                    >
-                      {activeProvider ? (
-                        <>
-                          <ProviderIcon className="h-4 w-4 flex-shrink-0 text-accent" />
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-[12px] font-medium leading-tight text-foreground">{activeProvider.name}</div>
-                            <div className="truncate text-[11px] text-muted-foreground">{activeProvider.model}</div>
-                          </div>
-                        </>
-                      ) : (
-                        <span className="text-[12px] text-muted-foreground">No provider enabled</span>
-                      )}
-                      <ChevronRight className={cn('h-3.5 w-3.5 flex-shrink-0 text-muted-foreground transition-transform', providerPopupOpen && 'rotate-90')} />
-                    </button>
-
-                    {providerPopupOpen && (
-                      <>
-                        <div className="fixed inset-0 z-30" onClick={() => setProviderPopupOpen(false)} />
-                        <div className="absolute left-0 top-full z-40 mt-1 w-full min-w-[220px] border border-border bg-card shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-                          {providers.filter((provider) => provider.enabled).map((provider) => {
-                            const Icon = getProviderIcon(provider.id)
-                            const active = provider.id === selectedProvider
-                            return (
-                              <button
-                                key={provider.id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedProvider(provider.id).catch(console.error)
-                                  setProviderPopupOpen(false)
-                                }}
-                                className={cn(
-                                  'flex w-full items-center gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors last:border-b-0',
-                                  active
-                                    ? 'bg-accent/10 text-foreground'
-                                    : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground'
-                                )}
-                              >
-                                <Icon className={cn('h-4 w-4 flex-shrink-0', active && 'text-accent')} />
-                                <div className="min-w-0">
-                                  <div className="truncate text-[12px] font-medium leading-tight text-current">{provider.name}</div>
-                                  <div className="truncate text-[11px] text-muted-foreground">{provider.model}</div>
-                                </div>
-                                {active && <div className="ml-auto h-1.5 w-1.5 flex-shrink-0 rounded-full bg-accent" />}
-                              </button>
-                            )
-                          })}
-                          {providers.filter((p) => p.enabled).length === 0 && (
-                            <div className="px-3 py-3 text-[12px] text-muted-foreground">No providers enabled. Configure in settings.</div>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Desktop: full grid, always visible */}
-                  <div className="hidden gap-2 lg:grid lg:grid-cols-1 xl:grid-cols-2">
-                    {providers.filter((provider) => provider.enabled).map((provider) => {
-                      const Icon = getProviderIcon(provider.id)
-                      const active = provider.id === selectedProvider
-                      return (
-                        <button
-                          key={provider.id}
-                          onClick={() => setSelectedProvider(provider.id).catch(console.error)}
-                          className={cn(
-                            'flex items-center gap-2.5 border px-2.5 py-2 text-left transition-colors',
-                            active
-                              ? 'border-accent bg-accent/10 text-foreground'
-                              : 'border-border bg-secondary/25 text-muted-foreground hover:border-accent/30 hover:text-foreground'
-                          )}
-                        >
-                          <Icon className="h-4 w-4 flex-shrink-0" />
-                          <div className="min-w-0">
-                            <div className="truncate text-[12px] font-medium leading-tight text-current">{provider.name}</div>
-                            <div className="truncate text-[11px] text-muted-foreground">{provider.model}</div>
-                          </div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
+                </div>                 {/* Provider — popup on mobile, full grid on lg+ */}
+                 <div className="space-y-1.5">
+                   <label className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Provider</label>
+ 
+                   {/* Mobile: compact trigger + popup */}
+                   <div className="relative lg:hidden">
+                     <button
+                       type="button"
+                       onClick={() => setProviderPopupOpen((v) => !v)}
+                       className="flex w-full items-center gap-2.5 border border-border bg-secondary/25 px-2.5 py-2 text-left transition-colors hover:border-accent/30 hover:text-foreground"
+                     >
+                       {mode === 'generate' ? (
+                         selectedProviders.length > 0 ? (
+                           <>
+                             <div className="flex -space-x-1.5 overflow-hidden flex-shrink-0 mr-1">
+                               {selectedProviders.slice(0, 3).map((pid) => {
+                                 const PIcon = getProviderIcon(pid)
+                                 return (
+                                   <div key={pid} className="inline-block h-5 w-5 rounded-full border border-background bg-secondary flex items-center justify-center p-0.5">
+                                     <PIcon className="h-3 w-3 text-accent" />
+                                   </div>
+                                 )
+                               })}
+                             </div>
+                             <div className="min-w-0 flex-1">
+                               <div className="truncate text-[12px] font-medium leading-tight text-foreground">
+                                 {selectedProviders.map(id => providers.find(p => p.id === id)?.name || id).join(', ')}
+                               </div>
+                               <div className="truncate text-[11px] text-muted-foreground">{selectedProviders.length} active engines</div>
+                             </div>
+                           </>
+                         ) : (
+                           <span className="text-[12px] text-muted-foreground">Select a provider</span>
+                         )
+                       ) : activeProvider ? (
+                         <>
+                           <ProviderIcon className="h-4 w-4 flex-shrink-0 text-accent" />
+                           <div className="min-w-0 flex-1">
+                             <div className="truncate text-[12px] font-medium leading-tight text-foreground">{activeProvider.name}</div>
+                             <div className="truncate text-[11px] text-muted-foreground">{activeProvider.model}</div>
+                           </div>
+                         </>
+                       ) : (
+                         <span className="text-[12px] text-muted-foreground">No provider enabled</span>
+                       )}
+                       <ChevronRight className={cn('h-3.5 w-3.5 flex-shrink-0 text-muted-foreground transition-transform', providerPopupOpen && 'rotate-90')} />
+                     </button>
+ 
+                     {providerPopupOpen && (
+                       <>
+                         <div className="fixed inset-0 z-30" onClick={() => setProviderPopupOpen(false)} />
+                         <div className="absolute left-0 top-full z-40 mt-1 w-full min-w-[220px] border border-border bg-card shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+                           {providers.filter((provider) => provider.enabled).map((provider) => {
+                             const Icon = getProviderIcon(provider.id)
+                             const active = mode === 'generate'
+                               ? selectedProviders.includes(provider.id)
+                               : provider.id === selectedProvider
+                             return (
+                               <button
+                                 key={provider.id}
+                                 type="button"
+                                 onClick={() => {
+                                   if (mode === 'generate') {
+                                     toggleSelectedProvider(provider.id)
+                                   } else {
+                                     setSelectedProvider(provider.id).catch(console.error)
+                                     setProviderPopupOpen(false)
+                                   }
+                                 }}
+                                 className={cn(
+                                   'flex w-full items-center gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors last:border-b-0',
+                                   active
+                                     ? 'bg-accent/10 text-foreground'
+                                     : 'text-muted-foreground hover:bg-secondary/40 hover:text-foreground'
+                                 )}
+                               >
+                                 <Icon className={cn('h-4 w-4 flex-shrink-0', active && 'text-accent')} />
+                                 <div className="min-w-0">
+                                   <div className="truncate text-[12px] font-medium leading-tight text-current">{provider.name}</div>
+                                   <div className="truncate text-[11px] text-muted-foreground">{provider.model}</div>
+                                 </div>
+                                 {active && (
+                                   <div className="ml-auto flex items-center justify-center">
+                                     {mode === 'generate' ? (
+                                       <span className="text-[10px] font-mono bg-accent text-accent-foreground px-1.5 py-0.5 rounded-full">
+                                         #{selectedProviders.indexOf(provider.id) + 1}
+                                       </span>
+                                     ) : (
+                                       <div className="h-1.5 w-1.5 rounded-full bg-accent" />
+                                     )}
+                                   </div>
+                                 )}
+                               </button>
+                             )
+                           })}
+                           {providers.filter((p) => p.enabled).length === 0 && (
+                             <div className="px-3 py-3 text-[12px] text-muted-foreground">No providers enabled. Configure in settings.</div>
+                           )}
+                         </div>
+                       </>
+                     )}
+                   </div>
+ 
+                   {/* Desktop: full grid, always visible */}
+                   <div className="hidden gap-2 lg:grid lg:grid-cols-1 xl:grid-cols-2">
+                     {providers.filter((provider) => provider.enabled).map((provider) => {
+                       const Icon = getProviderIcon(provider.id)
+                       const active = mode === 'generate'
+                         ? selectedProviders.includes(provider.id)
+                         : provider.id === selectedProvider
+                       return (
+                         <button
+                           key={provider.id}
+                           onClick={() => {
+                             if (mode === 'generate') {
+                               toggleSelectedProvider(provider.id)
+                             } else {
+                               setSelectedProvider(provider.id).catch(console.error)
+                             }
+                           }}
+                           className={cn(
+                             'flex items-center gap-2.5 border px-2.5 py-2 text-left transition-colors relative',
+                             active
+                               ? 'border-accent bg-accent/10 text-foreground'
+                               : 'border-border bg-secondary/25 text-muted-foreground hover:border-accent/30 hover:text-foreground'
+                           )}
+                         >
+                           <Icon className={cn("h-4 w-4 flex-shrink-0", active && "text-accent")} />
+                           <div className="min-w-0 flex-1">
+                             <div className="truncate text-[12px] font-medium leading-tight text-current">{provider.name}</div>
+                             <div className="truncate text-[11px] text-muted-foreground">{provider.model}</div>
+                           </div>
+                           {mode === 'generate' && active && (
+                             <div className="absolute top-1.5 right-1.5 h-3.5 w-3.5 border border-accent bg-accent text-accent-foreground text-[8px] font-bold flex items-center justify-center rounded-full">
+                               {selectedProviders.indexOf(provider.id) + 1}
+                             </div>
+                           )}
+                         </button>
+                       )
+                     })}
+                   </div>
+                 </div>
 
                 {/* Mobile "Advanced settings" toggle — hidden on lg+ where all settings are always shown */}
                 <button
@@ -1004,6 +1098,20 @@ export function ImageStudio() {
                           <a href={image.url} target="_blank" rel="noreferrer" className="flex h-full w-full items-center justify-center">
                             <img src={image.url} alt={previewRecord?.prompt || 'Generated image'} className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-[1.02]" />
                           </a>
+                          {((image as any).providerId || previewRecord?.providerId) && (
+                            <div className="absolute left-3 top-3 z-10 flex items-center gap-1.5 bg-background/85 border border-border px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-foreground">
+                              {(() => {
+                                const provId = (image as any).providerId || previewRecord?.providerId
+                                const ProvIcon = getProviderIcon(provId)
+                                return (
+                                  <>
+                                    <ProvIcon className="h-3.5 w-3.5 text-accent" />
+                                    <span>{provId}</span>
+                                  </>
+                                )
+                              })()}
+                            </div>
+                          )}
                           <div className="absolute right-3 top-3 flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
                             <button
                               type="button"

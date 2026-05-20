@@ -33,6 +33,7 @@ interface ImageStudioState {
   settingsLoaded: boolean
   historyLoaded: boolean
   selectedProvider: ImageProviderId
+  selectedProviders: ImageProviderId[]
   providers: ImageProviderConfig[]
   history: ImageGenerationRecord[]
   isGenerating: boolean
@@ -41,8 +42,10 @@ interface ImageStudioState {
   loadSettings: () => Promise<void>
   loadHistory: (limit?: number) => Promise<void>
   setSelectedProvider: (providerId: ImageProviderId) => Promise<void>
+  toggleSelectedProvider: (providerId: ImageProviderId) => void
   updateProvider: (providerId: ImageProviderId, updates: Partial<ImageProviderConfig>) => Promise<void>
   generateImage: (payload: Record<string, unknown>) => Promise<{ provider: ImageProviderId; model: string; images: GeneratedImage[]; params: Record<string, unknown> }>
+  generateMultiImages: (payloads: Record<string, unknown>[]) => Promise<{ results: any[]; errors: string[] }>
   editImage: (payload: Record<string, unknown>) => Promise<{ provider: ImageProviderId; model: string; images: GeneratedImage[]; params: Record<string, unknown> }>
   deleteHistoryImage: (recordId: string, imageId: string) => Promise<void>
 }
@@ -66,6 +69,7 @@ export const useImageStudioStore = create<ImageStudioState>()((set, get) => ({
   settingsLoaded: false,
   historyLoaded: false,
   selectedProvider: 'local',
+  selectedProviders: ['local'],
   providers: [],
   history: [],
   isGenerating: false,
@@ -78,9 +82,20 @@ export const useImageStudioStore = create<ImageStudioState>()((set, get) => ({
     }
 
     const payload = await response.json()
+    const primaryProvider = payload.settings?.selectedProvider || 'local'
+
+    let selectedProviders: ImageProviderId[] = [primaryProvider]
+    try {
+      const saved = localStorage.getItem('image_studio_selected_providers')
+      if (saved) {
+        selectedProviders = JSON.parse(saved)
+      }
+    } catch (e) {}
+
     set({
       settingsLoaded: true,
-      selectedProvider: payload.settings?.selectedProvider || 'local',
+      selectedProvider: primaryProvider,
+      selectedProviders,
       providers: Array.isArray(payload.settings?.providers) ? payload.settings.providers : [],
     })
   },
@@ -106,6 +121,25 @@ export const useImageStudioStore = create<ImageStudioState>()((set, get) => ({
       await get().loadSettings()
       throw error
     }
+  },
+
+  toggleSelectedProvider: (providerId) => {
+    const current = get().selectedProviders
+    let next: ImageProviderId[]
+    if (current.includes(providerId)) {
+      if (current.length <= 1) return
+      next = current.filter(id => id !== providerId)
+    } else {
+      if (current.length >= 4) {
+        alert('You can select a maximum of 4 providers at a time')
+        return
+      }
+      next = [...current, providerId]
+    }
+    set({ selectedProviders: next })
+    try {
+      localStorage.setItem('image_studio_selected_providers', JSON.stringify(next))
+    } catch (e) {}
   },
 
   updateProvider: async (providerId, updates) => {
@@ -136,6 +170,48 @@ export const useImageStudioStore = create<ImageStudioState>()((set, get) => ({
       await get().loadHistory()
       set({ isGenerating: false })
       return data
+    } catch (error: any) {
+      set({ isGenerating: false, error: error.message || 'Image generation failed' })
+      throw error
+    }
+  },
+
+  generateMultiImages: async (payloads) => {
+    set({ isGenerating: true, error: null })
+    try {
+      const results = await Promise.allSettled(
+        payloads.map(async (payload) => {
+          const response = await fetch('/api/images/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          const data = await response.json().catch(() => ({}))
+          if (!response.ok) {
+            throw new Error(data.error || `Image generation failed for ${payload.providerId}`)
+          }
+          return data
+        })
+      )
+
+      const fulfilled = results
+        .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
+        .map(r => r.value)
+      const rejected = results
+        .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+        .map(r => r.reason.message)
+
+      await get().loadHistory()
+      set({ isGenerating: false })
+
+      if (fulfilled.length === 0 && rejected.length > 0) {
+        throw new Error(`All generation requests failed: ${rejected.join(', ')}`)
+      }
+
+      return {
+        results: fulfilled,
+        errors: rejected,
+      }
     } catch (error: any) {
       set({ isGenerating: false, error: error.message || 'Image generation failed' })
       throw error

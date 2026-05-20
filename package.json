@@ -8,7 +8,7 @@
     "dev:server": "cd server && npm run dev",
     "build": "cd frontend && npm run build && cd ../server && npm run build",
     "start": "cd server && npm start",
-    "setup": "npm install && cd frontend && npm install && cd ../server && npm install"
+    "setup": "npm install && cd frontend && npm install --legacy-peer-deps && cd ../server && npm install && node -e \"require('fs').copyFileSync('frontend/node_modules/mermaid/dist/mermaid.min.js','frontend/public/mermaid.min.js')\""
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

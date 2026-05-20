@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { SidebarToggle } from "./components/SidebarToggle";
@@ -198,6 +198,95 @@ function SharedSettingsSync() {
   return null;
 }
 
+function ArtifactStreamSync() {
+  const { currentSessionId, streaming } = useChatStore();
+  const { artifactPanelOpen, setArtifactPanelOpen } = useUIStore();
+  
+  const currentStreamingArtifactIdRef = useRef<string | null>(null);
+  const closedArtifactIdRef = useRef<string | null>(null);
+  const lastPanelOpenRef = useRef(false);
+
+  const activeStream = currentSessionId ? streaming[currentSessionId] : null;
+  const streamingContent = activeStream?.content || '';
+  const isGenerating = activeStream?.isGenerating || false;
+
+  // 1. Monitor stream and parse current/last code block
+  useEffect(() => {
+    if (!isGenerating) {
+      closedArtifactIdRef.current = null;
+      currentStreamingArtifactIdRef.current = null;
+      return;
+    }
+
+    const regex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)(?:```|$)/g;
+    let match;
+    let lastBlock = null;
+
+    while ((match = regex.exec(streamingContent)) !== null) {
+      lastBlock = {
+        language: match[1],
+        content: match[2],
+        startIndex: match.index,
+        isClosed: match[0].endsWith('```') && match[0].length > match[1].length + 4,
+      };
+    }
+
+    if (lastBlock) {
+      const { language, content, startIndex } = lastBlock;
+      const langLower = language.toLowerCase();
+      
+      const isPreviewable = ['html', 'svg', 'markdown', 'mermaid'].includes(langLower) ||
+        content.includes('<!DOCTYPE html>') ||
+        content.includes('<html');
+
+      if (isPreviewable) {
+        const artifactId = `${currentSessionId}-artifact-${startIndex}`;
+        const resolvedType = langLower === 'svg' ? 'svg' : langLower === 'markdown' ? 'markdown' : langLower === 'mermaid' ? 'code' : 'html';
+        
+        const artifact = {
+          id: artifactId,
+          type: resolvedType as any,
+          title: `Artifact ${language || 'code'}`,
+          language: language || undefined,
+          content: content.replace(/\n$/, ''),
+          timestamp: Date.now(),
+        };
+
+        const { activeArtifact, setActiveArtifact } = useUIStore.getState();
+
+        // Update active artifact if it changed
+        if (!activeArtifact || activeArtifact.id !== artifactId || activeArtifact.content !== artifact.content) {
+          setActiveArtifact(artifact);
+        }
+
+        currentStreamingArtifactIdRef.current = artifactId;
+      }
+    }
+  }, [streamingContent, isGenerating, currentSessionId]);
+
+  // 2. Track open/close state to prevent auto-reopening if closed manually
+  useEffect(() => {
+    if (lastPanelOpenRef.current && !artifactPanelOpen && isGenerating) {
+      closedArtifactIdRef.current = currentStreamingArtifactIdRef.current;
+    }
+    lastPanelOpenRef.current = artifactPanelOpen;
+  }, [artifactPanelOpen, isGenerating]);
+
+  // 3. Auto-open panel when a streaming artifact starts
+  useEffect(() => {
+    if (!isGenerating) return;
+
+    const currentId = currentStreamingArtifactIdRef.current;
+    if (currentId && currentId !== closedArtifactIdRef.current) {
+      if (!artifactPanelOpen) {
+        setArtifactPanelOpen(true);
+      }
+    }
+  }, [streamingContent, isGenerating, artifactPanelOpen, setArtifactPanelOpen]);
+
+  return null;
+}
+
 function App() {
   const {
     sessions,
@@ -226,6 +315,18 @@ function App() {
     });
   }, [loadSessions, createSession, setCurrentSession]);
 
+  useEffect(() => {
+    if (currentSessionId) {
+      const { selectedModel, selectedProvider, setSelectedModelAndProvider } = useSettingsStore.getState();
+      const session = sessions.find((s) => s.id === currentSessionId);
+      if (session && session.model && session.provider) {
+        if (session.model !== selectedModel || session.provider !== selectedProvider) {
+          setSelectedModelAndProvider(session.model, session.provider);
+        }
+      }
+    }
+  }, [currentSessionId, sessions]);
+
   const currentSession = sessions.find((s) => s.id === currentSessionId);
   const isCurrentGenerating = currentSessionId
     ? (streaming[currentSessionId]?.isGenerating ?? false)
@@ -239,6 +340,7 @@ function App() {
       <ThemeSync />
       <SharedSettingsSync />
       <ModelSync />
+      <ArtifactStreamSync />
       <div className="fixed inset-0 flex overflow-hidden bg-background text-foreground">
         <Sidebar />
         <SidebarToggle />

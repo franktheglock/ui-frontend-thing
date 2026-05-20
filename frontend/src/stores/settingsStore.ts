@@ -229,7 +229,7 @@ export const useSettingsStore = create<SettingsState>()(
       artifactsEnabled: true,
       skillsDirectory: "./skills",
       skillsShApiKey: "",
-      toolDisplayMode: "individual",
+      toolDisplayMode: "timeline",
       maxToolTurns: 0,
       memoryEnabled: true,
       setupComplete: false,

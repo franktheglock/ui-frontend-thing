@@ -8,6 +8,7 @@ interface ToolCallBlockProps {
   toolCalls: ToolCall[]
   results?: ToolResult[]
   hideHeaderIcon?: boolean
+  defaultOpen?: boolean
 }
 
 function parseToolArgs(value: unknown): Record<string, any> {
@@ -83,14 +84,16 @@ function getUrl(args: Record<string, any>, resultText?: string) {
   return match?.[1] || ''
 }
 
-export function ToolCallBlock({ toolCalls, results = [], hideHeaderIcon = false }: ToolCallBlockProps) {
+export function ToolCallBlock({ toolCalls, results = [], hideHeaderIcon = false, defaultOpen }: ToolCallBlockProps) {
   const isRunning = toolCalls.some(tc => !results.some(r => r.toolCallId === tc.id))
-  const [isOpen, setIsOpen] = useState(() => isRunning)
+  const [isOpen, setIsOpen] = useState(() => defaultOpen ?? isRunning)
   const [userToggled, setUserToggled] = useState(false)
 
   React.useEffect(() => {
     if (isRunning && !userToggled) {
       setIsOpen(true)
+    } else if (!isRunning && !userToggled) {
+      setIsOpen(false)
     }
   }, [isRunning, userToggled])
 
@@ -126,7 +129,7 @@ export function ToolCallBlock({ toolCalls, results = [], hideHeaderIcon = false 
   const uniqueResultUrls = Array.from(new Set(allResultUrls))
 
   return (
-    <div className="border border-border rounded-none overflow-hidden bg-secondary/10 max-w-2xl w-full min-w-0">
+    <div className="border border-border rounded-md overflow-hidden bg-secondary/10 max-w-2xl w-full min-w-0">
       <button
         onClick={handleToggle}
         className="w-full flex items-center justify-between px-3 py-2 bg-secondary/40 hover:bg-secondary/60 transition-colors text-sm"

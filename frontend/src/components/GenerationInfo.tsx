@@ -11,7 +11,7 @@ export function GenerationInfo({ info }: GenerationInfoProps) {
   if (tokens === 0) return null
 
   return (
-    <div className="inline-flex items-center gap-3 text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
       <span className="flex items-center gap-1">
         <Hash className="w-3 h-3" />
         {info.tokensUsed || info.completionTokens || 0} tokens
@@ -41,7 +41,7 @@ export function GenerationInfo({ info }: GenerationInfoProps) {
         </span>
       )}
       
-      <span className="text-muted-foreground/50">
+      <span className="text-muted-foreground/50 truncate max-w-[140px] sm:max-w-none" title={`${info.provider} / ${info.model}`}>
         {info.provider} / {info.model}
       </span>
     </div>

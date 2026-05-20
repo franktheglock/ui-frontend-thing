@@ -381,10 +381,15 @@ export function useChat() {
                     ]);
                   if (parsed.responseId) responseId = parsed.responseId;
                   if (parsed.generationInfo) {
-                    generationInfo = parsed.generationInfo;
+                    generationInfo = {
+                      ...generationInfo,
+                      ...parsed.generationInfo,
+                      model: currentModel,
+                      provider: currentProvider,
+                    };
                     setStreamingGenerationInfo(
                       sessionId,
-                      parsed.generationInfo,
+                      generationInfo,
                     );
                   }
                 }
@@ -415,10 +420,15 @@ export function useChat() {
                     ]);
                   if (parsed.responseId) responseId = parsed.responseId;
                   if (parsed.generationInfo) {
-                    generationInfo = parsed.generationInfo;
+                    generationInfo = {
+                      ...generationInfo,
+                      ...parsed.generationInfo,
+                      model: currentModel,
+                      provider: currentProvider,
+                    };
                     setStreamingGenerationInfo(
                       sessionId,
-                      parsed.generationInfo,
+                      generationInfo,
                     );
                   }
                 } catch {}
@@ -445,7 +455,13 @@ export function useChat() {
               : turnThinking;
           }
           if (responseId) finalResponseId = responseId;
-          if (generationInfo) finalGenInfo = generationInfo;
+          if (generationInfo) {
+            finalGenInfo = {
+              ...generationInfo,
+              model: currentModel,
+              provider: currentProvider,
+            };
+          }
           allToolCalls = [...allToolCalls, ...activeCalls];
 
           if (
@@ -477,7 +493,14 @@ export function useChat() {
                   allToolResults.length > 0 ? [...allToolResults] : undefined,
                 timeline: finalTimeline.length > 0 ? finalTimeline : undefined,
                 responseId: finalResponseId,
-                generationInfo: finalGenInfo,
+                generationInfo: finalGenInfo ? {
+                  ...finalGenInfo,
+                  model: currentModel,
+                  provider: currentProvider,
+                } : {
+                  model: currentModel,
+                  provider: currentProvider,
+                },
                 timestamp: Date.now(),
                 metadata: {
                   active: true,
@@ -514,6 +537,8 @@ export function useChat() {
                 responseId: finalResponseId,
                 generationInfo: {
                   ...finalGenInfo,
+                  model: currentModel,
+                  provider: currentProvider,
                   isGatheringCost:
                     currentProvider === "openrouter" &&
                     finalGenInfo?.totalCost === undefined &&

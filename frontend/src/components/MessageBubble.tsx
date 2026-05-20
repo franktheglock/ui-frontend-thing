@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
-import { User, Copy, Check, Terminal, RotateCcw, ChevronLeft, ChevronRight, FileText, Download, ExternalLink } from 'lucide-react'
-import { useChatStore, Message, GenerationInfo as GenInfo, Attachment } from '../stores/chatStore'
+import { User, Copy, Check, Terminal, RotateCcw, ChevronLeft, ChevronRight, FileText, Download, ExternalLink, GitBranch } from 'lucide-react'
+import { useChatStore, Message, ToolCall, GenerationInfo as GenInfo, Attachment } from '../stores/chatStore'
 import { ToolCallBlock } from './ToolCallBlock'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { ThinkingBlock } from './ThinkingBlock'
@@ -107,7 +107,7 @@ export function MessageBubble({
   const isUser = message.role === 'user'
   const [copied, setCopied] = useState(false)
   const { toolDisplayMode } = useSettingsStore()
-  const { sessions } = useChatStore()
+  const { sessions, branchSession } = useChatStore()
   const session = sessions.find(s => s.id === sessionId)
 
   const sourceUrls = useMemo(() => {
@@ -205,44 +205,67 @@ export function MessageBubble({
           })()
         )}
 
-        {!isUser && message.thinking && toolDisplayMode !== 'timeline' && (
-          <ThinkingBlock thinking={message.thinking} done />
-        )}
-
-        {!isUser && message.toolCalls && message.toolCalls.length > 0 && !hideTools && toolDisplayMode !== 'timeline' && (
-          <div className={cn(toolDisplayMode === 'grouped' ? 'space-y-3.5 mb-3' : 'space-y-2 mb-2')}>
-            {toolDisplayMode === 'grouped' ? (
-              (() => {
-                const getToolType = (name: string) => {
-                  if (name === 'web_search') return 'search'
-                  if (name === 'read_url' || name === 'read_browser_page') return 'browse'
-                  if (name === 'python' || name === 'terminal') return 'code'
-                  return name
+        {!isUser && toolDisplayMode === 'individual' && message.timeline && message.timeline.length > 0 ? (
+          <div className="space-y-3.5 mb-4">
+            {message.timeline.map((event, idx) => {
+              if (event.type === 'thinking') {
+                return <ThinkingBlock key={`think-${idx}`} thinking={event.content} done />
+              }
+              if (event.type === 'tool_call') {
+                const tc: ToolCall = {
+                  id: event.toolCallId || '',
+                  name: event.toolName || '',
+                  arguments: event.toolArgs || {},
+                  display: event.display
                 }
-                const groups: { type: string, calls: any[], results: any[] }[] = []
-                let currentGroup: { type: string, calls: any[], results: any[] } | null = null
-                message.toolCalls!.forEach(tc => {
-                  const result = message.toolResults?.find(tr => tr.toolCallId === tc.id)
-                  const type = getToolType(tc.name)
-                  if (currentGroup && currentGroup.type === type) {
-                    currentGroup.calls.push(tc)
-                    if (result) currentGroup.results.push(result)
-                  } else {
-                    currentGroup = { type, calls: [tc], results: result ? [result] : [] }
-                    groups.push(currentGroup)
-                  }
-                })
-                return groups.map((group, idx) => (
-                  <ToolCallBlock key={`${group.type}-${idx}`} toolCalls={group.calls} results={group.results} />
-                ))
-              })()
-            ) : (
-              message.toolCalls.map(tc => {
                 const result = message.toolResults?.find(tr => tr.toolCallId === tc.id)
-                return <ToolCallBlock key={tc.id} toolCalls={[tc]} results={result ? [result] : []} />
-              })
-            )}
+                return <ToolCallBlock key={`tc-${tc.id}-${idx}`} toolCalls={[tc]} results={result ? [result] : []} defaultOpen={false} />
+              }
+              return null
+            })}
           </div>
+        ) : (
+          <>
+            {!isUser && message.thinking && toolDisplayMode !== 'timeline' && (
+              <ThinkingBlock thinking={message.thinking} done />
+            )}
+
+            {!isUser && message.toolCalls && message.toolCalls.length > 0 && !hideTools && toolDisplayMode !== 'timeline' && (
+              <div className={cn(toolDisplayMode === 'grouped' ? 'space-y-3.5 mb-4' : 'space-y-3 mb-4')}>
+                {toolDisplayMode === 'grouped' ? (
+                  (() => {
+                    const getToolType = (name: string) => {
+                      if (name === 'web_search') return 'search'
+                      if (name === 'read_url' || name === 'read_browser_page') return 'browse'
+                      if (name === 'python' || name === 'terminal') return 'code'
+                      return name
+                    }
+                    const groups: { type: string, calls: any[], results: any[] }[] = []
+                    let currentGroup: { type: string, calls: any[], results: any[] } | null = null
+                    message.toolCalls!.forEach(tc => {
+                      const result = message.toolResults?.find(tr => tr.toolCallId === tc.id)
+                      const type = getToolType(tc.name)
+                      if (currentGroup && currentGroup.type === type) {
+                        currentGroup.calls.push(tc)
+                        if (result) currentGroup.results.push(result)
+                      } else {
+                        currentGroup = { type, calls: [tc], results: result ? [result] : [] }
+                        groups.push(currentGroup)
+                      }
+                    })
+                    return groups.map((group, idx) => (
+                      <ToolCallBlock key={`${group.type}-${idx}`} toolCalls={group.calls} results={group.results} defaultOpen={false} />
+                    ))
+                  })()
+                ) : (
+                  message.toolCalls.map(tc => {
+                    const result = message.toolResults?.find(tr => tr.toolCallId === tc.id)
+                    return <ToolCallBlock key={tc.id} toolCalls={[tc]} results={result ? [result] : []} defaultOpen={false} />
+                  })
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {showContent && message.content && (
@@ -276,7 +299,7 @@ export function MessageBubble({
 
             {/* Action Bar */}
             <div className={cn(
-              "flex items-center gap-4 mt-1.5 opacity-0 group-hover:opacity-100 transition-all",
+              "flex flex-wrap items-center gap-4 mt-1.5 opacity-0 group-hover:opacity-100 transition-all",
               isUser ? "justify-end mr-1" : "ml-1"
             )}>
               <div className="flex items-center gap-0.5">
@@ -290,6 +313,27 @@ export function MessageBubble({
                 >
                   {copied ? <Check className="w-3.5 h-3.5 text-accent" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
+
+                {sessionId && (
+                  <button
+                    onClick={async () => {
+                      if (confirm('Branch this conversation starting from this message?')) {
+                        try {
+                          await branchSession(sessionId, message.id)
+                        } catch (error: any) {
+                          alert(error.message || 'Failed to branch session')
+                        }
+                      }
+                    }}
+                    title="Branch chat from this message"
+                    className={cn(
+                      "p-1 rounded-none transition-all",
+                      isUser ? "hover:bg-primary/10 text-muted-foreground/40 hover:text-primary" : "hover:bg-secondary text-muted-foreground/40 hover:text-accent"
+                    )}
+                  >
+                    <GitBranch className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 
                 {!isUser && (
                   <>
