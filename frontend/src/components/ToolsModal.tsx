@@ -36,6 +36,106 @@ interface MCPTool {
   serverName: string
 }
 
+interface ParsedServer {
+  tempId: string
+  name: string
+  transport: 'stdio' | 'sse'
+  command?: string
+  args?: string[]
+  url?: string
+  env?: Record<string, string>
+}
+
+function parseMCPJson(text: string): { servers: ParsedServer[]; error?: string } {
+  if (!text.trim()) {
+    return { servers: [] }
+  }
+  try {
+    const data = JSON.parse(text)
+    if (!data || typeof data !== 'object') {
+      return { servers: [], error: 'JSON must be an object' }
+    }
+
+    const validateConfig = (name: string, config: any): ParsedServer | null => {
+      if (!config || typeof config !== 'object') return null
+      
+      const transport = config.url ? 'sse' : 'stdio'
+      
+      if (transport === 'stdio' && !config.command) {
+        return null
+      }
+      if (transport === 'sse' && !config.url) {
+        return null
+      }
+
+      let finalName = name || config.name || ''
+      if (!finalName && transport === 'stdio' && config.command) {
+        if ((config.command === 'npx' || config.command === 'uvx') && Array.isArray(config.args)) {
+          const pkgArg = config.args.find((arg: string) => !arg.startsWith('-'))
+          if (pkgArg) {
+            const parts = pkgArg.split('/')
+            finalName = parts[parts.length - 1].replace('server-', '')
+          }
+        }
+        if (!finalName) {
+          finalName = config.command
+        }
+      }
+      if (!finalName) {
+        finalName = 'unnamed-server'
+      }
+
+      return {
+        tempId: Math.random().toString(36).slice(2, 9),
+        name: finalName,
+        transport,
+        command: config.command,
+        args: Array.isArray(config.args) ? config.args : undefined,
+        url: config.url,
+        env: config.env && typeof config.env === 'object' ? config.env : undefined
+      }
+    }
+
+    // Case 1: Standard Claude Config structure
+    if (data.mcpServers && typeof data.mcpServers === 'object') {
+      const servers: ParsedServer[] = []
+      for (const [name, config] of Object.entries(data.mcpServers)) {
+        const parsed = validateConfig(name, config)
+        if (parsed) servers.push(parsed)
+      }
+      if (servers.length > 0) return { servers }
+    }
+
+    // Case 2: Object containing server configs directly as keys
+    const keys = Object.keys(data)
+    const isMultiServer = keys.length > 0 && keys.every(k => {
+      const val = data[k]
+      return val && typeof val === 'object' && (val.command || val.url)
+    })
+
+    if (isMultiServer) {
+      const servers: ParsedServer[] = []
+      for (const [name, config] of Object.entries(data)) {
+        const parsed = validateConfig(name, config)
+        if (parsed) servers.push(parsed)
+      }
+      if (servers.length > 0) return { servers }
+    }
+
+    // Case 3: A single server config object directly
+    if (data.command || data.url) {
+      const parsed = validateConfig('', data)
+      if (parsed) {
+        return { servers: [parsed] }
+      }
+    }
+
+    return { servers: [], error: 'Could not find any valid MCP server configurations in the JSON. Expected command or url fields.' }
+  } catch (err: any) {
+    return { servers: [], error: err.message }
+  }
+}
+
 export function ToolsModal() {
   const { toolSelectorOpen, setToolSelectorOpen } = useUIStore()
   const {
@@ -57,11 +157,15 @@ export function ToolsModal() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   // Add form state
+  const [addMode, setAddMode] = useState<'manual' | 'json'>('manual')
   const [newName, setNewName] = useState('')
   const [newTransport, setNewTransport] = useState<'stdio' | 'sse'>('stdio')
   const [newCommand, setNewCommand] = useState('')
   const [newArgs, setNewArgs] = useState('')
   const [newUrl, setNewUrl] = useState('')
+  const [jsonBlob, setJsonBlob] = useState('')
+  const [jsonError, setJsonError] = useState<string | null>(null)
+  const [parsedServers, setParsedServers] = useState<ParsedServer[]>([])
   const [showConfigEditor, setShowConfigEditor] = useState(false)
   const [rawConfig, setRawConfig] = useState('')
 
@@ -111,6 +215,61 @@ export function ToolsModal() {
       setExpandedServer(serverId)
       loadServerTools(serverId)
     }
+  }
+
+  const handleJsonChange = (val: string) => {
+    setJsonBlob(val)
+    if (!val.trim()) {
+      setJsonError(null)
+      setParsedServers([])
+      return
+    }
+    const result = parseMCPJson(val)
+    if (result.error) {
+      setJsonError(result.error)
+      setParsedServers([])
+    } else {
+      setJsonError(null)
+      setParsedServers(result.servers)
+    }
+  }
+
+  const handleUpdateParsedName = (tempId: string, name: string) => {
+    setParsedServers(prev => prev.map(s => s.tempId === tempId ? { ...s, name } : s))
+  }
+
+  const handleAddServerJson = async () => {
+    if (parsedServers.length === 0) return
+    setActionLoading('add')
+    try {
+      for (const server of parsedServers) {
+        if (!server.name.trim()) continue
+        const res = await fetch('/api/mcp/servers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: server.name,
+            transport: server.transport,
+            command: server.transport === 'stdio' ? server.command : undefined,
+            args: server.transport === 'stdio' ? server.args : undefined,
+            url: server.transport === 'sse' ? server.url : undefined,
+            env: server.env,
+            autoConnect: true,
+          }),
+        })
+        if (!res.ok) {
+          throw new Error(await res.text())
+        }
+      }
+      setJsonBlob('')
+      setParsedServers([])
+      setShowAddForm(false)
+      refresh()
+    } catch (err: any) {
+      console.error('Failed to add server:', err)
+      alert('Failed to add server: ' + err.message)
+    }
+    setActionLoading(null)
   }
 
   const handleAddServer = async () => {
@@ -298,7 +457,7 @@ export function ToolsModal() {
                       </div>
                       <div>
                         <p className="text-sm font-medium">{bt.name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</p>
-                        <p className="text-xs text-muted-foreground">{bt.description}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-1" title={bt.description}>{bt.description}</p>
                       </div>
                     </div>
                     <button onClick={() => toggleTool(bt.name)} className="flex-shrink-0">
@@ -329,7 +488,7 @@ export function ToolsModal() {
                     )}
                   >
                     <p className="text-sm font-medium">{sp.name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{sp.description}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1" title={sp.description}>{sp.description}</p>
                   </button>
                 ))}
               </div>
@@ -437,76 +596,187 @@ export function ToolsModal() {
               {/* Add Server Form */}
               {showAddForm && (
                 <div className="p-3 bg-secondary/30 border border-border rounded-sm space-y-3">
-                  <input
-                    type="text"
-                    value={newName}
-                    onChange={e => setNewName(e.target.value)}
-                    placeholder="Server name"
-                    className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
-                  />
-                  <div className="flex gap-2">
+                  {/* Tab Selector */}
+                  <div className="flex border-b border-border pb-2 mb-2 gap-4">
                     <button
-                      onClick={() => setNewTransport('stdio')}
+                      onClick={() => setAddMode('manual')}
                       className={cn(
-                        'flex-1 px-3 py-1.5 text-xs border rounded-sm transition-all',
-                        newTransport === 'stdio' ? 'border-accent bg-accent/10 text-foreground' : 'border-border text-muted-foreground'
+                        'text-xs font-semibold uppercase tracking-wider pb-1 transition-all border-b-2',
+                        addMode === 'manual' ? 'border-accent text-accent' : 'border-transparent text-muted-foreground hover:text-foreground'
                       )}
                     >
-                      Stdio (Local)
+                      Manual Form
                     </button>
                     <button
-                      onClick={() => setNewTransport('sse')}
+                      onClick={() => setAddMode('json')}
                       className={cn(
-                        'flex-1 px-3 py-1.5 text-xs border rounded-sm transition-all',
-                        newTransport === 'sse' ? 'border-accent bg-accent/10 text-foreground' : 'border-border text-muted-foreground'
+                        'text-xs font-semibold uppercase tracking-wider pb-1 transition-all border-b-2',
+                        addMode === 'json' ? 'border-accent text-accent' : 'border-transparent text-muted-foreground hover:text-foreground'
                       )}
                     >
-                      HTTP/SSE (Remote)
+                      Paste JSON
                     </button>
                   </div>
-                  {newTransport === 'stdio' ? (
+
+                  {addMode === 'json' ? (
+                    <div className="space-y-3">
+                      <div className="text-xs text-muted-foreground">
+                        Paste a JSON block representing one or more server configs (e.g. from Claude Desktop config).
+                      </div>
+                      <textarea
+                        value={jsonBlob}
+                        onChange={e => handleJsonChange(e.target.value)}
+                        placeholder={`{
+  "mcpServers": {
+    "weather": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-weather"]
+    }
+  }
+}`}
+                        className="w-full h-32 bg-secondary/50 font-mono text-xs p-3 rounded-sm border border-border focus:outline-none focus:border-accent resize-y"
+                        spellCheck={false}
+                      />
+                      
+                      {jsonError && (
+                        <div className="p-2 bg-destructive/10 border border-destructive/20 rounded-sm flex items-start gap-2">
+                          <AlertCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0 mt-0.5" />
+                          <p className="text-xs text-destructive font-mono">{jsonError}</p>
+                        </div>
+                      )}
+
+                      {parsedServers.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Parsed {parsedServers.length} server{parsedServers.length > 1 ? 's' : ''}:
+                          </p>
+                          <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                            {parsedServers.map(server => (
+                              <div key={server.tempId} className="p-2.5 bg-secondary/50 border border-border rounded-sm space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-muted-foreground flex-shrink-0">Name:</span>
+                                  <input
+                                    type="text"
+                                    value={server.name}
+                                    onChange={e => handleUpdateParsedName(server.tempId, e.target.value)}
+                                    placeholder="Enter server name"
+                                    className="flex-1 px-2 py-1 bg-background border border-border rounded-sm text-xs focus:outline-none focus:border-accent font-medium"
+                                  />
+                                </div>
+                                <div className="text-[10px] font-mono text-muted-foreground bg-background/50 p-2 rounded border border-border/50 space-y-1">
+                                  <div><span className="text-accent/80 font-semibold">transport:</span> {server.transport}</div>
+                                  {server.command && <div><span className="text-accent/80 font-semibold">command:</span> {server.command}</div>}
+                                  {server.args && <div><span className="text-accent/80 font-semibold">args:</span> {JSON.stringify(server.args)}</div>}
+                                  {server.url && <div><span className="text-accent/80 font-semibold">url:</span> {server.url}</div>}
+                                  {server.env && (
+                                    <div>
+                                      <span className="text-accent/80 font-semibold">env:</span> {JSON.stringify(server.env)}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => {
+                            setJsonBlob('')
+                            setParsedServers([])
+                            setJsonError(null)
+                            setShowAddForm(false)
+                          }}
+                          className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleAddServerJson}
+                          disabled={parsedServers.length === 0 || parsedServers.some(s => !s.name.trim()) || actionLoading === 'add'}
+                          className="px-3 py-1.5 text-xs bg-accent text-accent-foreground rounded-sm hover:bg-accent/90 transition-colors disabled:opacity-50 font-bold"
+                        >
+                          {actionLoading === 'add' ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : 'Add & Connect'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
                     <>
                       <input
                         type="text"
-                        value={newCommand}
-                        onChange={e => setNewCommand(e.target.value)}
-                        placeholder="Command (e.g. npx)"
+                        value={newName}
+                        onChange={e => setNewName(e.target.value)}
+                        placeholder="Server name"
                         className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
                       />
-                      <input
-                        type="text"
-                        value={newArgs}
-                        onChange={e => setNewArgs(e.target.value)}
-                        placeholder="Arguments (space-separated, e.g. -y @anthropic/mcp-server-filesystem /tmp)"
-                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
-                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setNewTransport('stdio')}
+                          className={cn(
+                            'flex-1 px-3 py-1.5 text-xs border rounded-sm transition-all',
+                            newTransport === 'stdio' ? 'border-accent bg-accent/10 text-foreground' : 'border-border text-muted-foreground'
+                          )}
+                        >
+                          Stdio (Local)
+                        </button>
+                        <button
+                          onClick={() => setNewTransport('sse')}
+                          className={cn(
+                            'flex-1 px-3 py-1.5 text-xs border rounded-sm transition-all',
+                            newTransport === 'sse' ? 'border-accent bg-accent/10 text-foreground' : 'border-border text-muted-foreground'
+                          )}
+                        >
+                          HTTP/SSE (Remote)
+                        </button>
+                      </div>
+                      {newTransport === 'stdio' ? (
+                        <>
+                          <input
+                            type="text"
+                            value={newCommand}
+                            onChange={e => setNewCommand(e.target.value)}
+                            placeholder="Command (e.g. npx)"
+                            className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
+                          />
+                          <input
+                            type="text"
+                            value={newArgs}
+                            onChange={e => setNewArgs(e.target.value)}
+                            placeholder="Arguments (space-separated, e.g. -y @anthropic/mcp-server-filesystem /tmp)"
+                            className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
+                          />
+                        </>
+                      ) : (
+                        <input
+                          type="text"
+                          value={newUrl}
+                          onChange={e => setNewUrl(e.target.value)}
+                          placeholder="Server URL (e.g. http://localhost:3001/mcp)"
+                          className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
+                        />
+                      )}
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => setShowAddForm(false)}
+                          className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleAddServer}
+                          disabled={!newName || actionLoading === 'add'}
+                          className="px-3 py-1.5 text-xs bg-accent text-accent-foreground rounded-sm hover:bg-accent/90 transition-colors disabled:opacity-50"
+                        >
+                          {actionLoading === 'add' ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : 'Add & Connect'}
+                        </button>
+                      </div>
                     </>
-                  ) : (
-                    <input
-                      type="text"
-                      value={newUrl}
-                      onChange={e => setNewUrl(e.target.value)}
-                      placeholder="Server URL (e.g. http://localhost:3001/mcp)"
-                      className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
-                    />
                   )}
-                  <div className="flex gap-2 justify-end">
-                    <button
-                      onClick={() => setShowAddForm(false)}
-                      className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleAddServer}
-                      disabled={!newName || actionLoading === 'add'}
-                      className="px-3 py-1.5 text-xs bg-accent text-accent-foreground rounded-sm hover:bg-accent/90 transition-colors disabled:opacity-50"
-                    >
-                      {actionLoading === 'add' ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : 'Add & Connect'}
-                    </button>
-                  </div>
                 </div>
               )}
 
@@ -598,7 +868,7 @@ export function ToolsModal() {
                           <Wrench className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                           <div className="min-w-0">
                             <p className="text-xs font-medium truncate">{tool.originalName}</p>
-                            <p className="text-xs text-muted-foreground truncate">{tool.description}</p>
+                            <p className="text-xs text-muted-foreground truncate" title={tool.description}>{tool.description}</p>
                           </div>
                         </div>
                       ))}
