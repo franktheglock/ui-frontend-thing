@@ -19,6 +19,7 @@ export interface ProviderConfig {
   apiKey?: string;
   models: string[];
   enabled: boolean;
+  config?: Record<string, any>;
 }
 
 export interface ToolConfig {
@@ -80,6 +81,7 @@ export interface SettingsState {
   systemPrompt: string;
   providers: ProviderConfig[];
   tools: ToolConfig[];
+  disabledMcpTools: string[];
   maxTokens: number;
   temperature: number;
   topP: number;
@@ -125,6 +127,7 @@ export interface SettingsState {
   setSystemPrompt: (prompt: string) => void;
   setProviders: (providers: ProviderConfig[]) => void;
   setTools: (tools: ToolConfig[]) => void;
+  setDisabledMcpTools: (tools: string[]) => void;
   markProvidersLoaded: () => void;
   markToolsLoaded: () => void;
   hydrateSharedSettings: (settings: Partial<SharedSettingsSlice>) => void;
@@ -207,6 +210,7 @@ export const useSettingsStore = create<SettingsState>()(
       sharedSettingsLoaded: false,
       providersLoaded: false,
       toolsLoaded: false,
+      disabledMcpTools: [],
       theme: "dark",
       sidebarOpen: true,
       selectedModel: "",
@@ -261,6 +265,7 @@ export const useSettingsStore = create<SettingsState>()(
       },
       setProviders: (providers) => set({ providers, providersLoaded: true }),
       setTools: (tools) => set({ tools, toolsLoaded: true }),
+      setDisabledMcpTools: (disabledMcpTools) => set({ disabledMcpTools }),
       markProvidersLoaded: () => set({ providersLoaded: true }),
       markToolsLoaded: () => set({ toolsLoaded: true }),
       hydrateSharedSettings: (settings) =>

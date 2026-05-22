@@ -93,6 +93,27 @@ router.post('/servers/:id/disconnect', async (req, res) => {
   }
 })
 
+// Enable/disable an MCP server
+router.patch('/servers/:id', async (req, res) => {
+  try {
+    const { enabled } = req.body
+    if (enabled === undefined) {
+      return res.status(400).json({ error: 'enabled field is required' })
+    }
+    await mcpManager.updateServer(req.params.id, { enabled })
+    if (enabled) {
+      await mcpManager.connectServer(req.params.id).catch(() => {})
+    } else {
+      await mcpManager.disconnectServer(req.params.id).catch(() => {})
+    }
+    const servers = mcpManager.getServers()
+    const server = servers.find(s => s.config.id === req.params.id)
+    res.json(server || { success: true })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // List tools from a specific server
 router.get('/servers/:id/tools', (req, res) => {
   const tools = mcpManager.getServerTools(req.params.id)

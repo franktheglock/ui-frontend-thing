@@ -27,8 +27,7 @@ export function registerTool(tool: BaseTool) {
 
 export function listTools() {
   const builtIn = tools.map((t) => t.getSchema());
-  const mcpTools = mcpManager.getAllTools();
-  return [...builtIn, ...mcpTools];
+  return builtIn;
 }
 
 export function getTool(name: string): BaseTool | undefined {

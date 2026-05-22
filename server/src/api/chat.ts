@@ -5,6 +5,7 @@ import fs from "fs";
 import { getDb } from "../db";
 import { getProvider } from "../providers";
 import { executeTool, listTools } from "../tools";
+import { mcpManager } from "../mcp/mcp-manager";
 import { readMemory } from "../memory";
 import { safeJsonParse } from "../utils/json";
 
@@ -482,6 +483,12 @@ router.post("/completions", async (req, res) => {
     const allTools = listTools().filter(
       (t) => !disabledToolNames.includes(t.name),
     );
+    // Add MCP tools from enabled servers
+    for (const mcpTool of mcpManager.getAllTools()) {
+      if (!disabledToolNames.includes(mcpTool.name)) {
+        allTools.push(mcpTool);
+      }
+    }
 
     const dateStr = `Today is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.`;
     const memoryInstructions = memoryEnabled

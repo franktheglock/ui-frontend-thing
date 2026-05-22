@@ -69,6 +69,20 @@ const providerOptions = [
     needsKey: false,
     description: "Local OpenAI-compatible models served by LM Studio.",
   },
+  {
+    id: "llamacpp",
+    label: "llama.cpp",
+    env: "LLAMACPP_BASE_URL",
+    needsKey: false,
+    description: "Your local llama.cpp server — TurboQuant, MTP, hotswap models.",
+  },
+  {
+    id: "openai-compatible",
+    label: "Custom OpenAI Compatible",
+    env: "CUSTOM_OAI_BASE_URL",
+    needsKey: false,
+    description: "Any server that speaks the OpenAI API. Set the base URL and optional API key.",
+  },
 ] as const;
 
 const imageProviderOptions = [
@@ -279,7 +293,7 @@ export function SetupWizard() {
     setTools,
   } = useSettingsStore();
   const [stepIndex, setStepIndex] = useState(0);
-  const [selectedProviderId, setSelectedProviderId] = useState("openrouter");
+  const [selectedProviderId, setSelectedProviderId] = useState("lmstudio");
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [searchProvider, setSearchProvider] = useState("searxng");
   const [searchValue, setSearchValue] = useState("http://192.168.1.70:8888");

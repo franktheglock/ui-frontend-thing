@@ -30,10 +30,12 @@ export abstract class BaseProvider {
   abstract type: string
   baseUrl?: string
   apiKey?: string
+  config?: Record<string, any>
 
-  constructor(config: { baseUrl?: string; apiKey?: string }) {
+  constructor(config: { baseUrl?: string; apiKey?: string; config?: Record<string, any> }) {
     this.baseUrl = config.baseUrl
     this.apiKey = config.apiKey
+    this.config = config.config || {}
   }
 
   abstract chatCompletion(options: CompletionOptions): AsyncGenerator<CompletionChunk>

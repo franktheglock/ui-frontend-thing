@@ -1449,10 +1449,40 @@ export function SettingsModal() {
                               onChange={(val: string) =>
                                 updateProvider(provider.id, { apiKey: val })
                               }
-                              placeholder="API Key"
+                              placeholder="Optional"
                               className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                             />
                           </div>
+
+                          {provider.type === "openai-compatible" && (
+                            <div className="space-y-2">
+                              <label className="text-xs font-medium text-muted-foreground">
+                                Custom Headers (JSON)
+                              </label>
+                              <LocalTextarea
+                                value={(() => {
+                                  try {
+                                    return JSON.stringify(provider.config?.headers || {}, null, 2)
+                                  } catch {
+                                    return "{}"
+                                  }
+                                })()}
+                                onChange={(val: string) => {
+                                  try {
+                                    const headers = JSON.parse(val)
+                                    updateProvider(provider.id, {
+                                      config: { ...(provider.config || {}), headers },
+                                    })
+                                  } catch {
+                                    // Allow editing even with invalid JSON
+                                  }
+                                }}
+                                placeholder='{"X-Api-Key": "your-key", "X-Custom-Header": "value"}'
+                                rows={4}
+                                className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring font-mono break-all"
+                              />
+                            </div>
+                          )}
 
                           <div className="space-y-2">
                             <label className="text-xs font-medium text-muted-foreground">
@@ -1472,6 +1502,28 @@ export function SettingsModal() {
                               rows={3}
                               className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring font-mono break-all"
                             />
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`/api/providers/${encodeURIComponent(provider.id)}/models`)
+                                  const models = await res.json()
+                                  if (Array.isArray(models) && models.length) {
+                                    updateProvider(provider.id, { models })
+                                    // Also save to backend
+                                    await fetch(`/api/providers/${encodeURIComponent(provider.id)}`, {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ ...provider, models }),
+                                    })
+                                  }
+                                } catch (e) {
+                                  console.error("Failed to fetch models", e)
+                                }
+                              }}
+                              className="text-xs text-accent hover:text-accent-hover transition-colors"
+                            >
+                              ↻ Fetch models from API
+                            </button>
                           </div>
                         </div>
                       ))}

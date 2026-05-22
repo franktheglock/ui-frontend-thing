@@ -137,6 +137,8 @@ export async function getDb(): Promise<Database<sqlite3.Database, sqlite3.Statem
     { id: 'gemini', name: 'Google Gemini', type: 'gemini', baseUrl: null, apiKey: process.env.GEMINI_API_KEY || null },
     { id: 'openrouter', name: 'OpenRouter', type: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY || null },
     { id: 'lmstudio', name: 'LM Studio', type: 'lmstudio', baseUrl: process.env.LMSTUDIO_BASE_URL || 'http://localhost:1234', apiKey: null },
+    { id: 'llamacpp', name: 'llama.cpp', type: 'llamacpp', baseUrl: process.env.LLAMACPP_BASE_URL || 'http://localhost:8084', apiKey: null },
+    { id: 'openai-compatible', name: 'Custom OpenAI Compatible', type: 'openai-compatible', baseUrl: null, apiKey: null },
     { id: 'nvidia', name: 'NVIDIA NIM', type: 'nvidia', baseUrl: 'https://integrate.api.nvidia.com/v1', apiKey: process.env.NVIDIA_API_KEY || null },
     { id: 'opencode-go', name: 'Opencode Go', type: 'opencode-go', baseUrl: 'https://opencode.ai/zen/go', apiKey: process.env.OPENCODE_GO_API_KEY || null },
   ]

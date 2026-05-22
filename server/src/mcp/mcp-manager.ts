@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { getDb } from '../db'
 
@@ -97,10 +98,24 @@ class MCPManager {
   }
 
   async removeServer(id: string): Promise<void> {
-    await this.disconnectServer(id)
+    await this.disconnectServer(id).catch(() => {})
     const db = await getDb()
     await db.run('DELETE FROM mcp_servers WHERE id = ?', id)
     this.servers.delete(id)
+  }
+
+  async updateServer(id: string, updates: Partial<MCPServerConfig>): Promise<void> {
+    const server = this.servers.get(id)
+    if (!server) throw new Error(`MCP server ${id} not found`)
+
+    Object.assign(server.config, updates)
+
+    const db = await getDb()
+    await db.run('UPDATE mcp_servers SET enabled = ?, auto_connect = ? WHERE id = ?',
+      server.config.enabled ? 1 : 0,
+      server.config.autoConnect ? 1 : 0,
+      id
+    )
   }
 
   async replaceAllServers(newConfigs: Record<string, any>): Promise<void> {
@@ -163,7 +178,7 @@ class MCPManager {
         if (!server.config.url) {
           throw new Error('SSE transport requires a URL')
         }
-        transport = new StreamableHTTPClientTransport(
+        transport = new SSEClientTransport(
           new URL(server.config.url)
         )
       }
@@ -221,7 +236,7 @@ class MCPManager {
   getAllTools(): MCPToolSchema[] {
     const tools: MCPToolSchema[] = []
     for (const server of this.servers.values()) {
-      if (server.status === 'connected') {
+      if (server.status === 'connected' && server.config.enabled) {
         tools.push(...server.tools)
       }
     }

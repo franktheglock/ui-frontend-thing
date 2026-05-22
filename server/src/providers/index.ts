@@ -17,6 +17,7 @@ const providerMap: Record<string, new (options: any) => BaseProvider> = {
   gemini: GeminiProvider,
   openrouter: OpenRouterProvider,
   lmstudio: LMStudioProvider,
+  llamacpp: OpenAICompatibleProvider,
   nvidia: NimProvider,
   'opencode-go': OpencodeGoProvider,
   'openai-compatible': OpenAICompatibleProvider,
@@ -37,6 +38,7 @@ export function createProviderFromConfig(config: ProviderConfigLike): BaseProvid
   return new ProviderClass({
     baseUrl: config.baseUrl ?? config.base_url ?? undefined,
     apiKey: config.apiKey ?? config.api_key ?? undefined,
+    config: typeof config.config === 'object' ? config.config : {},
   }) as BaseProvider
 }
 

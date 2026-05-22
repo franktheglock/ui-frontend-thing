@@ -21,14 +21,20 @@ export class OpenAICompatibleProvider extends BaseProvider {
   }
 
   protected getRequestHeaders(): Record<string, string> {
+    const customHeaders = (this.config?.headers || {}) as Record<string, string>
     return {
       'Content-Type': 'application/json',
+      ...customHeaders,
       ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {}),
     }
   }
 
   protected getModelRequestHeaders(): Record<string, string> {
-    return this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {}
+    const customHeaders = (this.config?.headers || {}) as Record<string, string>
+    return {
+      ...customHeaders,
+      ...(this.apiKey ? { 'Authorization': `Bearer ${this.apiKey}` } : {}),
+    }
   }
 
   async *chatCompletion(options: CompletionOptions): AsyncGenerator<CompletionChunk> {
@@ -62,10 +68,14 @@ export class OpenAICompatibleProvider extends BaseProvider {
     let completionTokens = 0
     let accumulatedToolCalls: any[] = []
 
+    // Track additional gen info from last chunk (timings, etc.)
+    let lastGenInfo: Record<string, any> = {}
+
     for await (const chunk of this.streamResponse(response)) {
       if (chunk.generationInfo) {
         promptTokens = chunk.generationInfo.promptTokens || promptTokens
         completionTokens = chunk.generationInfo.completionTokens || completionTokens
+        lastGenInfo = { ...lastGenInfo, ...chunk.generationInfo }
       }
       if (chunk.toolCalls) {
         for (const tc of chunk.toolCalls) {
@@ -98,6 +108,9 @@ export class OpenAICompatibleProvider extends BaseProvider {
         promptTokens,
         completionTokens,
         tokensUsed: promptTokens + completionTokens,
+        tokensPerSecond: lastGenInfo.tokensPerSecond,
+        promptPerSecond: lastGenInfo.promptPerSecond,
+        totalDuration: lastGenInfo.totalDuration,
         provider: this.id,
         model: options.model,
       },
@@ -128,6 +141,19 @@ export class OpenAICompatibleProvider extends BaseProvider {
         completionTokens: data.usage.completion_tokens,
         tokensUsed: data.usage.total_tokens,
         totalCost: data.usage.total_cost,
+      }
+    }
+
+    if (data.timings) {
+      if (!chunk.generationInfo) chunk.generationInfo = {}
+      chunk.generationInfo = {
+        ...chunk.generationInfo,
+        promptTokens: data.timings.prompt_n,
+        completionTokens: data.timings.predicted_n,
+        tokensUsed: (data.timings.prompt_n || 0) + (data.timings.predicted_n || 0),
+        tokensPerSecond: data.timings.predicted_per_second,
+        promptPerSecond: data.timings.prompt_per_second,
+        totalDuration: data.timings.predicted_ms,
       }
     }
 

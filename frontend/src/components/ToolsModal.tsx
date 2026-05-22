@@ -23,6 +23,7 @@ interface MCPServer {
     command?: string
     args?: string[]
     url?: string
+    enabled: boolean
   }
   status: 'disconnected' | 'connecting' | 'connected' | 'error'
   error?: string
@@ -815,6 +816,33 @@ export function ToolsModal() {
                       </span>
                     )}
                     <div className="flex items-center gap-1">
+                      {/* Enable/disable toggle */}
+                      <button
+                        onClick={async () => {
+                          setActionLoading(server.config.id)
+                          try {
+                            await fetch(`/api/mcp/servers/${server.config.id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ enabled: !server.config.enabled }),
+                            })
+                            const res = await fetch('/api/mcp/servers')
+                            const servers = await res.json()
+                            setMcpServers(servers)
+                          } finally {
+                            setActionLoading(null)
+                          }
+                        }}
+                        disabled={actionLoading === server.config.id}
+                        className={`p-1 rounded-sm transition-colors ${
+                          server.config.enabled
+                            ? 'text-accent hover:text-accent-hover'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                        title={server.config.enabled ? 'Disable all tools' : 'Enable all tools'}
+                      >
+                        {server.config.enabled ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
+                      </button>
                       {server.status === 'connected' ? (
                         <button
                           onClick={() => handleDisconnect(server.config.id)}
@@ -861,18 +889,47 @@ export function ToolsModal() {
                   )}
 
                   {/* Expanded tool list */}
-                  {expandedServer === server.config.id && server.status === 'connected' && (
+                  {expandedServer === server.config.id && (
                     <div className="border-t border-border">
-                      {(serverTools[server.config.id] || []).map(tool => (
-                        <div key={tool.name} className="px-3 py-2 flex items-center gap-2 border-b border-border/50 last:border-0">
-                          <Wrench className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-xs font-medium truncate">{tool.originalName}</p>
-                            <p className="text-xs text-muted-foreground truncate" title={tool.description}>{tool.description}</p>
-                          </div>
-                        </div>
-                      ))}
-                      {(serverTools[server.config.id] || []).length === 0 && (
+                      {server.status === 'connected' ? (
+                        server.config.enabled ? (
+                          (serverTools[server.config.id] || []).map(tool => {
+                            const isDisabled = useSettingsStore.getState().disabledMcpTools.includes(tool.name)
+                            return (
+                              <div key={tool.name} className="px-3 py-2 flex items-center gap-2 border-b border-border/50 last:border-0">
+                                <Wrench className={`w-3 h-3 flex-shrink-0 ${isDisabled ? 'text-muted-foreground' : 'text-foreground'}`} />
+                                <div className="min-w-0 flex-1">
+                                  <p className={`text-xs font-medium truncate ${isDisabled ? 'text-muted-foreground' : 'text-foreground'}`}>{tool.originalName}</p>
+                                  <p className="text-xs text-muted-foreground truncate" title={tool.description}>{tool.description}</p>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    const store = useSettingsStore.getState()
+                                    const current = store.disabledMcpTools
+                                    const updated = isDisabled
+                                      ? current.filter(n => n !== tool.name)
+                                      : [...current, tool.name]
+                                    store.setDisabledMcpTools(updated)
+                                  }}
+                                  className={`p-1 rounded-sm transition-colors ${
+                                    isDisabled
+                                      ? 'text-muted-foreground hover:text-foreground'
+                                      : 'text-accent hover:text-accent-hover'
+                                  }`}
+                                  title={isDisabled ? 'Enable tool' : 'Disable tool'}
+                                >
+                                  {isDisabled ? <ToggleLeft className="w-3.5 h-3.5" /> : <ToggleRight className="w-3.5 h-3.5" />}
+                                </button>
+                              </div>
+                            )
+                          })
+                        ) : (
+                          <div className="px-3 py-2 text-xs text-muted-foreground italic">Server disabled — tools not available</div>
+                        )
+                      ) : (
+                        <div className="px-3 py-2 text-xs text-muted-foreground italic">Disconnected</div>
+                      )}
+                      {server.status === 'connected' && server.config.enabled && (serverTools[server.config.id] || []).length === 0 && (
                         <div className="px-3 py-2 text-xs text-muted-foreground italic">Loading tools...</div>
                       )}
                     </div>

@@ -62,6 +62,7 @@ export interface GenerationInfo {
   promptTokens?: number
   completionTokens?: number
   tokensPerSecond?: number
+  promptPerSecond?: number
   totalDuration?: number
   loadDuration?: number
   promptEvalDuration?: number

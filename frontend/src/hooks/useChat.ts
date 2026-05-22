@@ -324,7 +324,10 @@ export function useChat() {
               topP,
               reasoningEffort,
               stream: streamResponses,
-              disabledTools: tools.filter((t) => !t.enabled).map((t) => t.name),
+              disabledTools: [
+                ...tools.filter((t) => !t.enabled).map((t) => t.name),
+                ...useSettingsStore.getState().disabledMcpTools,
+              ],
               sessionId: sessionId,
             }),
           });

@@ -8,14 +8,21 @@ interface GenerationInfoProps {
 
 export function GenerationInfo({ info }: GenerationInfoProps) {
   const tokens = info.tokensUsed || info.completionTokens || 0
-  if (tokens === 0) return null
+  if (tokens === 0 && !info.promptTokens && !info.promptPerSecond) return null
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
       <span className="flex items-center gap-1">
         <Hash className="w-3 h-3" />
-        {info.tokensUsed || info.completionTokens || 0} tokens
+        {info.promptTokens || 0} → {info.completionTokens || 0} = {info.tokensUsed || info.completionTokens || 0} tokens
       </span>
+      
+      {info.promptPerSecond && (
+        <span className="flex items-center gap-1">
+          <Zap className="w-3 h-3" />
+          PP: {formatTokensPerSecond(info.promptPerSecond)}
+        </span>
+      )}
       
       {info.tokensPerSecond && (
         <span className="flex items-center gap-1">
