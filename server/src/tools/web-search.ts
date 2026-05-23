@@ -6,7 +6,7 @@ const SEARCH_TIMEOUT_MS = 15000
 export class WebSearchTool extends BaseTool {
   id = 'web_search'
   name = 'web_search'
-  description = 'Search the web for information. Supports multiple search providers. When you use information from search results in your response, you MUST cite the source inline using [source:n] where n is the result number shown in the output.'
+  description = 'Search the web for information. When you use information from search results in your response, you MUST cite the source inline using [source:n] where n is the result number shown in the output. If the user says something confusing, or if you are unsure about what the user is asking, use this tool.'
   parameters = {
     type: 'object',
     properties: {

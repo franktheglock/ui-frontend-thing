@@ -15,6 +15,7 @@ build/
 # Data & uploads
 data/
 uploads/
+uploads.old/
 tmp/
 output/
 workspace/
