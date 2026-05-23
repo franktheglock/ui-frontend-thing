@@ -461,6 +461,10 @@ export function SettingsModal() {
   const [localImageAutoRun, setLocalImageAutoRun] = useState(false);
   const [localImagePort, setLocalImagePort] = useState("8000");
   const [localImageSaving, setLocalImageSaving] = useState(false);
+  const [localImageStarting, setLocalImageStarting] = useState(false);
+  const [localImageModelLoading, setLocalImageModelLoading] = useState(false);
+  const [localImageModelLoaded, setLocalImageModelLoaded] = useState(false);
+  const [localImageServerRunning, setLocalImageServerRunning] = useState(false);
   const {
     selectedProvider: selectedImageProvider,
     providers: imageProviders,
@@ -636,10 +640,18 @@ export function SettingsModal() {
   React.useEffect(() => {
     if (!settingsOpen) return;
     fetch("/api/local-image-server/status")
-      .then((r) => r.json())
-      .then((data) => {
+      .then(r => r.json())
+      .then(data => {
         setLocalImageAutoRun(!!data.autoRun);
         setLocalImagePort(String(data.port || 8000));
+        setLocalImageServerRunning(!!data.serverReachable);
+      })
+      .catch(() => {});
+    // Also check model status from the FLUX backend
+    fetch("http://localhost:8000/api/model-status")
+      .then(r => r.json())
+      .then(data => {
+        setLocalImageModelLoaded(!!data.loaded);
       })
       .catch(() => {});
   }, [settingsOpen]);
@@ -1764,6 +1776,75 @@ export function SettingsModal() {
                         )}
                         Save
                       </button>
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setLocalImageStarting(true);
+                            try {
+                              await fetch("/api/local-image-server/start", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ port: parseInt(localImagePort) || 8000, fastMode: true }),
+                              });
+                              setLocalImageServerRunning(true);
+                            } catch {}
+                            setLocalImageStarting(false);
+                          }}
+                          disabled={localImageStarting || localImageServerRunning}
+                          className="inline-flex items-center gap-1.5 bg-accent px-3 py-1.5 text-xs text-accent-foreground disabled:opacity-50"
+                        >
+                          {localImageStarting ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          )}
+                          {localImageServerRunning ? "Running" : "Start Server"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setLocalImageModelLoading(true);
+                            try {
+                              if (localImageModelLoaded) {
+                                const formData = new FormData();
+                                formData.append("model_variant", "");
+                                await fetch("http://localhost:8000/api/load-model", {
+                                  method: "POST",
+                                  body: formData,
+                                });
+                                setLocalImageModelLoaded(false);
+                              } else {
+                                const formData = new FormData();
+                                formData.append("model_variant", "gguf-q4-k-m");
+                                await fetch("http://localhost:8000/api/load-model", {
+                                  method: "POST",
+                                  body: formData,
+                                });
+                                for (let i = 0; i < 30; i++) {
+                                  await new Promise(r => setTimeout(r, 2000));
+                                  try {
+                                    const status = await fetch("http://localhost:8000/api/model-status").then(r => r.json());
+                                    if (status.loaded) { setLocalImageModelLoaded(true); break; }
+                                  } catch {}
+                                }
+                              }
+                            } catch {}
+                            setLocalImageModelLoading(false);
+                          }}
+                          disabled={localImageModelLoading || !localImageServerRunning}
+                          className="inline-flex items-center gap-1.5 bg-secondary px-3 py-1.5 text-xs text-foreground hover:bg-secondary/80 disabled:opacity-50"
+                        >
+                          {localImageModelLoading ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : localImageModelLoaded ? (
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                          ) : (
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                          )}
+                          {localImageModelLoaded ? "Unload Model" : "Load Model"}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

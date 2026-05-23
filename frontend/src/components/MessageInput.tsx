@@ -872,6 +872,27 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                       <span>Upload file</span>
                     </button>
                     <button
+                      onClick={() => {
+                        setAttachmentMenuOpen(false)
+                        // Create a camera input and trigger it
+                        const cameraInput = document.createElement('input')
+                        cameraInput.type = 'file'
+                        cameraInput.accept = 'image/*'
+                        cameraInput.capture = 'environment'
+                        cameraInput.multiple = false
+                        cameraInput.onchange = (e: any) => {
+                          if (e.target?.files) {
+                            handleFileSelect(e)
+                          }
+                        }
+                        cameraInput.click()
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-left hover:bg-secondary/60 transition-colors"
+                    >
+                      <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                      <span>Camera / Gallery</span>
+                    </button>
+                    <button
                       onClick={() => openTabPicker()}
                       disabled={isLoadingTabs || isUploading}
                       className="flex w-full items-center gap-2 px-3 py-2 text-sm text-left hover:bg-secondary/60 transition-colors disabled:opacity-50"
@@ -934,6 +955,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                 ref={fileInputRef}
                 type="file"
                 multiple
+                accept="image/*"
                 className="hidden"
                 onChange={handleFileSelect}
               />
