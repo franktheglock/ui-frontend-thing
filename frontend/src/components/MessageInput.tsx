@@ -641,9 +641,11 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     target.style.height = `${target.scrollHeight}px`
   }
 
-  const handlePaste = (e: React.ClipboardEvent) => {
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const pastedFiles: PendingLocalAttachment[] = []
+
+    // Try the synchronous clipboard API first (desktop)
     if (e.clipboardData && e.clipboardData.items) {
-      const pastedFiles: PendingLocalAttachment[] = []
       for (let i = 0; i < e.clipboardData.items.length; i++) {
         const item = e.clipboardData.items[i]
         if (item.type.startsWith('image/')) {
@@ -655,9 +657,29 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
           }
         }
       }
-      if (pastedFiles.length > 0) {
-        setPendingAttachments(prev => [...prev, ...pastedFiles])
+    }
+
+    // Fallback to async clipboard API (works on mobile browsers)
+    if (pastedFiles.length === 0 && navigator.clipboard?.read) {
+      try {
+        const clipboardItems = await navigator.clipboard.read()
+        for (const clipboardItem of clipboardItems) {
+          for (const type of clipboardItem.types) {
+            if (type.startsWith('image/')) {
+              const blob = await clipboardItem.getType(type)
+              const ext = type.split('/')[1] || 'png'
+              const file = new File([blob], `pasted-image-${Date.now()}.${ext}`, { type })
+              pastedFiles.push({ id: generateClientId(), kind: 'local-file', file })
+            }
+          }
+        }
+      } catch {
+        // clipboard.read() can fail if permission denied or unsupported
       }
+    }
+
+    if (pastedFiles.length > 0) {
+      setPendingAttachments(prev => [...prev, ...pastedFiles])
     }
   }
 
