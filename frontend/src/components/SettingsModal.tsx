@@ -242,6 +242,7 @@ function getReasoningEffortHint(providerId: string) {
     case "openai":
     case "openrouter":
     case "openai-compatible":
+    case "hermes-agent":
     case "nvidia":
     case "lmstudio":
       return "OpenAI-style providers use the nearest supported reasoning effort level.";
@@ -465,6 +466,9 @@ export function SettingsModal() {
   const [localImageModelLoading, setLocalImageModelLoading] = useState(false);
   const [localImageModelLoaded, setLocalImageModelLoaded] = useState(false);
   const [localImageServerRunning, setLocalImageServerRunning] = useState(false);
+  const [localImageErrorLog, setLocalImageErrorLog] = useState<string | null>(null);
+  const [llamaStatus, setLlamaStatus] = useState<any>(null);
+  const [llamaUnloading, setLlamaUnloading] = useState<string | null>(null);
   const {
     selectedProvider: selectedImageProvider,
     providers: imageProviders,
@@ -637,24 +641,67 @@ export function SettingsModal() {
     }
   }, [imageSettingsLoaded, loadImageSettings, settingsOpen]);
 
+  const fetchLlamaStatus = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/local-image-server/llama-status");
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.error) {
+          setLlamaStatus(data);
+          return;
+        }
+      }
+    } catch {}
+    setLlamaStatus(null);
+  }, []);
+
+  const unloadLlamaModel = async (modelId: string) => {
+    setLlamaUnloading(modelId);
+    try {
+      await fetch("/api/local-image-server/llama-unload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelId }),
+      });
+      await fetchLlamaStatus();
+    } catch (err) {
+      console.error("Failed to unload llama model:", err);
+    }
+    setLlamaUnloading(null);
+  };
+
   React.useEffect(() => {
     if (!settingsOpen) return;
-    fetch("/api/local-image-server/status")
-      .then(r => r.json())
-      .then(data => {
-        setLocalImageAutoRun(!!data.autoRun);
-        setLocalImagePort(String(data.port || 8000));
-        setLocalImageServerRunning(!!data.serverReachable);
-      })
-      .catch(() => {});
-    // Also check model status from the FLUX backend
-    fetch("http://localhost:8000/api/model-status")
-      .then(r => r.json())
-      .then(data => {
-        setLocalImageModelLoaded(!!data.loaded);
-      })
-      .catch(() => {});
-  }, [settingsOpen]);
+
+    const checkStatus = () => {
+      fetch("/api/local-image-server/status")
+        .then(r => r.json())
+        .then(data => {
+          setLocalImageAutoRun(!!data.autoRun);
+          setLocalImagePort(String(data.port || 8000));
+          setLocalImageServerRunning(!!data.serverReachable);
+          setLocalImageErrorLog(data.errorLogTail || null);
+        })
+        .catch(() => {});
+
+      fetch(`http://localhost:${localImagePort}/api/model-status`)
+        .then(r => r.json())
+        .then(data => {
+          setLocalImageModelLoaded(!!data.loaded);
+        })
+        .catch(() => {});
+    };
+
+    checkStatus();
+    fetchLlamaStatus();
+
+    const interval = setInterval(() => {
+      checkStatus();
+      fetchLlamaStatus();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [settingsOpen, localImagePort, fetchLlamaStatus]);
 
   const saveLocalImageSettings = async () => {
     setLocalImageSaving(true);
@@ -1804,12 +1851,27 @@ export function SettingsModal() {
                         <button
                           type="button"
                           onClick={async () => {
+                            try {
+                              await fetch("/api/local-image-server/stop", { method: "POST" });
+                              setLocalImageServerRunning(false);
+                              setLocalImageModelLoaded(false);
+                            } catch {}
+                          }}
+                          disabled={!localImageServerRunning}
+                          className="inline-flex items-center gap-1.5 bg-destructive/10 border border-destructive/30 text-destructive hover:bg-destructive/20 px-3 py-1.5 text-xs disabled:opacity-50"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          Stop Server
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
                             setLocalImageModelLoading(true);
                             try {
                               if (localImageModelLoaded) {
                                 const formData = new FormData();
                                 formData.append("model_variant", "");
-                                await fetch("http://localhost:8000/api/load-model", {
+                                await fetch(`http://localhost:${localImagePort}/api/load-model`, {
                                   method: "POST",
                                   body: formData,
                                 });
@@ -1817,14 +1879,14 @@ export function SettingsModal() {
                               } else {
                                 const formData = new FormData();
                                 formData.append("model_variant", "gguf-q4-k-m");
-                                await fetch("http://localhost:8000/api/load-model", {
+                                await fetch(`http://localhost:${localImagePort}/api/load-model`, {
                                   method: "POST",
                                   body: formData,
                                 });
                                 for (let i = 0; i < 30; i++) {
                                   await new Promise(r => setTimeout(r, 2000));
                                   try {
-                                    const status = await fetch("http://localhost:8000/api/model-status").then(r => r.json());
+                                    const status = await fetch(`http://localhost:${localImagePort}/api/model-status`).then(r => r.json());
                                     if (status.loaded) { setLocalImageModelLoaded(true); break; }
                                   } catch {}
                                 }
@@ -1845,6 +1907,76 @@ export function SettingsModal() {
                           {localImageModelLoaded ? "Unload Model" : "Load Model"}
                         </button>
                       </div>
+
+                      {/* VRAM Monitoring & Unloading UI */}
+                      {llamaStatus && llamaStatus.gpus && llamaStatus.gpus.length > 0 && (
+                        <div className="mt-4 p-3 bg-secondary/30 border border-border rounded-sm space-y-3">
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                            <svg className="h-3.5 w-3.5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                            </svg>
+                            <span>Local GPU & VRAM Status</span>
+                          </div>
+                          
+                          {llamaStatus.gpus.map((gpu: any, idx: number) => {
+                            const usedGb = Math.round((gpu.used_mib / 1024) * 100) / 100;
+                            const totalGb = Math.round((gpu.total_mib / 1024) * 100) / 100;
+                            const pct = Math.round((gpu.used_mib / gpu.total_mib) * 100);
+                            return (
+                              <div key={idx} className="space-y-1.5 text-xs">
+                                <div className="flex justify-between text-muted-foreground">
+                                  <span>{gpu.name || `GPU ${gpu.index}`}</span>
+                                  <span className="font-mono">{usedGb}GB / {totalGb}GB ({pct}%)</span>
+                                </div>
+                                <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
+                                  <div 
+                                    className={cn(
+                                      "h-full rounded-full transition-all duration-500",
+                                      pct > 85 ? "bg-destructive" : pct > 60 ? "bg-yellow-500" : "bg-accent"
+                                    )} 
+                                    style={{ width: `${pct}%` }} 
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {/* Loaded models */}
+                          {llamaStatus.loaded_models && llamaStatus.loaded_models.length > 0 ? (
+                            <div className="space-y-2 pt-2 border-t border-border/50">
+                              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Active LLM Models (in VRAM)</p>
+                              {llamaStatus.loaded_models.map((model: any) => (
+                                <div key={model.id} className="flex items-center justify-between gap-3 bg-secondary/50 p-2 rounded-sm text-xs">
+                                  <span className="font-mono truncate text-foreground/90">{model.id}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => unloadLlamaModel(model.id)}
+                                    disabled={llamaUnloading === model.id}
+                                    className="shrink-0 bg-destructive/15 border border-destructive/30 hover:bg-destructive/25 text-destructive px-2 py-0.5 text-[10px] rounded-sm disabled:opacity-50"
+                                  >
+                                    {llamaUnloading === model.id ? "Unloading..." : "Unload"}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-muted-foreground pt-1.5 border-t border-border/50">No active LLM model loaded in GPU memory.</p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Log output / Error details */}
+                      {localImageErrorLog && !localImageServerRunning && (
+                        <div className="mt-4 p-3 bg-destructive/5 border border-destructive/20 rounded-sm space-y-2">
+                          <p className="text-xs font-semibold text-destructive flex items-center gap-1">
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                            Startup Failed Details:
+                          </p>
+                          <pre className="text-[10px] font-mono whitespace-pre-wrap break-all bg-black/10 p-2 rounded-sm max-h-36 overflow-y-auto text-muted-foreground/90 leading-relaxed border border-border/40">
+                            {localImageErrorLog}
+                          </pre>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

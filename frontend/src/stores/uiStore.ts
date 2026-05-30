@@ -1,13 +1,17 @@
 import { create } from 'zustand'
 
-export type UIView = 'chat' | 'image-studio'
+export type UIView = 'chat' | 'image-studio' | 'files'
 
 export function getViewFromPathname(pathname: string): UIView {
-  return pathname === '/image-studio' || pathname.startsWith('/image-studio/') ? 'image-studio' : 'chat'
+  if (pathname === '/image-studio' || pathname.startsWith('/image-studio/')) return 'image-studio'
+  if (pathname === '/files' || pathname.startsWith('/files/')) return 'files'
+  return 'chat'
 }
 
 export function getPathnameForView(view: UIView): string {
-  return view === 'image-studio' ? '/image-studio' : '/'
+  if (view === 'image-studio') return '/image-studio'
+  if (view === 'files') return '/files'
+  return '/'
 }
 
 export interface Artifact {

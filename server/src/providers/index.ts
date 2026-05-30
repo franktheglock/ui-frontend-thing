@@ -8,6 +8,7 @@ import { OpenRouterProvider } from './openrouter'
 import { LMStudioProvider } from './lmstudio'
 import { NimProvider } from './nvidia'
 import { OpencodeGoProvider } from './opencode-go'
+import { HermesAgentProvider } from './hermes-agent'
 import { getDb } from '../db'
 
 const providerMap: Record<string, new (options: any) => BaseProvider> = {
@@ -21,6 +22,7 @@ const providerMap: Record<string, new (options: any) => BaseProvider> = {
   nvidia: NimProvider,
   'opencode-go': OpencodeGoProvider,
   'openai-compatible': OpenAICompatibleProvider,
+  'hermes-agent': HermesAgentProvider,
 }
 
 type ProviderConfigLike = {
@@ -29,6 +31,7 @@ type ProviderConfigLike = {
   api_key?: string | null
   baseUrl?: string | null
   apiKey?: string | null
+  config?: any
 }
 
 export function createProviderFromConfig(config: ProviderConfigLike): BaseProvider | null {
@@ -58,4 +61,4 @@ export function getProviderTypes(): string[] {
   return Object.keys(providerMap)
 }
 
-export { BaseProvider, OpenAICompatibleProvider, OpenAIProvider, AnthropicProvider, OllamaProvider, GeminiProvider, OpenRouterProvider, LMStudioProvider, NimProvider, OpencodeGoProvider }
+export { BaseProvider, OpenAICompatibleProvider, OpenAIProvider, AnthropicProvider, OllamaProvider, GeminiProvider, OpenRouterProvider, LMStudioProvider, NimProvider, OpencodeGoProvider, HermesAgentProvider }

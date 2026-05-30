@@ -121,6 +121,31 @@ router.get('/providers/:id/progress', async (req, res) => {
   }
 })
 
+router.post('/providers/local/unload', async (_req, res) => {
+  try {
+    const settings = await loadImageSettings()
+    const provider = settings.providers.find((candidate) => candidate.id === 'local' && candidate.enabled)
+    if (!provider) {
+      res.status(404).json({ error: 'Local image provider is not configured or enabled' })
+      return
+    }
+
+    const response = await fetch(`${provider.baseUrl.replace(/\/+$/, '')}/api/unload-model`, {
+      method: 'POST',
+    })
+
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      res.status(502).json({ error: (payload as any).detail || (payload as any).error || 'Failed to unload local model' })
+      return
+    }
+
+    res.json(payload)
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to unload local model' })
+  }
+})
+
 router.post('/generate', async (req, res) => {
   try {
     const generated = await generateImages(req.body || {})

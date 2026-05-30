@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Send, Plus, X, Loader2, Mic, Globe2 } from 'lucide-react'
+import { Send, Plus, X, Loader2, Mic, Globe2, File as FileIcon, Bot } from 'lucide-react'
 import { Attachment, useChatStore } from '../stores/chatStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
@@ -7,6 +7,7 @@ import { useChat } from '../hooks/useChat'
 import { cn } from '../lib/utils'
 import { getProviderIcon } from '../lib/providerIcons'
 import { SiteFavicon } from './SiteFavicon'
+import { UploadsPickerModal } from './UploadsPickerModal'
 
 interface PendingLocalAttachment {
   id: string
@@ -126,6 +127,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
   const [tabPickerOpen, setTabPickerOpen] = useState(false)
   const [isLoadingTabs, setIsLoadingTabs] = useState(false)
   const [importingTabId, setImportingTabId] = useState<number | null>(null)
+  const [uploadsPickerOpen, setUploadsPickerOpen] = useState(false)
   const [extensionReady, setExtensionReady] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -301,6 +303,17 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
         { label: '/skill', value: '/skill ', description: 'Load a skill' },
         { label: '/model', value: '/model ', description: 'Change model' },
       ]
+      // Add Hermes-specific slash commands when in hermes mode
+      if (selectedProvider === 'hermes-agent') {
+        commands.push(
+          { label: '/help', value: '/help', description: 'Show Hermes Agent help' },
+          { label: '/new', value: '/new', description: 'Start a new session' },
+          { label: '/title', value: '/title ', description: 'Set session title' },
+          { label: '/approve', value: '/approve', description: 'Approve a pending action' },
+          { label: '/status', value: '/status', description: 'Show agent status' },
+          { label: '/whoami', value: '/whoami', description: 'Show user info' },
+        )
+      }
       items = commands.filter(c => c.label.includes(command.toLowerCase()))
     } else if (command === 'skill') {
       items = availableSkills
@@ -367,7 +380,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     }
 
     return items
-  }, [input, availableSkills, providers])
+  }, [input, availableSkills, providers, selectedProvider])
 
   useEffect(() => {
     if (!input.startsWith('/')) {
@@ -722,6 +735,29 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
             </button>
           </div>
         )}
+
+        {/* Uploads picker modal for attaching uploaded files */}
+        <UploadsPickerModal
+          open={uploadsPickerOpen}
+          onClose={() => setUploadsPickerOpen(false)}
+          onSelect={(chosenFiles) => {
+            setPendingAttachments(prev => [
+              ...prev,
+              ...chosenFiles.map(f => ({
+                id: generateClientId(),
+                kind: 'server-attachment' as const,
+                attachment: {
+                  id: generateClientId(),
+                  type: f.mimeType.startsWith('image/') ? 'image' as const : 'file' as const,
+                  url: f.path,
+                  name: f.name,
+                  mimeType: f.mimeType,
+                },
+              })),
+            ])
+          }}
+        />
+
         {tabPickerOpen && (
           <div className="border border-border bg-card/95 backdrop-blur-sm rounded-xl shadow-xl overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-border/60">
@@ -922,6 +958,16 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                       {isLoadingTabs ? <Loader2 className="w-4 h-4 animate-spin text-accent" /> : <Globe2 className="w-4 h-4 text-accent" />}
                       <span>Add browser tab</span>
                     </button>
+                    <button
+                      onClick={() => {
+                        setAttachmentMenuOpen(false)
+                        setUploadsPickerOpen(true)
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-sm text-left hover:bg-secondary/60 transition-colors"
+                    >
+                      <FileIcon className="w-4 h-4 text-accent" />
+                      <span>From uploads</span>
+                    </button>
                     <div className="border-t border-border/70 px-3 py-3">
                       <div className="flex items-center justify-between gap-3 mb-2">
                         <div>
@@ -984,6 +1030,12 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
 
 
               {/* Model selector pill */}
+              {selectedProvider === 'hermes-agent' ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 text-xs text-emerald-400 border border-emerald-500/20">
+                  <Bot className="w-3.5 h-3.5" />
+                  <span>Hermes Agent</span>
+                </div>
+              ) : (
               <button
                 onClick={() => setModelSelectorOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary/60 text-xs text-muted-foreground hover:text-foreground transition-colors border border-border/40"
@@ -994,6 +1046,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                 })()}
                 <span className="truncate max-w-[100px]">{modelName}</span>
               </button>
+              )}
 
               {/* Session Cost Indicator */}
               {currentSession && (

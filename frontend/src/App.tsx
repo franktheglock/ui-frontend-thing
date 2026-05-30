@@ -10,6 +10,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { ToolsModal } from "./components/ToolsModal";
 import { ModelSelector } from "./components/ModelSelector";
 import { ImageStudio } from "./components/ImageStudio";
+import { FilesView } from "./components/FilesView";
 import { SetupWizard } from "./components/SetupWizard";
 import { useChatStore } from "./stores/chatStore";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -357,6 +358,8 @@ function App() {
               <ChatWindow />
               <MessageInput isLanding={isEmpty} />
             </>
+          ) : currentView === "files" ? (
+            <FilesView />
           ) : (
             <ImageStudio />
           )}

@@ -252,6 +252,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             attachments: m.attachments,
             generationInfo: m.generationInfo,
             timeline: m.timeline,
+            metadata: m.metadata,
             timestamp: m.timestamp,
             responseId: m.responseId,
           }))

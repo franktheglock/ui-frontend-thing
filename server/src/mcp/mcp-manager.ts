@@ -7,10 +7,11 @@ import { getDb } from '../db'
 export interface MCPServerConfig {
   id: string
   name: string
-  transport: 'stdio' | 'sse'
+  transport: 'stdio' | 'sse' | 'streamable-http'
   command?: string    // for stdio
   args?: string[]     // for stdio
-  url?: string        // for sse
+  url?: string        // for sse or streamable-http
+  headers?: Record<string, string>  // HTTP headers (auth, etc.)
   env?: Record<string, string>
   enabled: boolean
   autoConnect: boolean
@@ -50,6 +51,7 @@ class MCPManager {
         command: row.command || undefined,
         args: row.args ? JSON.parse(row.args) : undefined,
         url: row.url || undefined,
+        headers: row.headers ? JSON.parse(row.headers) : undefined,
         env: row.env ? JSON.parse(row.env) : undefined,
         enabled: !!row.enabled,
         autoConnect: !!row.auto_connect,
@@ -76,14 +78,15 @@ class MCPManager {
   async addServer(config: MCPServerConfig): Promise<void> {
     const db = await getDb()
     await db.run(
-      `INSERT INTO mcp_servers (id, name, transport, command, args, url, env, enabled, auto_connect)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO mcp_servers (id, name, transport, command, args, url, headers, env, enabled, auto_connect)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       config.id,
       config.name,
       config.transport,
       config.command || null,
       config.args ? JSON.stringify(config.args) : null,
       config.url || null,
+      config.headers ? JSON.stringify(config.headers) : null,
       config.env ? JSON.stringify(config.env) : null,
       config.enabled ? 1 : 0,
       config.autoConnect ? 1 : 0
@@ -130,13 +133,15 @@ class MCPManager {
 
     for (const [name, config] of Object.entries(newConfigs)) {
       const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-')
+      const transport = config.transport || (config.url ? 'sse' : 'stdio')
       const fullConfig: MCPServerConfig = {
         id,
         name,
-        transport: config.url ? 'sse' : 'stdio',
+        transport,
         command: config.command,
         args: config.args,
         url: config.url,
+        headers: config.headers,
         env: config.env,
         enabled: true,
         autoConnect: true,
@@ -174,6 +179,20 @@ class MCPManager {
             ...(server.config.env || {}),
           } as Record<string, string>,
         })
+      } else if (server.config.transport === 'streamable-http') {
+        if (!server.config.url) {
+          throw new Error('streamable-http transport requires a URL')
+        }
+        transport = new StreamableHTTPClientTransport(
+          new URL(server.config.url),
+          {
+            requestInit: {
+              headers: {
+                ...(server.config.headers || {}),
+              },
+            },
+          }
+        )
       } else {
         if (!server.config.url) {
           throw new Error('SSE transport requires a URL')
@@ -322,7 +341,9 @@ class MCPManager {
         command: s.command,
         args: s.args,
         url: s.url,
+        headers: s.headers,
         env: s.env,
+        transport: s.transport,
       }
     }
     return config

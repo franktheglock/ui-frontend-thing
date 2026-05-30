@@ -19,10 +19,11 @@ interface MCPServer {
   config: {
     id: string
     name: string
-    transport: 'stdio' | 'sse'
+    transport: 'stdio' | 'sse' | 'streamable-http'
     command?: string
     args?: string[]
     url?: string
+    headers?: Record<string, string>
     enabled: boolean
   }
   status: 'disconnected' | 'connecting' | 'connected' | 'error'
@@ -40,10 +41,11 @@ interface MCPTool {
 interface ParsedServer {
   tempId: string
   name: string
-  transport: 'stdio' | 'sse'
+  transport: 'stdio' | 'sse' | 'streamable-http'
   command?: string
   args?: string[]
   url?: string
+  headers?: Record<string, string>
   env?: Record<string, string>
 }
 
@@ -60,12 +62,17 @@ function parseMCPJson(text: string): { servers: ParsedServer[]; error?: string }
     const validateConfig = (name: string, config: any): ParsedServer | null => {
       if (!config || typeof config !== 'object') return null
       
-      const transport = config.url ? 'sse' : 'stdio'
-      
+      let transport: 'stdio' | 'sse' | 'streamable-http' = 'stdio'
+      if (config.transport === 'streamable-http' || config.transport === 'streamableHttp') {
+        transport = 'streamable-http'
+      } else if (config.url) {
+        transport = 'sse'
+      }
+
       if (transport === 'stdio' && !config.command) {
         return null
       }
-      if (transport === 'sse' && !config.url) {
+      if ((transport === 'sse' || transport === 'streamable-http') && !config.url) {
         return null
       }
 
@@ -93,6 +100,7 @@ function parseMCPJson(text: string): { servers: ParsedServer[]; error?: string }
         command: config.command,
         args: Array.isArray(config.args) ? config.args : undefined,
         url: config.url,
+        headers: config.headers && typeof config.headers === 'object' ? config.headers : undefined,
         env: config.env && typeof config.env === 'object' ? config.env : undefined
       }
     }
@@ -160,10 +168,11 @@ export function ToolsModal() {
   // Add form state
   const [addMode, setAddMode] = useState<'manual' | 'json'>('manual')
   const [newName, setNewName] = useState('')
-  const [newTransport, setNewTransport] = useState<'stdio' | 'sse'>('stdio')
+  const [newTransport, setNewTransport] = useState<'stdio' | 'sse' | 'streamable-http'>('stdio')
   const [newCommand, setNewCommand] = useState('')
   const [newArgs, setNewArgs] = useState('')
   const [newUrl, setNewUrl] = useState('')
+  const [newHeaders, setNewHeaders] = useState('')
   const [jsonBlob, setJsonBlob] = useState('')
   const [jsonError, setJsonError] = useState<string | null>(null)
   const [parsedServers, setParsedServers] = useState<ParsedServer[]>([])
@@ -253,7 +262,8 @@ export function ToolsModal() {
             transport: server.transport,
             command: server.transport === 'stdio' ? server.command : undefined,
             args: server.transport === 'stdio' ? server.args : undefined,
-            url: server.transport === 'sse' ? server.url : undefined,
+            url: (server.transport === 'sse' || server.transport === 'streamable-http') ? server.url : undefined,
+            headers: server.headers,
             env: server.env,
             autoConnect: true,
           }),
@@ -277,6 +287,16 @@ export function ToolsModal() {
     if (!newName) return
     setActionLoading('add')
     try {
+      // Parse headers from JSON string if streamable-http
+      let headers: Record<string, string> | undefined = undefined
+      if (newTransport === 'streamable-http' && newHeaders.trim()) {
+        try {
+          headers = JSON.parse(newHeaders)
+        } catch {
+          headers = { Authorization: `Bearer ${newHeaders.trim()}` }
+        }
+      }
+
       await fetch('/api/mcp/servers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -285,7 +305,8 @@ export function ToolsModal() {
           transport: newTransport,
           command: newTransport === 'stdio' ? newCommand : undefined,
           args: newTransport === 'stdio' && newArgs ? newArgs.split(' ') : undefined,
-          url: newTransport === 'sse' ? newUrl : undefined,
+          url: (newTransport === 'sse' || newTransport === 'streamable-http') ? newUrl : undefined,
+          headers,
           autoConnect: true,
         }),
       })
@@ -293,6 +314,7 @@ export function ToolsModal() {
       setNewCommand('')
       setNewArgs('')
       setNewUrl('')
+      setNewHeaders('')
       setShowAddForm(false)
       refresh()
     } catch (err: any) {
@@ -669,6 +691,11 @@ export function ToolsModal() {
                                   {server.command && <div><span className="text-accent/80 font-semibold">command:</span> {server.command}</div>}
                                   {server.args && <div><span className="text-accent/80 font-semibold">args:</span> {JSON.stringify(server.args)}</div>}
                                   {server.url && <div><span className="text-accent/80 font-semibold">url:</span> {server.url}</div>}
+                                  {server.headers && (
+                                    <div>
+                                      <span className="text-accent/80 font-semibold">headers:</span> {JSON.stringify(server.headers)}
+                                    </div>
+                                  )}
                                   {server.env && (
                                     <div>
                                       <span className="text-accent/80 font-semibold">env:</span> {JSON.stringify(server.env)}
@@ -730,7 +757,16 @@ export function ToolsModal() {
                             newTransport === 'sse' ? 'border-accent bg-accent/10 text-foreground' : 'border-border text-muted-foreground'
                           )}
                         >
-                          HTTP/SSE (Remote)
+                          SSE (Remote)
+                        </button>
+                        <button
+                          onClick={() => setNewTransport('streamable-http')}
+                          className={cn(
+                            'flex-1 px-3 py-1.5 text-xs border rounded-sm transition-all',
+                            newTransport === 'streamable-http' ? 'border-accent bg-accent/10 text-foreground' : 'border-border text-muted-foreground'
+                          )}
+                        >
+                          Streamable HTTP
                         </button>
                       </div>
                       {newTransport === 'stdio' ? (
@@ -751,13 +787,29 @@ export function ToolsModal() {
                           />
                         </>
                       ) : (
-                        <input
-                          type="text"
-                          value={newUrl}
-                          onChange={e => setNewUrl(e.target.value)}
-                          placeholder="Server URL (e.g. http://localhost:3001/mcp)"
-                          className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
-                        />
+                        <>
+                          <input
+                            type="text"
+                            value={newUrl}
+                            onChange={e => setNewUrl(e.target.value)}
+                            placeholder="Server URL (e.g. http://localhost:3001/mcp)"
+                            className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
+                          />
+                          {newTransport === 'streamable-http' && (
+                            <>
+                              <input
+                                type="text"
+                                value={newHeaders}
+                                onChange={e => setNewHeaders(e.target.value)}
+                                placeholder="Bearer token or JSON headers object"
+                                className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
+                              />
+                              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                                Paste a Bearer token, or a JSON object with auth headers (Authorization, X-Api-Key, etc.)
+                              </p>
+                            </>
+                          )}
+                        </>
                       )}
                       <div className="flex gap-2 justify-end">
                         <button
@@ -808,6 +860,9 @@ export function ToolsModal() {
                           ? `${server.config.command} ${server.config.args?.join(' ') || ''}`
                           : server.config.url
                         }
+                        {server.config.transport === 'streamable-http' && server.config.headers && (
+                          <span className="ml-1 text-[10px] italic">[auth configured]</span>
+                        )}
                       </p>
                     </div>
                     {server.status === 'connected' && (

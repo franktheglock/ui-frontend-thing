@@ -1,14 +1,14 @@
 import { Router } from "express";
 import fs from "fs";
 import path from "path";
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 import { getDb } from "../db";
 
 const router = Router();
 let runningProcess: ReturnType<typeof spawn> | null = null;
 
 function getDefaultInstallDir() {
-  return path.resolve(process.cwd(), "..", "flux 4b frontend");
+  return path.resolve(process.cwd(), "flux 4b frontend");
 }
 
 function getInstallDir(value?: unknown) {
@@ -18,9 +18,15 @@ function getInstallDir(value?: unknown) {
 }
 
 function exists(dir: string) {
+  if (process.platform === 'win32') {
+    return (
+      fs.existsSync(path.join(dir, 'start.bat')) ||
+      fs.existsSync(path.join(dir, 'api_only', 'start.bat'))
+    );
+  }
   return (
-    fs.existsSync(path.join(dir, "start.bat")) ||
-    fs.existsSync(path.join(dir, "api_only", "start.bat"))
+    fs.existsSync(path.join(dir, 'start.sh')) ||
+    fs.existsSync(path.join(dir, 'api_only', 'start.sh'))
   );
 }
 
@@ -31,29 +37,32 @@ function normalizePort(value?: unknown) {
 }
 
 function patchLocalImageStartupScripts(installDir: string) {
-  const scriptPaths = [
-    path.join(installDir, "start.bat"),
-    path.join(installDir, "api_only", "start.bat"),
-  ];
+  if (process.platform === 'win32') {
+    const scriptPaths = [
+      path.join(installDir, "start.bat"),
+      path.join(installDir, "api_only", "start.bat"),
+    ];
 
-  scriptPaths.forEach((scriptPath) => {
-    if (!fs.existsSync(scriptPath)) return;
+    scriptPaths.forEach((scriptPath) => {
+      if (!fs.existsSync(scriptPath)) return;
 
-    const original = fs.readFileSync(scriptPath, "utf-8");
-    let updated = original
-      .replace(
-        /if not defined PORT(?:\s+if not defined PORT)+ set PORT=8000/g,
-        "if not defined PORT set PORT=8000",
-      )
-      .replace(/^set PORT=8000$/gm, "if not defined PORT set PORT=8000")
-      .replace(/--port 8000/g, "--port !PORT!")
-      .replace(/localhost:8000/g, "localhost:!PORT!")
-      .replace(/port 8000/g, "port !PORT!");
+      const original = fs.readFileSync(scriptPath, "utf-8");
+      let updated = original
+        .replace(
+          /if not defined PORT(?:\s+if not defined PORT)+ set PORT=8000/g,
+          "if not defined PORT set PORT=8000",
+        )
+        .replace(/^set PORT=8000$/gm, "if not defined PORT set PORT=8000")
+        .replace(/--port 8000/g, "--port !PORT!")
+        .replace(/localhost:8000/g, "localhost:!PORT!")
+        .replace(/port 8000/g, "port !PORT!");
 
-    if (updated !== original) {
-      fs.writeFileSync(scriptPath, updated.replace(/\n/g, "\r\n"));
-    }
-  });
+      if (updated !== original) {
+        fs.writeFileSync(scriptPath, updated.replace(/\n/g, "\r\n"));
+      }
+    });
+  }
+  // Linux start.sh already uses ${PORT:-8000} pattern — no patching needed
 }
 
 function ensureLocalImageCacheDirs(installDir: string) {
@@ -79,8 +88,13 @@ function buildLocalImageEnv(
     ensureLocalImageCacheDirs(installDir);
   const port = normalizePort(options?.port);
 
+  const homeDir = process.env.HOME || "/home/claym";
+  const localBin = path.join(homeDir, ".local", "bin");
+  const pathEnv = process.env.PATH ? `${localBin}:${process.env.PATH}` : localBin;
+
   return {
     ...process.env,
+    PATH: pathEnv,
     CACHE_DIR: cacheDir,
     HF_HOME: huggingFaceDir,
     HUGGINGFACE_HUB_CACHE: path.join(huggingFaceDir, "hub"),
@@ -98,12 +112,53 @@ function buildLocalImageEnv(
   };
 }
 
-async function detectWindowsGpu() {
-  if (process.platform !== "win32") return null;
+async function detectGpu() {
+  if (process.platform === "win32") {
+    try {
+      const ps =
+        "Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM | ConvertTo-Json -Compress";
+      const child = spawn("powershell", ["-NoProfile", "-Command", ps], {
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      const chunks: Buffer[] = [];
+      child.stdout?.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      await new Promise((resolve) => child.on("close", resolve));
+      const text = Buffer.concat(chunks).toString("utf-8").trim();
+      if (!text) return null;
+      const parsed = JSON.parse(text);
+      const adapters = Array.isArray(parsed) ? parsed : [parsed];
+      const best = adapters.sort(
+        (a, b) => Number(b.AdapterRAM || 0) - Number(a.AdapterRAM || 0),
+      )[0];
+      const name = String(best?.Name || "");
+      const totalVramGb =
+        Number(best?.AdapterRAM || 0) > 0
+          ? Math.round((Number(best.AdapterRAM) / 1024 ** 3) * 100) / 100
+          : null;
+      const backend = /nvidia/i.test(name)
+        ? "cuda"
+        : /amd|radeon|intel|arc|iris|uhd/i.test(name)
+          ? "directml"
+          : "cpu";
+      return {
+        gpu_name: name || null,
+        total_vram_gb: totalVramGb,
+        backend,
+        backend_label:
+          backend === "cuda"
+            ? "NVIDIA CUDA"
+            : backend === "directml"
+              ? "DirectML"
+              : "CPU",
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // Linux: use nvidia-smi
   try {
-    const ps =
-      "Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM | ConvertTo-Json -Compress";
-    const child = spawn("powershell", ["-NoProfile", "-Command", ps], {
+    const child = spawn("nvidia-smi", ["--query-gpu=name,memory.total", "--format=csv,noheader"], {
       stdio: ["ignore", "pipe", "ignore"],
     });
     const chunks: Buffer[] = [];
@@ -111,31 +166,17 @@ async function detectWindowsGpu() {
     await new Promise((resolve) => child.on("close", resolve));
     const text = Buffer.concat(chunks).toString("utf-8").trim();
     if (!text) return null;
-    const parsed = JSON.parse(text);
-    const adapters = Array.isArray(parsed) ? parsed : [parsed];
-    const best = adapters.sort(
-      (a, b) => Number(b.AdapterRAM || 0) - Number(a.AdapterRAM || 0),
-    )[0];
-    const name = String(best?.Name || "");
-    const totalVramGb =
-      Number(best?.AdapterRAM || 0) > 0
-        ? Math.round((Number(best.AdapterRAM) / 1024 ** 3) * 100) / 100
-        : null;
-    const backend = /nvidia/i.test(name)
-      ? "cuda"
-      : /amd|radeon|intel|arc|iris|uhd/i.test(name)
-        ? "directml"
-        : "cpu";
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    const first = lines[0];
+    if (!first) return null;
+    const [gpuName, memStr] = first.split(", ");
+    const memMiB = parseInt(memStr?.replace(/\D/g, "") || "0", 10);
+    const totalVramGb = memMiB > 0 ? Math.round((memMiB / 1024) * 100) / 100 : null;
     return {
-      gpu_name: name || null,
+      gpu_name: gpuName || null,
       total_vram_gb: totalVramGb,
-      backend,
-      backend_label:
-        backend === "cuda"
-          ? "NVIDIA CUDA"
-          : backend === "directml"
-            ? "DirectML"
-            : "CPU",
+      backend: "cuda",
+      backend_label: "NVIDIA CUDA",
     };
   } catch {
     return null;
@@ -344,7 +385,7 @@ async function getStatus(installDir: string, port: number) {
   } catch {}
 
   const detectedHardware =
-    modelStatus?.hardware || models?.hardware || (await detectWindowsGpu());
+    modelStatus?.hardware || models?.hardware || (await detectGpu());
   const variantSource = models ||
     modelStatus || { variants: FALLBACK_VARIANTS };
 
@@ -352,8 +393,12 @@ async function getStatus(installDir: string, port: number) {
     installDir,
     installed: exists(installDir),
     isolatedVenv:
-      fs.existsSync(path.join(installDir, "venv", "Scripts", "python.exe")) ||
-      fs.existsSync(path.join(installDir, ".venv", "Scripts", "python.exe")),
+      (process.platform === 'win32'
+        ? fs.existsSync(path.join(installDir, "venv", "Scripts", "python.exe")) ||
+          fs.existsSync(path.join(installDir, ".venv", "Scripts", "python.exe"))
+        : fs.existsSync(path.join(installDir, "venv", "bin", "python")) ||
+          fs.existsSync(path.join(installDir, ".venv", "bin", "python"))
+      ),
     running: !!runningProcess,
     serverReachable,
     health,
@@ -371,6 +416,19 @@ async function getStatus(installDir: string, port: number) {
         : withFit(normalizedVariant, detectedHardware?.total_vram_gb);
     }),
     recommendedVariant: recommendVariant(variantSource, detectedHardware),
+    errorLogTail: (() => {
+      if (!serverReachable && !runningProcess) {
+        const logFile = path.join(installDir, "cache", "tmp", "local-image-server.log");
+        if (fs.existsSync(logFile)) {
+          try {
+            const content = fs.readFileSync(logFile, "utf-8");
+            const lines = content.split("\n").filter(Boolean);
+            return lines.slice(-15).join("\n");
+          } catch {}
+        }
+      }
+      return null;
+    })(),
   };
 }
 
@@ -444,14 +502,24 @@ router.post("/start", async (req, res) => {
   const [spawnCmd, spawnArgs] =
     process.platform === "win32"
       ? (["cmd.exe", ["/c", "start.bat"]] as const)
-      : (["bash", ["start.sh"]] as const);
+      : (["bash", [fs.existsSync(path.join(installDir, "api_only", "start.sh")) ? "api_only/start.sh" : "start.sh"]] as const);
+
+  const logDir = path.join(installDir, "cache", "tmp");
+  fs.mkdirSync(logDir, { recursive: true });
+  const logFile = path.join(logDir, "local-image-server.log");
+  const logFd = fs.openSync(logFile, "a");
 
   runningProcess = spawn(spawnCmd, spawnArgs, {
     cwd: installDir,
     env,
     detached: true,
-    stdio: "ignore",
+    stdio: ["ignore", logFd, logFd],
   });
+
+  try {
+    fs.closeSync(logFd);
+  } catch {}
+
   runningProcess.on("exit", () => {
     runningProcess = null;
   });
@@ -488,6 +556,66 @@ router.patch("/settings", async (req, res) => {
   res.json({ settings: next });
 });
 
+router.get("/llama-status", async (req, res) => {
+  const llamaUrl = process.env.LLAMACPP_BASE_URL || "http://localhost:8084";
+  try {
+    const statusRes = await fetch(`${llamaUrl}/api/status`, { signal: AbortSignal.timeout(2000) });
+    if (statusRes.ok) {
+      const data = await statusRes.json();
+      res.json(data);
+      return;
+    }
+  } catch {}
+  res.json({ error: "Llama server not reachable" });
+});
+
+router.post("/llama-unload", async (req, res) => {
+  const modelId = req.body?.modelId;
+  if (!modelId) {
+    res.status(400).json({ error: "Missing modelId" });
+    return;
+  }
+  const llamaUrl = process.env.LLAMACPP_BASE_URL || "http://localhost:8084";
+  try {
+    const unloadRes = await fetch(`${llamaUrl}/api/models/${modelId}/unload`, {
+      method: "POST",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (unloadRes.ok) {
+      const data = await unloadRes.json();
+      res.json(data);
+      return;
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+    return;
+  }
+  res.status(500).json({ error: "Failed to contact llama server" });
+});
+
+router.post("/stop", (req, res) => {
+  // Kill tracked process
+  if (runningProcess) {
+    try {
+      runningProcess.kill("SIGTERM");
+    } catch {}
+    runningProcess = null;
+  }
+
+  // Aggressively kill any Python process running the image server.
+  // Try SIGTERM first, then SIGKILL after a short delay.
+  try {
+    execSync("pkill -f 'python.*app.py' 2>/dev/null; sleep 0.5; pkill -9 -f 'python.*app.py' 2>/dev/null; true", { timeout: 3000 });
+  } catch {}
+
+  // Kill anything listening on the port
+  try {
+    execSync("fuser -k 8000/tcp 2>/dev/null; true", { timeout: 2000 });
+  } catch {}
+
+  res.json({ ok: true, message: "Server stopped" });
+});
+
 export async function maybeAutoStartLocalImageServer() {
   try {
     const db = await getDb();
@@ -505,12 +633,22 @@ export async function maybeAutoStartLocalImageServer() {
       process.platform === "win32"
         ? (["cmd.exe", ["/c", "start.bat"]] as const)
         : (["bash", ["start.sh"]] as const);
+    const logDir = path.join(installDir, "cache", "tmp");
+    fs.mkdirSync(logDir, { recursive: true });
+    const logFile = path.join(logDir, "local-image-server.log");
+    const logFd = fs.openSync(logFile, "a");
+
     runningProcess = spawn(autoCmd, autoArgs, {
       cwd: installDir,
       env: buildLocalImageEnv(installDir, { fastMode: true, port }),
       detached: true,
-      stdio: "ignore",
+      stdio: ["ignore", logFd, logFd],
     });
+
+    try {
+      fs.closeSync(logFd);
+    } catch {}
+
     runningProcess.on("exit", () => {
       runningProcess = null;
     });

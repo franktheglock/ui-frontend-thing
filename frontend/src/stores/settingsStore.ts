@@ -14,6 +14,7 @@ export interface ProviderConfig {
     | "nvidia"
     | "opencode-go"
     | "openai-compatible"
+    | "hermes-agent"
     | "custom";
   baseUrl?: string;
   apiKey?: string;

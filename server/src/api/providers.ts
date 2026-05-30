@@ -15,6 +15,7 @@ const DEFAULT_PROVIDER_IDS = new Set([
   'nvidia',
   'opencode-go',
   'openai-compatible',
+  'hermes-agent',
 ])
 
 router.get('/', async (_req, res) => {

@@ -11,10 +11,11 @@ import uploadRoutes from "./api/upload";
 import skillRoutes from "./api/skills";
 import mcpRoutes from "./api/mcp";
 import imageRoutes from "./api/images";
-import memoryRoutes from "./api/memory";
+import memoryRoutes from './api/memory'
 import localImageServerRoutes, {
   maybeAutoStartLocalImageServer,
 } from "./api/local-image-server";
+import hermesRoutes from './api/hermes'
 import { getDb } from "./db";
 import { mcpManager } from "./mcp/mcp-manager";
 
@@ -57,13 +58,14 @@ async function main() {
   app.use("/api/images", imageRoutes);
   app.use("/api/memory", memoryRoutes);
   app.use("/api/local-image-server", localImageServerRoutes);
+  app.use("/api/hermes", hermesRoutes);
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", version: "0.1.0" });
   });
 
   // Serve static frontend in production
-  const frontendDist = path.join(process.cwd(), "..", "frontend", "dist");
+  const frontendDist = path.join(__dirname, "..", "..", "frontend", "dist");
   if (fs.existsSync(frontendDist)) {
     app.use(express.static(frontendDist));
     app.get("*", (_req, res) => {

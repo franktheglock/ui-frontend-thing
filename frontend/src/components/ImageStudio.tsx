@@ -139,10 +139,29 @@ export function ImageStudio() {
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false)
   const [providerPopupOpen, setProviderPopupOpen] = useState(false)
 
+  // Handle pending edit source from FilesView
+  useEffect(() => {
+    const pendingUrl = useImageStudioStore.getState().pendingEditUrl
+    if (pendingUrl) {
+      setMode('edit')
+      setSourceImage(null)
+      setHistorySourceImageUrl(pendingUrl)
+      setHistorySourceImageLabel('Uploaded file')
+      setPrompt('')
+      // Clear the pending URL so it doesn't re-trigger on mount
+      useImageStudioStore.getState().setPendingEditUrl(null)
+    }
+  }, [])
+
   const sourcePreviewUrl = useMemo(() => sourceImage ? URL.createObjectURL(sourceImage) : historySourceImageUrl, [historySourceImageUrl, sourceImage])
   const referencePreviewUrl = useMemo(() => referenceImage ? URL.createObjectURL(referenceImage) : null, [referenceImage])
 
-  const activeProvider = useMemo(() => providers.find((provider) => provider.id === selectedProvider), [providers, selectedProvider])
+  const activeProvider = useMemo(() => {
+    const targetId = mode === 'generate' && selectedProviders.length > 0
+      ? selectedProviders[0]
+      : selectedProvider
+    return providers.find((provider) => provider.id === targetId)
+  }, [providers, selectedProvider, selectedProviders, mode])
 
   useEffect(() => {
     if (!settingsLoaded) {
@@ -178,7 +197,7 @@ export function ImageStudio() {
   }, [aspectRatio, megapixels])
 
   useEffect(() => {
-    if (!isGenerating || selectedProvider !== 'local') {
+    if (!isGenerating || activeProvider?.id !== 'local') {
       setLocalProgress(null)
       return
     }
@@ -227,10 +246,10 @@ export function ImageStudio() {
       controller.abort()
       window.clearInterval(intervalId)
     }
-  }, [isGenerating, selectedProvider, steps])
+  }, [isGenerating, activeProvider?.id, steps])
 
   const previewImages = previewRecord?.images || []
-  const ProviderIcon = getProviderIcon(selectedProvider)
+  const ProviderIcon = getProviderIcon(activeProvider?.id || 'local')
   const historyItems = useMemo<HistoryImageItem[]>(() => {
     return history
       .flatMap((record) => record.images.map((image, imageIndex) => ({
@@ -639,9 +658,13 @@ export function ImageStudio() {
                             </div>
                             <div className="space-y-1 text-center">
                               <p className="text-sm font-medium text-foreground">{mode === 'edit' ? 'Editing image' : 'Generating image'}</p>
-                              <p className="text-xs text-muted-foreground">Rendering with {activeProvider?.name || 'the selected provider'}.</p>
+                              <p className="text-xs text-muted-foreground">
+                                {mode === 'generate' && selectedProviders.length > 1
+                                  ? `Generating across ${selectedProviders.length} engines`
+                                  : `Rendering with ${activeProvider?.name || 'the selected provider'}.`}
+                              </p>
                             </div>
-                            {selectedProvider === 'local' && (
+                            {activeProvider?.id === 'local' && (
                               <div className="w-full space-y-2">
                                 <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                                   <span>Sampling</span>
@@ -1068,9 +1091,26 @@ export function ImageStudio() {
                     <div className="text-sm font-medium text-foreground">{activeProvider?.name || 'No provider enabled'}</div>
                   </div>
                 </div>
-                <div className="text-right text-xs text-muted-foreground">
-                  <div>{activeProvider?.model || 'Configure in settings'}</div>
-                  <div>{previewRecord ? formatDate(previewRecord.createdAt) : 'No render yet'}</div>
+                <div className="flex items-center gap-3">
+                  {(activeProvider?.id === 'local') && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await useImageStudioStore.getState().unloadLocalModel()
+                        } catch (err: any) {
+                          console.error('Failed to unload local model:', err)
+                        }
+                      }}
+                      className="flex items-center gap-1.5 border border-border bg-secondary/40 px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive"
+                    >
+                      Unload
+                    </button>
+                  )}
+                  <div className="text-right text-xs text-muted-foreground">
+                    <div>{activeProvider?.model || 'Configure in settings'}</div>
+                    <div>{previewRecord ? formatDate(previewRecord.createdAt) : 'No render yet'}</div>
+                  </div>
                 </div>
               </div>
 
@@ -1151,9 +1191,13 @@ export function ImageStudio() {
                         </div>
                         <div className="space-y-1 text-center">
                           <p className="text-sm font-medium text-foreground">{mode === 'edit' ? 'Editing image' : 'Generating image'}</p>
-                          <p className="text-xs text-muted-foreground">Rendering with {activeProvider?.name || 'the selected provider'}.</p>
+                          <p className="text-xs text-muted-foreground">
+                            {mode === 'generate' && selectedProviders.length > 1
+                              ? `Generating across ${selectedProviders.length} engines`
+                              : `Rendering with ${activeProvider?.name || 'the selected provider'}.`}
+                          </p>
                         </div>
-                        {selectedProvider === 'local' && (
+                        {activeProvider?.id === 'local' && (
                           <div className="w-full space-y-2">
                             <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                               <span>Sampling</span>

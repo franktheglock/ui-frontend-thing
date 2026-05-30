@@ -56,6 +56,7 @@ export function ChatWindow() {
     // 1. Group messages into Turns and Versions
     const turns: { user: Message | null, assistantVersions: Message[][] }[] = []
     let currentTurn: { user: Message | null, assistantVersions: Message[][] } = { user: null, assistantVersions: [[]] }
+    const hasVersionMetadata = messages.some((msg) => msg.metadata?.active !== undefined || msg.metadata?.turnId)
 
     messages.forEach((msg) => {
       if (msg.role === 'user') {
@@ -68,8 +69,9 @@ export function ChatWindow() {
         
         const isNewAttemptStarted = lastMsg && lastMsg.metadata?.active === false && msg.metadata?.active === true
         const isResponseIdChange = lastMsg && msg.responseId && lastMsg.responseId && msg.responseId !== lastMsg.responseId
+        const isLegacyRegeneratedMessage = !hasVersionMetadata && lastMsg && currentVersion.some((m) => m.content?.trim())
 
-        if (isNewAttemptStarted || isResponseIdChange) {
+        if (isNewAttemptStarted || isResponseIdChange || isLegacyRegeneratedMessage) {
           currentTurn.assistantVersions.push([msg])
         } else {
           currentVersion.push(msg)

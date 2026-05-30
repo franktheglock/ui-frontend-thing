@@ -13,30 +13,31 @@ router.get('/servers', (_req, res) => {
 // Add a new MCP server
 router.post('/servers', async (req, res) => {
   try {
-    const { name, transport, command, args, url, env, autoConnect } = req.body
+    const { name, transport, command, args, url, headers, env, autoConnect } = req.body
 
     if (!name || !transport) {
-      return res.status(400).json({ error: 'name and transport are required' })
+    return res.status(400).json({ error: 'name and transport are required' })
     }
 
     if (transport === 'stdio' && !command) {
-      return res.status(400).json({ error: 'command is required for stdio transport' })
+    return res.status(400).json({ error: 'command is required for stdio transport' })
     }
 
-    if (transport === 'sse' && !url) {
-      return res.status(400).json({ error: 'url is required for sse transport' })
+    if ((transport === 'sse' || transport === 'streamable-http') && !url) {
+    return res.status(400).json({ error: 'url is required for sse/streamable-http transport' })
     }
 
     const config = {
-      id: name.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 16),
-      name,
-      transport,
-      command: command || undefined,
-      args: args || undefined,
-      url: url || undefined,
-      env: env || undefined,
-      enabled: true,
-      autoConnect: autoConnect !== false,
+    id: name.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 16),
+    name,
+    transport,
+    command: command || undefined,
+    args: args || undefined,
+    url: url || undefined,
+    headers: headers || undefined,
+    env: env || undefined,
+    enabled: true,
+    autoConnect: autoConnect !== false,
     }
 
     await mcpManager.addServer(config)

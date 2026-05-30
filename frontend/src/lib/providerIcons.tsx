@@ -1,6 +1,6 @@
 import React from 'react'
 import * as LobeIcons from '@lobehub/icons'
-import { Sparkles } from 'lucide-react'
+import { Cpu, Sparkles } from 'lucide-react'
 
 const iconMap: Record<string, React.ComponentType<any>> = {
   openai: LobeIcons.OpenAI.Avatar,
@@ -26,7 +26,10 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   opencode: LobeIcons.OpenCode.Avatar,
   openrouter: LobeIcons.OpenRouter.Avatar,
   lmstudio: LobeIcons.LmStudio.Avatar,
+  llamacpp: Cpu,
+  llamacppserver: Cpu,
   nvidia: LobeIcons.Nvidia.Avatar,
+  nemotron: LobeIcons.Nvidia.Avatar,
   ollama: LobeIcons.Ollama.Avatar,
   azure: LobeIcons.Azure.Avatar,
   github: LobeIcons.Github.Avatar,
@@ -70,8 +73,55 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   gemma: LobeIcons.Gemma.Avatar,
 }
 
+function getModelFamilyIcon(value: string): React.ComponentType<any> | null {
+  const normalized = value.toLowerCase()
+  const key = normalized.replace(/[^a-z0-9]/g, '')
+
+  if (normalized.includes('openai') || normalized.includes('gpt')) return LobeIcons.OpenAI.Avatar
+  if (normalized.includes('anthropic') || normalized.includes('claude')) return LobeIcons.Anthropic.Avatar
+  if (normalized.includes('gemini')) return LobeIcons.Gemini.Avatar
+  if (normalized.includes('gemma')) return LobeIcons.Gemma.Avatar
+  if (normalized.includes('google')) return LobeIcons.Google.Avatar
+  if (normalized.includes('ollama')) return LobeIcons.Ollama.Avatar
+  if (normalized.includes('mistral')) return LobeIcons.Mistral.Avatar
+  if (normalized.includes('x-ai') || normalized.includes('grok') || normalized.includes('xai')) return LobeIcons.XAI.Avatar
+  if (normalized.includes('deepseek')) return LobeIcons.DeepSeek.Avatar
+  if (normalized.includes('qwen')) return LobeIcons.Qwen.Avatar
+  if (normalized.includes('nemotron') || normalized.includes('nvidia')) return LobeIcons.Nvidia.Avatar
+  if (normalized.includes('moonshot') || normalized.includes('kimi')) return LobeIcons.Moonshot.Avatar
+  if (normalized.includes('minimax')) return LobeIcons.Minimax.Avatar
+  if (normalized.includes('glm') || normalized.includes('z.ai') || normalized.includes('zai')) return LobeIcons.ZAI.Avatar
+  if (normalized.includes('mimo') || normalized.includes('xiaomi')) return LobeIcons.XiaomiMiMo.Avatar
+  if (normalized.includes('groq')) return LobeIcons.Groq.Avatar
+  if (normalized.includes('openrouter')) return LobeIcons.OpenRouter.Avatar
+  if (normalized.includes('lmstudio')) return LobeIcons.LmStudio.Avatar
+  if (normalized.includes('perplexity')) return LobeIcons.Perplexity.Avatar
+  if (normalized.includes('together')) return LobeIcons.Together.Avatar
+  if (normalized.includes('meta') || normalized.includes('llama')) return LobeIcons.Meta.Avatar
+
+  if (iconMap[key]) return iconMap[key]
+
+  for (const [k, v] of Object.entries(iconMap)) {
+    if (key.includes(k)) return v
+  }
+
+  if (key.includes('opencode')) return LobeIcons.OpenCode.Avatar
+
+  return null
+}
+
 export function getProviderIcon(provider: string): React.ComponentType<any> {
   const normalized = provider.toLowerCase()
+  const key = normalized.replace(/[^a-z0-9]/g, '')
+  const parts = normalized.split('/')
+  const providerKey = (parts[0] || '').replace(/[^a-z0-9]/g, '')
+  const modelName = parts.slice(1).join('/')
+
+  if (providerKey === 'llamacpp' || providerKey === 'llamacppserver') {
+    return modelName ? getModelFamilyIcon(modelName) || Cpu : Cpu
+  }
+
+  if (key === 'llamacpp' || key === 'llamacppserver') return Cpu
   
   // 1. Check for common substrings directly in the full string first
   if (normalized.includes('openai') || normalized.includes('gpt')) return LobeIcons.OpenAI.Avatar
@@ -85,6 +135,7 @@ export function getProviderIcon(provider: string): React.ComponentType<any> {
   if (normalized.includes('x-ai') || normalized.includes('grok') || normalized.includes('xai')) return LobeIcons.XAI.Avatar
   if (normalized.includes('deepseek')) return LobeIcons.DeepSeek.Avatar
   if (normalized.includes('qwen')) return LobeIcons.Qwen.Avatar
+  if (normalized.includes('nemotron')) return LobeIcons.Nvidia.Avatar
   if (normalized.includes('moonshot') || normalized.includes('kimi')) return LobeIcons.Moonshot.Avatar
   if (normalized.includes('minimax')) return LobeIcons.Minimax.Avatar
   if (normalized.includes('glm') || normalized.includes('z.ai') || normalized.includes('zai')) return LobeIcons.ZAI.Avatar
@@ -97,7 +148,6 @@ export function getProviderIcon(provider: string): React.ComponentType<any> {
   if (normalized.includes('nvidia')) return LobeIcons.Nvidia.Avatar
 
   // 2. Exact match on cleaned search string
-  const key = normalized.replace(/[^a-z0-9]/g, '')
   if (iconMap[key]) return iconMap[key]
 
   // 3. Substring match on the map keys

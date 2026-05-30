@@ -3,20 +3,19 @@ import sqlite3 from 'sqlite3'
 import path from 'path'
 import fs from 'fs'
 
-const DB_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data')
-if (!fs.existsSync(DB_DIR)) {
-  fs.mkdirSync(DB_DIR, { recursive: true })
-}
-
-const DB_PATH = path.join(DB_DIR, 'ai-chat-ui.db')
-
 let dbInstance: Database<sqlite3.Database, sqlite3.Statement> | null = null
 
 export async function getDb(): Promise<Database<sqlite3.Database, sqlite3.Statement>> {
   if (dbInstance) return dbInstance
 
+  const dbDir = process.env.DATA_DIR || path.join(process.cwd(), 'data')
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true })
+  }
+  const dbPath = path.join(dbDir, 'ai-chat-ui.db')
+
   dbInstance = await open({
-    filename: DB_PATH,
+    filename: dbPath,
     driver: sqlite3.Database,
   })
 
@@ -44,6 +43,7 @@ export async function getDb(): Promise<Database<sqlite3.Database, sqlite3.Statem
       tool_results TEXT,
       attachments TEXT,
       generation_info TEXT,
+      metadata TEXT,
       timestamp INTEGER NOT NULL,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     );
@@ -127,6 +127,15 @@ export async function getDb(): Promise<Database<sqlite3.Database, sqlite3.Statem
   if (!messageCols.some((c: any) => c.name === 'timeline')) {
     await dbInstance.run('ALTER TABLE messages ADD COLUMN timeline TEXT')
   }
+  if (!messageCols.some((c: any) => c.name === 'metadata')) {
+    await dbInstance.run('ALTER TABLE messages ADD COLUMN metadata TEXT')
+  }
+
+  // Migrate: add headers to mcp_servers for streamable-http auth
+  const mcpCols = await dbInstance.all(`PRAGMA table_info(mcp_servers)`)
+  if (!mcpCols.some((c: any) => c.name === 'headers')) {
+    await dbInstance.run('ALTER TABLE mcp_servers ADD COLUMN headers TEXT')
+  }
 
   // Seed default providers if empty
   const providerCount = await dbInstance.get('SELECT COUNT(*) as count FROM providers')
@@ -141,6 +150,7 @@ export async function getDb(): Promise<Database<sqlite3.Database, sqlite3.Statem
     { id: 'openai-compatible', name: 'Custom OpenAI Compatible', type: 'openai-compatible', baseUrl: null, apiKey: null },
     { id: 'nvidia', name: 'NVIDIA NIM', type: 'nvidia', baseUrl: 'https://integrate.api.nvidia.com/v1', apiKey: process.env.NVIDIA_API_KEY || null },
     { id: 'opencode-go', name: 'Opencode Go', type: 'opencode-go', baseUrl: 'https://opencode.ai/zen/go', apiKey: process.env.OPENCODE_GO_API_KEY || null },
+    { id: 'hermes-agent', name: 'Hermes Agent', type: 'hermes-agent', baseUrl: process.env.HERMES_AGENT_BASE_URL || 'http://localhost:8642', apiKey: process.env.HERMES_AGENT_API_KEY || null },
   ]
 
   if (providerCount && (providerCount as any).count === 0) {

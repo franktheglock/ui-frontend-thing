@@ -38,6 +38,7 @@ interface ImageStudioState {
   history: ImageGenerationRecord[]
   isGenerating: boolean
   error: string | null
+  pendingEditUrl: string | null  // set by FilesView to open image in edit mode
 
   loadSettings: () => Promise<void>
   loadHistory: (limit?: number) => Promise<void>
@@ -47,7 +48,9 @@ interface ImageStudioState {
   generateImage: (payload: Record<string, unknown>) => Promise<{ provider: ImageProviderId; model: string; images: GeneratedImage[]; params: Record<string, unknown> }>
   generateMultiImages: (payloads: Record<string, unknown>[]) => Promise<{ results: any[]; errors: string[] }>
   editImage: (payload: Record<string, unknown>) => Promise<{ provider: ImageProviderId; model: string; images: GeneratedImage[]; params: Record<string, unknown> }>
+  unloadLocalModel: () => Promise<void>
   deleteHistoryImage: (recordId: string, imageId: string) => Promise<void>
+  setPendingEditUrl: (url: string | null) => void
 }
 
 async function patchImageSettings(updates: Partial<Pick<ImageStudioState, 'selectedProvider' | 'providers'>>) {
@@ -74,6 +77,7 @@ export const useImageStudioStore = create<ImageStudioState>()((set, get) => ({
   history: [],
   isGenerating: false,
   error: null,
+  pendingEditUrl: null,
 
   loadSettings: async () => {
     const response = await fetch('/api/images/settings')
@@ -240,6 +244,16 @@ export const useImageStudioStore = create<ImageStudioState>()((set, get) => ({
     }
   },
 
+  unloadLocalModel: async () => {
+    const response = await fetch('/api/images/providers/local/unload', {
+      method: 'POST',
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to unload local model')
+    }
+  },
+
   deleteHistoryImage: async (recordId, imageId) => {
     const response = await fetch(`/api/images/history/${encodeURIComponent(recordId)}/images/${encodeURIComponent(imageId)}`, {
       method: 'DELETE',
@@ -252,4 +266,6 @@ export const useImageStudioStore = create<ImageStudioState>()((set, get) => ({
 
     await get().loadHistory()
   },
+
+  setPendingEditUrl: (url) => set({ pendingEditUrl: url }),
 }))

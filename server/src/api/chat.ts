@@ -55,6 +55,7 @@ router.get("/sessions/:id", async (req, res) => {
         ? JSON.parse(m.generation_info)
         : undefined,
       timeline: m.timeline ? JSON.parse(m.timeline) : undefined,
+      metadata: m.metadata ? JSON.parse(m.metadata) : undefined,
     })),
   });
 });
@@ -139,8 +140,8 @@ router.post("/sessions/:id/branch", async (req, res) => {
     for (const msg of messagesToClone) {
       const newMsgId = uuidv4();
       await db.run(
-        `INSERT INTO messages (id, session_id, role, content, thinking, tool_calls, tool_results, attachments, generation_info, timeline, timestamp)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO messages (id, session_id, role, content, thinking, tool_calls, tool_results, attachments, generation_info, timeline, metadata, timestamp)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         newMsgId,
         newSessionId,
         msg.role,
@@ -151,6 +152,7 @@ router.post("/sessions/:id/branch", async (req, res) => {
         msg.attachments || null,
         msg.generation_info || null,
         msg.timeline || null,
+        msg.metadata || null,
         msg.timestamp
       );
     }
@@ -211,14 +213,15 @@ router.post("/sessions/:id/messages", async (req, res) => {
     attachments,
     generationInfo,
     timeline,
+    metadata,
   } = req.body;
   const id = msgId || uuidv4();
   const timestamp = Date.now();
 
   try {
     await db.run(
-      `INSERT INTO messages (id, session_id, role, content, thinking, tool_calls, tool_results, attachments, generation_info, timeline, timestamp)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages (id, session_id, role, content, thinking, tool_calls, tool_results, attachments, generation_info, timeline, metadata, timestamp)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id,
       req.params.id,
       role,
@@ -229,6 +232,7 @@ router.post("/sessions/:id/messages", async (req, res) => {
       attachments ? JSON.stringify(attachments) : null,
       generationInfo ? JSON.stringify(generationInfo) : null,
       timeline ? JSON.stringify(timeline) : null,
+      metadata ? JSON.stringify(metadata) : null,
       timestamp,
     );
     await db.run(
@@ -246,6 +250,7 @@ router.post("/sessions/:id/messages", async (req, res) => {
       attachments,
       generationInfo,
       timeline,
+      metadata,
       timestamp,
     });
   } catch (error: any) {
@@ -264,6 +269,7 @@ router.patch("/sessions/:sessionId/messages/:messageId", async (req, res) => {
     generationInfo,
     content,
     timeline,
+    metadata,
   } = req.body;
   const updates: string[] = [];
   const values: any[] = [];
@@ -295,6 +301,10 @@ router.patch("/sessions/:sessionId/messages/:messageId", async (req, res) => {
   if (timeline !== undefined) {
     updates.push("timeline = ?");
     values.push(JSON.stringify(timeline));
+  }
+  if (metadata !== undefined) {
+    updates.push("metadata = ?");
+    values.push(JSON.stringify(metadata));
   }
   if (updates.length === 0) {
     return res.json({ success: true });
