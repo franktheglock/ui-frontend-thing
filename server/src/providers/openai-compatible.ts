@@ -3,6 +3,7 @@ import path from 'path'
 import { BaseProvider, CompletionOptions, CompletionChunk } from './base'
 import { ChatMessage } from '../types'
 import { uploadToCatbox } from '../image/service'
+import { extractPythonToolCalls, hasPythonToolCalls } from '../tools/python-tool-calls'
 
 const catboxCache = new Map<string, string>()
 
@@ -38,25 +39,27 @@ export class OpenAICompatibleProvider extends BaseProvider {
   }
 
   async *chatCompletion(options: CompletionOptions): AsyncGenerator<CompletionChunk> {
+    const body: Record<string, any> = {
+      model: options.model,
+      messages: await this.formatMessages(options.messages),
+      temperature: options.temperature,
+      max_tokens: options.maxTokens || undefined,
+      top_p: options.topP,
+      tools: options.tools?.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        },
+      })),
+      stream: true,
+    }
+
     const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
       headers: this.getRequestHeaders(),
-      body: JSON.stringify({
-        model: options.model,
-        messages: await this.formatMessages(options.messages),
-        temperature: options.temperature,
-        max_tokens: options.maxTokens || undefined,
-        top_p: options.topP,
-        tools: options.tools?.map(t => ({
-          type: 'function',
-          function: {
-            name: t.name,
-            description: t.description,
-            parameters: t.parameters,
-          },
-        })),
-        stream: true,
-      }),
+      body: JSON.stringify(body),
     })
 
     if (!response.ok) {
@@ -70,6 +73,9 @@ export class OpenAICompatibleProvider extends BaseProvider {
 
     // Track additional gen info from last chunk (timings, etc.)
     let lastGenInfo: Record<string, any> = {}
+
+    // Buffer for Python-style tool call detection in streaming
+    let contentBuffer = ''
 
     for await (const chunk of this.streamResponse(response)) {
       if (chunk.generationInfo) {
@@ -99,7 +105,70 @@ export class OpenAICompatibleProvider extends BaseProvider {
         }
         chunk.toolCalls = accumulatedToolCalls.filter(Boolean)
       }
-      yield chunk
+
+      // Intercept content to detect Python-style tool calls
+      if (chunk.content) {
+        contentBuffer += chunk.content
+
+        // Preserve non-content metadata from the original chunk
+        const { content: _, toolCalls: __, ...meta } = chunk
+
+        // Check if we have a complete tool call marker
+        const { cleanedContent, toolCalls: extractedCalls } = extractPythonToolCalls(contentBuffer)
+
+        if (extractedCalls.length > 0) {
+          // Found complete tool call(s) — emit cleaned remainder + toolCalls
+          if (cleanedContent) {
+            yield { content: cleanedContent, ...meta }
+          }
+          const newCalls = extractedCalls.map(tc => ({
+            id: tc.id,
+            name: tc.name,
+            arguments: tc.arguments,
+          }))
+          accumulatedToolCalls = [...accumulatedToolCalls, ...newCalls]
+          yield { toolCalls: newCalls, ...meta }
+          contentBuffer = ''
+          continue
+        }
+
+        // Partial marker: we have a start but no end yet
+        // Emit everything before the start marker, keep the marker in the buffer
+        const markerStartIdx = contentBuffer.lastIndexOf('<|tool_call_start|>')
+        if (markerStartIdx >= 0) {
+          const safeContent = contentBuffer.slice(0, markerStartIdx)
+          if (safeContent) {
+            yield { content: safeContent, ...meta }
+          }
+          contentBuffer = contentBuffer.slice(markerStartIdx)
+          continue
+        }
+
+        // Normal content — emit as-is
+        yield { content: contentBuffer, ...meta }
+        contentBuffer = ''
+      } else {
+        yield chunk
+      }
+    }
+
+    // Flush any remaining buffer content (non-tool-call trailing text)
+    if (contentBuffer) {
+      const { cleanedContent, toolCalls: remainingCalls } = extractPythonToolCalls(contentBuffer)
+      if (remainingCalls.length > 0) {
+        if (cleanedContent) {
+          yield { content: cleanedContent }
+        }
+        const newCalls = remainingCalls.map(tc => ({
+          id: tc.id,
+          name: tc.name,
+          arguments: tc.arguments,
+        }))
+        accumulatedToolCalls = [...accumulatedToolCalls, ...newCalls]
+        yield { toolCalls: newCalls }
+      } else {
+        yield { content: contentBuffer }
+      }
     }
 
     yield {

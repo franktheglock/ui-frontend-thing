@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { BaseProvider, CompletionOptions, CompletionChunk } from './base'
+import { extractPythonToolCalls } from '../tools/python-tool-calls'
 
 async function resolveLocalImageToBase64(url: string): Promise<string> {
   if (url.startsWith('http') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
@@ -87,6 +88,7 @@ export class OllamaProvider extends BaseProvider {
     let evalCount = 0
     let promptEvalDuration = 0
     let evalDuration = 0
+    let contentBuffer = '' // For Python-style tool call detection
 
     while (true) {
       const { done, value } = await reader.read()
@@ -109,13 +111,52 @@ export class OllamaProvider extends BaseProvider {
           if (data.eval_duration) evalDuration = data.eval_duration
 
           if (data.message?.content) {
-            yield { content: data.message.content }
+            contentBuffer += data.message.content
+
+            // Check for complete Python-style tool calls
+            const { cleanedContent, toolCalls: extractedCalls } = extractPythonToolCalls(contentBuffer)
+            if (extractedCalls.length > 0) {
+              if (cleanedContent) {
+                yield { content: cleanedContent }
+              }
+              for (const tc of extractedCalls) {
+                yield { toolCalls: [{ id: tc.id, name: tc.name, arguments: tc.arguments }] }
+              }
+              contentBuffer = ''
+              continue
+            }
+
+            // Partial tool call marker — hold content until we have the complete marker
+            const markerIdx = contentBuffer.lastIndexOf('<|tool_call_start|>')
+            if (markerIdx >= 0) {
+              const safeContent = contentBuffer.slice(0, markerIdx)
+              if (safeContent) yield { content: safeContent }
+              contentBuffer = contentBuffer.slice(markerIdx)
+              continue
+            }
+
+            // Normal content
+            yield { content: contentBuffer }
+            contentBuffer = ''
           }
 
           if (data.message?.tool_calls) {
             yield { toolCalls: data.message.tool_calls }
           }
         } catch {}
+      }
+    }
+
+    // Flush remaining buffer
+    if (contentBuffer) {
+      const { cleanedContent, toolCalls: remainingCalls } = extractPythonToolCalls(contentBuffer)
+      if (remainingCalls.length > 0) {
+        if (cleanedContent) yield { content: cleanedContent }
+        for (const tc of remainingCalls) {
+          yield { toolCalls: [{ id: tc.id, name: tc.name, arguments: tc.arguments }] }
+        }
+      } else {
+        yield { content: contentBuffer }
       }
     }
 

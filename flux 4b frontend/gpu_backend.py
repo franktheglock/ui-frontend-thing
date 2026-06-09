@@ -99,7 +99,7 @@ def configure_pipeline_device(pipe, torch) -> None:
     backend = get_backend_config().backend
     if backend == "cuda":
         pipe.enable_model_cpu_offload()
-        pipe.text_encoder.to("cuda")
+        # pipe.text_encoder.to("cuda")  # Keep offloaded to CPU to save ~7.5GB VRAM
         return
 
     pipe.to(get_runtime_device(torch))

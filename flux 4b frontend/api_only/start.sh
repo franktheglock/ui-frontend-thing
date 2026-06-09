@@ -13,6 +13,7 @@ MODEL_VARIANT="${MODEL_VARIANT:-gguf-q4-1}"
 FAST_MODE="${FAST_MODE:-1}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PARENT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "---------------------------------------------------------"
 echo " FLUX.2-klein-4B Image API"
@@ -21,14 +22,14 @@ echo "[INFO] Model variant: $MODEL_VARIANT"
 echo "[INFO] Fast mode: $FAST_MODE"
 
 # Cache directories — kept inside this folder (no drive-letter dependency)
-CACHE_DIR="$SCRIPT_DIR/cache"
+CACHE_DIR="$PARENT_DIR/cache"
 export HF_HOME="$CACHE_DIR/huggingface"
 export TORCH_HOME="$CACHE_DIR/torch"
 export PIP_CACHE_DIR="$CACHE_DIR/pip"
 export TMPDIR="$CACHE_DIR/tmp"
 export TMP="$CACHE_DIR/tmp"
 export TEMP="$CACHE_DIR/tmp"
-export OUTPUT_DIR="$SCRIPT_DIR/outputs"
+export OUTPUT_DIR="$PARENT_DIR/outputs"
 
 mkdir -p "$CACHE_DIR/huggingface" "$CACHE_DIR/torch" "$CACHE_DIR/pip" \
          "$CACHE_DIR/tmp" "$OUTPUT_DIR"
@@ -58,16 +59,17 @@ fi
 echo "[INFO] Using Python: $PYTHON_CMD"
 
 # ---------------------------------------------------------------------------
-# Create virtual environment if it doesn't exist
+# Use parent venv if it exists, otherwise create one in the parent dir
 # ---------------------------------------------------------------------------
-if [ ! -f "$SCRIPT_DIR/venv/bin/activate" ]; then
-  echo "[INFO] Creating Python virtual environment..."
-  "$PYTHON_CMD" -m venv "$SCRIPT_DIR/venv"
+VENV_DIR="$PARENT_DIR/venv"
+if [ ! -f "$VENV_DIR/bin/activate" ]; then
+  echo "[INFO] Creating Python virtual environment in parent directory..."
+  "$PYTHON_CMD" -m venv "$VENV_DIR"
 fi
 
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/venv/bin/activate"
-VENV_PYTHON="$SCRIPT_DIR/venv/bin/python"
+source "$VENV_DIR/bin/activate"
+VENV_PYTHON="$VENV_DIR/bin/python"
 
 echo "[INFO] Python version: $("$VENV_PYTHON" --version)"
 

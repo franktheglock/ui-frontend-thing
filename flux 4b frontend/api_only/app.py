@@ -197,6 +197,18 @@ def load_model_variant(model_variant: str | None = None):
         if model_status["loaded"] and loaded_variant == normalized_variant and pipe is not None:
             return pipe
 
+        # Unload previous pipeline before loading a new one to prevent OOM
+        if pipe is not None:
+            print("Unloading previous model pipeline from VRAM...")
+            pipe = None
+            gc.collect()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+
         model_status["loaded"] = False
         model_status["status"] = "loading"
         model_status["selected_variant"] = normalized_variant
@@ -429,6 +441,33 @@ def load_model_endpoint(model_variant: str = Form(DEFAULT_MODEL_VARIANT)):
         thread.start()
         return {"status": "loading", "message": f"Loading variant: {model_variant}"}
     return {"status": "already_loaded", "variant": loaded_variant}
+
+
+@app.post("/api/unload-model")
+def unload_model_endpoint():
+    global pipe, loaded_variant, model_status
+    with model_lock:
+        if pipe is not None:
+            print("Unloading model from VRAM by user request...")
+            pipe = None
+            loaded_variant = None
+            gc.collect()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+            model_status["loaded"] = False
+            model_status["status"] = "idle"
+            model_status["message"] = "Model unloaded. VRAM freed."
+            model_status["selected_variant"] = None
+            model_status["variant_label"] = None
+            model_status["variant_size"] = None
+            model_status["progress"] = {"step": 0, "total": 0}
+            print("Model unloaded successfully.")
+            return {"status": "unloaded", "message": "Model unloaded and VRAM freed."}
+        return {"status": "no_model", "message": "No model is currently loaded."}
 
 
 @app.post("/api/cancel")

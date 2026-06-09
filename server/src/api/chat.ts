@@ -506,9 +506,16 @@ router.post("/completions", async (req, res) => {
       : "";
     const mermaidInstructions = `\n\n## Rich Flowcharts & Diagrams (Mermaid)\nYou can render flowcharts, sequence diagrams, state diagrams, class diagrams, pie charts, and gantt charts using Mermaid syntax.\nTo display a diagram to the user, write it as a code block of type "mermaid" or wrap it in a markdown artifact. The frontend will automatically detect it and render an interactive preview.\nExample:\n\`\`\`mermaid\ngraph TD\n    A[Start] --> B(Process)\n    B --> C{Decision}\n    C -->|Yes| D[Result 1]\n    C -->|No| E[Result 2]\n\`\`\`\nUse Mermaid blocks whenever visualizing processes, system architectures, workflows, state transitions, or relationships.`;
 
+    // LFM models output Pythonic tool calls by default. Adding this
+    // instruction switches them to JSON format which plays nicely with
+    // llama-server grammar-based function calling parser.
+    const jsonToolCallsHint = allTools.length > 0
+      ? `\n\nOutput function calls as JSON.`
+      : '';
+
     const enhancedSystemPrompt = systemPrompt
-      ? `${dateStr}\n${systemPrompt}${memoryInstructions}${mermaidInstructions}`
-      : `${dateStr}${memoryInstructions}${mermaidInstructions}`;
+      ? `${dateStr}\n${systemPrompt}${memoryInstructions}${mermaidInstructions}${jsonToolCallsHint}`
+      : `${dateStr}${memoryInstructions}${mermaidInstructions}${jsonToolCallsHint}`;
 
     // Process attachments: Read text files and append to message content.
     // Also expose image attachment URLs as plain text so tool-calling models can pass
