@@ -77,6 +77,7 @@ export interface ChatSession {
   messages: Message[]
   model: string
   provider: string
+  projectId?: string
   systemPrompt?: string
   createdAt: number
   updatedAt: number
@@ -103,7 +104,7 @@ interface ChatState {
   streaming: Record<string, SessionStreamState>
 
   loadSessions: () => Promise<void>
-  createSession: (model?: string, provider?: string) => Promise<string>
+  createSession: (model?: string, provider?: string, projectId?: string | null) => Promise<string>
   setCurrentSession: (id: string) => Promise<void>
   deleteSession: (id: string) => Promise<void>
   renameSession: (id: string, title: string) => Promise<void>
@@ -161,6 +162,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         title: s.title,
         model: s.model,
         provider: s.provider,
+        projectId: s.projectId || s.project_id || undefined,
         systemPrompt: s.systemPrompt || s.system_prompt,
         createdAt: s.createdAt || s.created_at,
         updatedAt: s.updatedAt || s.updated_at,
@@ -174,7 +176,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     }
   },
 
-  createSession: async (model?: string, provider?: string) => {
+  createSession: async (model?: string, provider?: string, projectId?: string | null) => {
     const id = generateUUID()
     
     let resolvedModel = model
@@ -204,6 +206,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       messages: [],
       model: resolvedModel || '',
       provider: resolvedProvider || '',
+      projectId: projectId || undefined,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
@@ -224,6 +227,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
           title: session.title,
           model: session.model,
           provider: session.provider,
+          projectId: session.projectId,
         }),
       })
     } catch (err) {
@@ -257,7 +261,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             responseId: m.responseId,
           }))
           set(state => ({
-            sessions: state.sessions.map(s => 
+            sessions: state.sessions.map(s =>
               s.id === id ? { ...s, messages } : s
             )
           }))

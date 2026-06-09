@@ -12,6 +12,7 @@ import skillRoutes from "./api/skills";
 import mcpRoutes from "./api/mcp";
 import imageRoutes from "./api/images";
 import memoryRoutes from './api/memory'
+import projectRoutes from './api/projects'
 import localImageServerRoutes, {
   maybeAutoStartLocalImageServer,
 } from "./api/local-image-server";
@@ -57,6 +58,7 @@ async function main() {
   app.use("/api/mcp", mcpRoutes);
   app.use("/api/images", imageRoutes);
   app.use("/api/memory", memoryRoutes);
+  app.use("/api/projects", projectRoutes);
   app.use("/api/local-image-server", localImageServerRoutes);
   app.use("/api/hermes", hermesRoutes);
 

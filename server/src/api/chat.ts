@@ -11,14 +11,16 @@ import { safeJsonParse } from "../utils/json";
 
 const router = Router();
 
-router.get("/sessions", async (_req, res) => {
+router.get("/sessions", async (req, res) => {
   const db = await getDb();
-  const sessions = await db.all(
-    "SELECT * FROM sessions ORDER BY updated_at DESC",
-  );
+  const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
+  const sessions = projectId
+    ? await db.all("SELECT * FROM sessions WHERE project_id = ? ORDER BY updated_at DESC", projectId)
+    : await db.all("SELECT * FROM sessions ORDER BY updated_at DESC");
   res.json(
     sessions.map((s) => ({
       ...s,
+      projectId: s.project_id,
       createdAt: s.created_at,
       updatedAt: s.updated_at,
       systemPrompt: s.system_prompt,
@@ -42,6 +44,7 @@ router.get("/sessions/:id", async (req, res) => {
   );
   res.json({
     ...session,
+    projectId: session.project_id,
     createdAt: session.created_at,
     updatedAt: session.updated_at,
     systemPrompt: session.system_prompt,
@@ -63,13 +66,14 @@ router.get("/sessions/:id", async (req, res) => {
 router.post("/sessions", async (req, res) => {
   const db = await getDb();
   const id = req.body.id || uuidv4();
-  const { title, model, provider, systemPrompt } = req.body;
+  const { title, model, provider, systemPrompt, projectId } = req.body;
   const now = Date.now();
 
   try {
     await db.run(
-      "INSERT INTO sessions (id, title, model, provider, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO sessions (id, project_id, title, model, provider, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       id,
+      projectId || null,
       title || "New Chat",
       model,
       provider,
@@ -79,6 +83,7 @@ router.post("/sessions", async (req, res) => {
     );
     res.json({
       id,
+      projectId: projectId || undefined,
       title: title || "New Chat",
       model,
       provider,
@@ -127,8 +132,9 @@ router.post("/sessions/:id/branch", async (req, res) => {
     const newTitle = `Branch: ${session.title}`;
 
     await db.run(
-      "INSERT INTO sessions (id, title, model, provider, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO sessions (id, project_id, title, model, provider, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       newSessionId,
+      session.project_id || null,
       newTitle,
       session.model,
       session.provider,
@@ -166,7 +172,7 @@ router.post("/sessions/:id/branch", async (req, res) => {
 
 router.patch("/sessions/:id", async (req, res) => {
   const db = await getDb();
-  const { title, lastResponseId, model, provider } = req.body;
+  const { title, lastResponseId, model, provider, projectId } = req.body;
   const updates: string[] = [];
   const values: any[] = [];
 
@@ -185,6 +191,10 @@ router.patch("/sessions/:id", async (req, res) => {
   if (provider !== undefined) {
     updates.push("provider = ?");
     values.push(provider);
+  }
+  if (projectId !== undefined) {
+    updates.push("project_id = ?");
+    values.push(projectId || null);
   }
   if (updates.length === 0) {
     return res.json({ success: true });
@@ -483,6 +493,21 @@ router.post("/completions", async (req, res) => {
       ? JSON.parse(settingsRow.value || "{}")
       : {};
     const memoryEnabled = appSettings.memoryEnabled !== false;
+    const projectContext = sessionId
+      ? await db.get(
+          `SELECT p.id, p.name, p.description, p.memory
+           FROM sessions s
+           JOIN projects p ON p.id = s.project_id
+           WHERE s.id = ?`,
+          sessionId,
+        )
+      : null;
+    const projectFiles = projectContext
+      ? await db.all(
+          "SELECT file_url, name, mime_type FROM project_files WHERE project_id = ? ORDER BY created_at DESC",
+          projectContext.id,
+        )
+      : [];
 
     const disabledToolNames = Array.isArray(disabledTools)
       ? (disabledTools as string[])
@@ -501,6 +526,9 @@ router.post("/completions", async (req, res) => {
     }
 
     const dateStr = `Today is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.`;
+    const projectInstructions = projectContext
+      ? `\n\n## Project Context\nCurrent project: ${projectContext.name}${projectContext.description ? `\nDescription: ${projectContext.description}` : ""}${memoryEnabled ? `\n\nProject memory is shared across all chats in this project. Use it when relevant, and prefer saving project-specific durable facts to project memory instead of global user memory.\n\n${projectContext.memory ? `### Project Memory\n${projectContext.memory}` : "### Project Memory\n_No project memories saved yet._"}` : ""}${projectFiles.length > 0 ? `\n\n### Project Files\nThese files are linked to the current project. Ask the user to attach a file when you need its full contents unless its content already appears in the conversation.\n${projectFiles.map((file: any) => `- ${file.name}: ${file.file_url}${file.mime_type ? ` (${file.mime_type})` : ""}`).join("\n")}` : ""}`
+      : "";
     const memoryInstructions = memoryEnabled
       ? `\n\n## Memory\nThe following markdown file contains durable memories about the user. Use it to personalize responses when relevant.\n\n${readMemory()}\n\nMemory policy:\n- Use the memory tool sparingly for stable, useful user facts and preferences: name, likes/dislikes, hobbies, long-term projects, communication preferences, and current life context.\n- Do not save ordinary one-off requests, temporary facts, secrets, passwords, API keys, financial/medical/legal details, or sensitive personal data unless the user explicitly asks you to remember it.\n- If the user says to remember, update, correct, or forget something, use the memory tool.\n- If a new stable preference or profile fact is clearly useful for future conversations, you may save one concise memory.\n- Prefer concise memories; avoid duplicating existing memories.`
       : "";
@@ -514,8 +542,8 @@ router.post("/completions", async (req, res) => {
       : '';
 
     const enhancedSystemPrompt = systemPrompt
-      ? `${dateStr}\n${systemPrompt}${memoryInstructions}${mermaidInstructions}${jsonToolCallsHint}`
-      : `${dateStr}${memoryInstructions}${mermaidInstructions}${jsonToolCallsHint}`;
+      ? `${dateStr}\n${systemPrompt}${memoryInstructions}${projectInstructions}${mermaidInstructions}${jsonToolCallsHint}`
+      : `${dateStr}${memoryInstructions}${projectInstructions}${mermaidInstructions}${jsonToolCallsHint}`;
 
     // Process attachments: Read text files and append to message content.
     // Also expose image attachment URLs as plain text so tool-calling models can pass
@@ -687,10 +715,10 @@ router.post("/completions", async (req, res) => {
 });
 
 router.post("/tool-call", async (req, res) => {
-  const { name, arguments: args } = req.body;
+  const { name, arguments: args, sessionId } = req.body;
   try {
     const parsedArgs = typeof args === "string" ? safeJsonParse(args) : args;
-    const result = await executeTool(name, parsedArgs);
+    const result = await executeTool(name, { ...(parsedArgs || {}), sessionId });
     res.json({ result });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

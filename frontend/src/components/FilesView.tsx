@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Download, FileIcon, ImageIcon, FileText, X, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Loader2, PencilLine, MessageSquare } from 'lucide-react'
+import { Download, FileIcon, ImageIcon, FileText, X, ChevronLeft, ChevronRight, Upload, FileSpreadsheet, Loader2, PencilLine, MessageSquare, Trash2 } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import { useUIStore, getPathnameForView } from '../stores/uiStore'
 import { useImageStudioStore } from '../stores/imageStudioStore'
@@ -36,6 +36,7 @@ export function FilesView() {
   const [previewFile, setPreviewFile] = useState<UploadedFile | null>(null)
   const [previewIndex, setPreviewIndex] = useState(-1)
   const [attaching, setAttaching] = useState(false)
+  const [deletingFile, setDeletingFile] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null)
   const [fileSessions, setFileSessions] = useState<FileSessionsInfo>({ loading: false, sessions: [], error: null })
   const { currentSessionId } = useChatStore()
@@ -141,6 +142,35 @@ export function FilesView() {
   const handleEditInStudio = (f: UploadedFile) => {
     useImageStudioStore.getState().setPendingEditUrl(f.path)
     navigateTo('image-studio')
+  }
+
+  const handleDeleteFile = async (f: UploadedFile) => {
+    const usedCount = selectedFile?.name === f.name ? fileSessions.sessions.length : 0
+    const detail = usedCount > 0
+      ? `\n\nThis file is referenced by ${usedCount} chat${usedCount !== 1 ? 's' : ''}. Those attachment references will be removed.`
+      : ''
+    if (!window.confirm(`Delete "${f.name}" from uploads?${detail}`)) return
+
+    setDeletingFile(f.name)
+    try {
+      const res = await fetch(`/api/upload/${encodeURIComponent(f.name)}`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to delete file')
+
+      setFiles(prev => prev.filter(file => file.name !== f.name))
+      if (selectedFile?.name === f.name) {
+        setSelectedFile(null)
+        setFileSessions({ loading: false, sessions: [], error: null })
+      }
+      if (previewFile?.name === f.name) {
+        handleClosePreview()
+      }
+    } catch (err: any) {
+      console.error('Failed to delete file:', err)
+      alert(err.message || 'Failed to delete file.')
+    } finally {
+      setDeletingFile(null)
+    }
   }
 
   const handleFileClick = async (f: UploadedFile) => {
@@ -292,6 +322,14 @@ export function FilesView() {
                         >
                           <Download className="w-3.5 h-3.5" />
                         </a>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteFile(f) }}
+                          disabled={deletingFile === f.name}
+                          className="p-1.5 bg-destructive text-destructive-foreground rounded-sm hover:bg-destructive/90 transition-colors disabled:opacity-60"
+                          title="Delete"
+                        >
+                          {deletingFile === f.name ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -355,6 +393,14 @@ export function FilesView() {
                         >
                           <Download className="w-3.5 h-3.5" />
                         </a>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteFile(f) }}
+                          disabled={deletingFile === f.name}
+                          className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-sm transition-colors disabled:opacity-60"
+                          title="Delete"
+                        >
+                          {deletingFile === f.name ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -472,6 +518,14 @@ export function FilesView() {
               className="ml-1 px-2 py-0.5 bg-accent text-accent-foreground rounded-sm text-[10px] hover:bg-accent/90 transition-colors"
             >
               {attaching ? '...' : 'Attach'}
+            </button>
+            <button
+              onClick={() => handleDeleteFile(previewFile)}
+              disabled={deletingFile === previewFile.name}
+              className="ml-1 px-2 py-0.5 bg-destructive text-destructive-foreground rounded-sm text-[10px] hover:bg-destructive/90 transition-colors flex items-center gap-1"
+            >
+              {deletingFile === previewFile.name ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+              Delete
             </button>
           </div>
         </div>

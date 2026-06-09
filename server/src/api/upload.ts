@@ -31,6 +31,14 @@ function computeHash(buffer: Buffer): string {
   return crypto.createHash('sha256').update(buffer).digest('hex')
 }
 
+function attachmentMatchesFilename(attachment: any, filename: string) {
+  if (!attachment) return false
+  const url = typeof attachment.url === 'string' ? attachment.url : ''
+  const name = typeof attachment.name === 'string' ? attachment.name : ''
+  const urlBasename = url ? path.basename(url) : ''
+  return urlBasename === filename || url.includes(filename) || name === filename
+}
+
 // Rebuild hash map from disk on startup (catches manual additions)
 function rebuildHashMap(): Record<string, string> {
   const map: Record<string, string> = {}
@@ -267,6 +275,75 @@ router.get('/list', (_req, res) => {
 
   files.sort((a, b) => new Date(b.mtime).getTime() - new Date(a.mtime).getTime())
   res.json({ files })
+})
+
+// DELETE /api/upload/:filename — delete an uploaded file and clean stored references
+router.delete('/:filename', async (req, res) => {
+  const decodedFilename = path.basename(decodeURIComponent(req.params.filename))
+  if (!decodedFilename || decodedFilename === '.hash-map.json') {
+    return res.status(400).json({ error: 'Invalid filename' })
+  }
+
+  const filePath = path.join(uploadsDir, decodedFilename)
+  if (!filePath.startsWith(`${uploadsDir}${path.sep}`)) {
+    return res.status(400).json({ error: 'Invalid filename' })
+  }
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' })
+  }
+
+  try {
+    fs.unlinkSync(filePath)
+
+    for (const [hash, filename] of Object.entries(hashMap)) {
+      if (filename === decodedFilename) {
+        delete hashMap[hash]
+      }
+    }
+    saveHashMap(hashMap)
+
+    const db = await getDb()
+    const rows = await db.all(
+      `SELECT id, attachments FROM messages WHERE attachments IS NOT NULL AND attachments != ''`
+    )
+    let updatedMessages = 0
+
+    for (const row of rows) {
+      let attachments: any[]
+      try {
+        attachments = JSON.parse(row.attachments)
+      } catch {
+        continue
+      }
+      if (!Array.isArray(attachments)) continue
+
+      const nextAttachments = attachments.filter((a: any) => !attachmentMatchesFilename(a, decodedFilename))
+      if (nextAttachments.length !== attachments.length) {
+        await db.run(
+          'UPDATE messages SET attachments = ? WHERE id = ?',
+          nextAttachments.length > 0 ? JSON.stringify(nextAttachments) : null,
+          row.id,
+        )
+        updatedMessages += 1
+      }
+    }
+
+    await db.run(
+      `DELETE FROM project_files
+       WHERE file_url LIKE ? OR name = ?`,
+      `%/${decodedFilename}`,
+      decodedFilename,
+    )
+
+    res.json({
+      success: true,
+      filename: decodedFilename,
+      updatedMessages,
+    })
+  } catch (err: any) {
+    console.error('[upload] Failed to delete upload:', err)
+    res.status(500).json({ error: err.message || 'Failed to delete upload' })
+  }
 })
 
 // GET /api/upload/:filename/sessions — find all chats that reference this file

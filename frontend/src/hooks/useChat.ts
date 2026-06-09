@@ -647,6 +647,7 @@ export function useChat() {
                       body: JSON.stringify({
                         name: tc.name,
                         arguments: parsedArgs,
+                        sessionId,
                       }),
                     });
                   } finally {

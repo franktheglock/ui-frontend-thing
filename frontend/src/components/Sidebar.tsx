@@ -8,19 +8,26 @@ import {
   Trash2,
   Settings,
   ChevronLeft,
+  ChevronDown,
   Search,
   Wrench,
   Zap,
   Pencil,
   Sun,
   File,
+  Folder,
+  FolderOpen,
   Bot,
   Loader2,
+  PlusCircle,
+  X,
 } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useProjectStore } from '../stores/projectStore'
 import { getPathnameForView, getViewFromPathname, useUIStore } from '../stores/uiStore'
 import { cn, formatDate } from '../lib/utils'
+import { UploadsPickerModal } from './UploadsPickerModal'
 
 interface HermesSession {
   id: string
@@ -32,6 +39,19 @@ interface HermesSession {
 
 export function Sidebar() {
   const { sessions, currentSessionId, createSession, setCurrentSession, deleteSession, renameSession } = useChatStore()
+  const {
+    projects,
+    currentProjectId,
+    projectFiles,
+    loadProjects,
+    createProject,
+    updateProject,
+    deleteProject,
+    setCurrentProject,
+    loadProjectFiles,
+    addFilesToProject,
+    removeFileFromProject,
+  } = useProjectStore()
   const { sidebarOpen, toggleSidebar, theme, setTheme, selectedProvider } = useSettingsStore()
   const { setCurrentView, setSettingsOpen, setToolSelectorOpen, setSearchHighlight } = useUIStore()
   const navigate = useNavigate()
@@ -40,8 +60,28 @@ export function Sidebar() {
   const [searchQuery, setSearchQuery] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const [projectFilesOpen, setProjectFilesOpen] = useState(true)
+  const [projectMemoryOpen, setProjectMemoryOpen] = useState(false)
+  const [projectMemoryDraft, setProjectMemoryDraft] = useState('')
+  const [projectFilePickerOpen, setProjectFilePickerOpen] = useState(false)
 
   const isHermesMode = selectedProvider === 'hermes-agent'
+  const currentProject = projects.find(p => p.id === currentProjectId) || null
+  const currentProjectFiles = currentProjectId ? projectFiles[currentProjectId] || [] : []
+
+  useEffect(() => {
+    loadProjects()
+  }, [loadProjects])
+
+  useEffect(() => {
+    if (!currentProjectId) return
+    loadProjectFiles(currentProjectId)
+  }, [currentProjectId, loadProjectFiles])
+
+  useEffect(() => {
+    setProjectMemoryDraft(currentProject?.memory || '')
+  }, [currentProject?.id, currentProject?.memory])
 
   // Hermes sessions state
   const [hermesSessions, setHermesSessions] = useState<HermesSession[]>([])
@@ -78,6 +118,7 @@ export function Sidebar() {
 
   const filteredSessions = sessions.filter(s => {
     if (s.provider === 'hermes-agent') return false
+    if (currentProjectId ? s.projectId !== currentProjectId : s.projectId) return false
     if (!searchQuery) return true
     const q = searchQuery.toLowerCase()
     if (s.title.toLowerCase().includes(q)) return true
@@ -114,6 +155,27 @@ export function Sidebar() {
       await renameSession(editingId, editTitle.trim())
     }
     setEditingId(null)
+  }
+
+  const handleCreateProject = async () => {
+    const name = window.prompt('Project name')
+    if (!name?.trim()) return
+    await createProject(name.trim())
+    setProjectMenuOpen(false)
+  }
+
+  const handleRenameProject = async () => {
+    if (!currentProject) return
+    const name = window.prompt('Project name', currentProject.name)
+    if (!name?.trim()) return
+    await updateProject(currentProject.id, { name: name.trim() })
+  }
+
+  const handleDeleteProject = async () => {
+    if (!currentProject) return
+    if (!window.confirm(`Delete "${currentProject.name}"? Chats will stay in All Chats.`)) return
+    await deleteProject(currentProject.id)
+    await useChatStore.getState().loadSessions()
   }
 
   const loadHermesSession = async (sessionId: string) => {
@@ -198,13 +260,153 @@ export function Sidebar() {
                 const { selectedModel, selectedProvider } = useSettingsStore.getState()
                 setCurrentView('chat')
                 navigate(getPathnameForView('chat'))
-                await createSession(selectedModel, selectedProvider)
+                await createSession(selectedModel, selectedProvider, currentProjectId)
               }}
               className="w-full flex items-center gap-2 px-3 py-2 bg-accent text-accent-foreground rounded-none hover:bg-accent/90 transition-colors font-medium text-sm"
             >
               <Plus className="w-4 h-4" />
               {isHermesMode ? 'New Agent Chat' : 'New Chat'}
             </button>
+
+            {!isHermesMode && (
+              <div className="relative">
+                <button
+                  onClick={() => setProjectMenuOpen(prev => !prev)}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-3 py-2 border text-sm transition-colors',
+                    currentProject
+                      ? 'border-accent/50 bg-accent/10 text-foreground'
+                      : 'border-border bg-secondary/30 text-muted-foreground hover:text-foreground hover:border-accent/30'
+                  )}
+                >
+                  {currentProject ? <FolderOpen className="w-4 h-4" /> : <Folder className="w-4 h-4" />}
+                  <span className="flex-1 truncate text-left">{currentProject?.name || 'All Chats'}</span>
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+
+                {projectMenuOpen && (
+                  <div className="absolute left-0 right-0 top-full z-20 mt-1 border border-border bg-card shadow-xl">
+                    <button
+                      onClick={() => {
+                        setCurrentProject(null)
+                        setProjectMenuOpen(false)
+                      }}
+                      className={cn(
+                        'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-secondary/60',
+                        !currentProjectId ? 'text-foreground bg-secondary/40' : 'text-muted-foreground'
+                      )}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      All Chats
+                    </button>
+                    {projects.map(project => (
+                      <button
+                        key={project.id}
+                        onClick={() => {
+                          setCurrentProject(project.id)
+                          setProjectMenuOpen(false)
+                        }}
+                        className={cn(
+                          'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-secondary/60',
+                          currentProjectId === project.id ? 'text-foreground bg-secondary/40' : 'text-muted-foreground'
+                        )}
+                      >
+                        <Folder className="w-3.5 h-3.5" />
+                        <span className="flex-1 truncate">{project.name}</span>
+                        <span className="text-[10px] text-muted-foreground">{project.chatCount}</span>
+                      </button>
+                    ))}
+                    <button
+                      onClick={handleCreateProject}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-accent hover:bg-secondary/60 border-t border-border"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      New Project
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!isHermesMode && currentProject && (
+              <div className="border border-border bg-secondary/20">
+                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border/70">
+                  <button
+                    onClick={handleRenameProject}
+                    className="flex-1 min-w-0 text-left text-xs font-medium truncate hover:text-accent"
+                  >
+                    {currentProject.name}
+                  </button>
+                  <button onClick={handleRenameProject} className="p-1 text-muted-foreground hover:text-foreground">
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                  <button onClick={handleDeleteProject} className="p-1 text-muted-foreground hover:text-destructive">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setProjectFilesOpen(prev => !prev)}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <File className="w-3 h-3" />
+                  <span className="flex-1 text-left">Project Files ({currentProjectFiles.length})</span>
+                  <ChevronDown className={cn('w-3 h-3 transition-transform', projectFilesOpen && 'rotate-180')} />
+                </button>
+                {projectFilesOpen && (
+                  <div className="px-2 pb-2 space-y-1">
+                    {currentProjectFiles.slice(0, 5).map(file => (
+                      <div key={file.url} className="group flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <a href={file.url} target="_blank" rel="noreferrer" className="flex-1 truncate hover:text-foreground">
+                          {file.name}
+                        </a>
+                        <button
+                          onClick={() => removeFileFromProject(currentProject.id, file.url)}
+                          className="opacity-0 group-hover:opacity-100 hover:text-destructive"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                    {currentProjectFiles.length === 0 && (
+                      <p className="text-[11px] text-muted-foreground/70">No linked files</p>
+                    )}
+                    <button
+                      onClick={() => setProjectFilePickerOpen(true)}
+                      className="text-[11px] text-accent hover:text-accent/80"
+                    >
+                      + Add uploaded files
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setProjectMemoryOpen(prev => !prev)}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground border-t border-border/70"
+                >
+                  <Bot className="w-3 h-3" />
+                  <span className="flex-1 text-left">Project Memory</span>
+                  <ChevronDown className={cn('w-3 h-3 transition-transform', projectMemoryOpen && 'rotate-180')} />
+                </button>
+                {projectMemoryOpen && (
+                  <div className="px-2 pb-2 space-y-2">
+                    <textarea
+                      value={projectMemoryDraft}
+                      onChange={(e) => setProjectMemoryDraft(e.target.value)}
+                      rows={5}
+                      className="w-full resize-none bg-background border border-border px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                      placeholder="# Project Memory"
+                    />
+                    <button
+                      onClick={() => updateProject(currentProject.id, { memory: projectMemoryDraft })}
+                      className="w-full px-2 py-1 text-xs bg-accent text-accent-foreground hover:bg-accent/90"
+                    >
+                      Save Memory
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <button
               onClick={() => {
@@ -437,6 +639,18 @@ export function Sidebar() {
             </button>
           </div>
           </motion.aside>
+          <UploadsPickerModal
+            open={projectFilePickerOpen}
+            onClose={() => setProjectFilePickerOpen(false)}
+            onSelect={async (files) => {
+              if (!currentProjectId) return
+              await addFilesToProject(currentProjectId, files.map(file => ({
+                url: file.path,
+                name: file.name,
+                mimeType: file.mimeType,
+              })))
+            }}
+          />
         </>
       )}
     </AnimatePresence>

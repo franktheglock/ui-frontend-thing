@@ -3,6 +3,7 @@ import { Send, Plus, X, Loader2, Mic, Globe2, File as FileIcon, Bot } from 'luci
 import { Attachment, useChatStore } from '../stores/chatStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
+import { useProjectStore } from '../stores/projectStore'
 import { useChat } from '../hooks/useChat'
 import { cn } from '../lib/utils'
 import { getProviderIcon } from '../lib/providerIcons'
@@ -219,6 +220,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     setReasoningEffort,
   } = useSettingsStore()
   const { setModelSelectorOpen } = useUIStore()
+  const { currentProjectId, addFilesToProject } = useProjectStore()
   const { sendMessage } = useChat()
 
   const reasoningEffortIndex = useMemo(
@@ -591,7 +593,15 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
           body: formData,
         })
         const data = await response.json()
-        attachments = [...attachments, ...(Array.isArray(data.attachments) ? data.attachments : [])]
+        const uploadedAttachments = Array.isArray(data.attachments) ? data.attachments as Attachment[] : []
+        attachments = [...attachments, ...uploadedAttachments]
+        if (currentProjectId && uploadedAttachments.length > 0) {
+          await addFilesToProject(currentProjectId, uploadedAttachments.map(attachment => ({
+            url: attachment.url,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+          })))
+        }
       } catch (error) {
         console.error('Upload error:', error)
       } finally {
@@ -607,7 +617,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     }
 
     await sendMessage(content, attachments)
-  }, [input, pendingAttachments, isCurrentGenerating, sendMessage])
+  }, [input, pendingAttachments, isCurrentGenerating, sendMessage, currentProjectId, addFilesToProject])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!slashMenuOpen) {
@@ -755,6 +765,13 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                 },
               })),
             ])
+            if (currentProjectId && chosenFiles.length > 0) {
+              addFilesToProject(currentProjectId, chosenFiles.map(file => ({
+                url: file.path,
+                name: file.name,
+                mimeType: file.mimeType,
+              }))).catch(err => console.error('Failed to link project files:', err))
+            }
           }}
         />
 

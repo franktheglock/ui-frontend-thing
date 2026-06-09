@@ -24,13 +24,34 @@ export async function getDb(): Promise<Database<sqlite3.Database, sqlite3.Statem
   await dbInstance.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
+      project_id TEXT,
       title TEXT NOT NULL,
       model TEXT NOT NULL,
       provider TEXT NOT NULL,
       system_prompt TEXT,
       last_response_id TEXT,
       created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      memory TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS project_files (
+      project_id TEXT NOT NULL,
+      file_url TEXT NOT NULL,
+      name TEXT NOT NULL,
+      mime_type TEXT,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (project_id, file_url),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS messages (
@@ -118,6 +139,10 @@ export async function getDb(): Promise<Database<sqlite3.Database, sqlite3.Statem
 
   // Migrate: add last_response_id to existing sessions tables
   const sessionCols = await dbInstance.all(`PRAGMA table_info(sessions)`)
+  if (!sessionCols.some((c: any) => c.name === 'project_id')) {
+    await dbInstance.run('ALTER TABLE sessions ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL')
+  }
+  await dbInstance.run('CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id, updated_at DESC)')
   if (!sessionCols.some((c: any) => c.name === 'last_response_id')) {
     await dbInstance.run('ALTER TABLE sessions ADD COLUMN last_response_id TEXT')
   }
