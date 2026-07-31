@@ -130,11 +130,16 @@ export function isLoopbackAddress(address: string | undefined): boolean {
  * Client IP for access control.
  *
  * - Direct (non-loopback) peer: use socket address; ignore client XFF entirely.
- * - Loopback peer: our https-proxy.mjs overwrites X-Real-IP / XFF with its TCP
- *   peer, so a loopback claim is truthful (same-machine browser via the proxy).
- * - TRUST_PROXY=true with a non-loopback peer: external proxy we do not fully
- *   vouch for — take rightmost hop / X-Real-IP, but never grant loopback
- *   privilege from those headers (downgrade to a non-local sentinel).
+ * - Loopback peer / TRUST_PROXY: prefer **X-Forwarded-For rightmost hop**
+ *   (appended by a correct proxy even if it didn't strip the client chain).
+ *   Fall back to X-Real-IP only when XFF is absent.
+ * - Loopback peer + loopback claim: allowed (our https-proxy.mjs overwrites
+ *   both headers with its TCP peer; same-machine browser is truly local).
+ * - TRUST_PROXY with non-loopback peer: never grant loopback privilege from
+ *   headers (downgrade to a non-local sentinel).
+ *
+ * Any reverse proxy in front of this app MUST overwrite both X-Forwarded-For
+ * and X-Real-IP with the real client address (never pass client values through).
  */
 export function getClientIp(req: {
   socket: { remoteAddress?: string }
@@ -150,36 +155,38 @@ export function getClientIp(req: {
     return remote
   }
 
-  // A loopback peer is our own https-proxy.mjs, which overwrites these headers
-  // with its TCP peer — so a "127.0.0.1" claim from it is truthful.
-  // An external TRUST_PROXY hop is not vouched for, so a loopback claim from
-  // one is downgraded to untrusted-remote.
+  // Loopback peer = typically our https-proxy.mjs (overwrites headers).
+  // External TRUST_PROXY is not vouched for — refuse loopback claims there.
   const allowLoopbackClaim = peerIsLoopback
 
+  // Prefer X-Forwarded-For rightmost hop: even a misconfigured proxy that
+  // *appends* rather than overwrites still puts the real TCP peer last.
+  // X-Real-IP has no chain, so a pass-through client value is fatal if checked first.
+  const xff = req.headers['x-forwarded-for']
+  const xffRaw = Array.isArray(xff) ? xff[0] : xff
+  if (typeof xffRaw === 'string' && xffRaw.trim()) {
+    const hops = xffRaw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    const ip = hops[hops.length - 1] || ''
+    if (ip) {
+      if (isLoopbackAddress(ip) && !allowLoopbackClaim) {
+        return '203.0.113.1' // TEST-NET-3 sentinel: non-local, non-private
+      }
+      return ip
+    }
+  }
+
+  // Fallback only when XFF is absent
   const xri = req.headers['x-real-ip']
   const real = Array.isArray(xri) ? xri[0] : xri
   if (typeof real === 'string' && real.trim()) {
     const ip = real.trim()
     if (isLoopbackAddress(ip) && !allowLoopbackClaim) {
-      return '203.0.113.1' // TEST-NET-3 sentinel: non-local, non-private
+      return '203.0.113.1'
     }
     return ip
-  }
-
-  const xff = req.headers['x-forwarded-for']
-  const raw = Array.isArray(xff) ? xff[0] : xff
-  if (typeof raw === 'string' && raw.trim()) {
-    const hops = raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-    const ip = hops[hops.length - 1] || '' // rightmost = set by the immediate proxy
-    if (ip) {
-      if (isLoopbackAddress(ip) && !allowLoopbackClaim) {
-        return '203.0.113.1'
-      }
-      return ip
-    }
   }
 
   // Loopback peer, no forwarding headers = genuine local client

@@ -148,9 +148,11 @@ ENABLE_PYTHON_TOOL=true
 ENABLE_TERMINAL_TOOL=true
 ```
 
-The optional `https-proxy.mjs` (browser-extension HTTPS) defaults to **127.0.0.1** and **overwrites** `X-Forwarded-For` / `X-Real-IP` with the TCP peer (never trusts client-supplied XFF). Same-machine use via the proxy stays local; do not set `PROXY_HOST=0.0.0.0` without a token on the app.
+The optional `https-proxy.mjs` (browser-extension HTTPS) defaults to **127.0.0.1** and **overwrites** `X-Forwarded-For` / `X-Real-IP` with the TCP peer (never trusts client-supplied values). Same-machine use via the proxy stays local; do not set `PROXY_HOST=0.0.0.0` without a token on the app.
 
-**Docker Compose** requires `API_AUTH_TOKEN` in `.env` (fails at startup if missing) because `HOST=0.0.0.0` makes docker-bridge peers non-loopback.
+**Any reverse proxy** (nginx, Caddy, Traefik, etc.) in front of this app must overwrite both headers with the real client address — never pass client-supplied `X-Forwarded-For` / `X-Real-IP` through. The app prefers the **rightmost** `X-Forwarded-For` hop (safer if a proxy only appends); `X-Real-IP` is fallback only.
+
+**Docker Compose** requires `API_AUTH_TOKEN` in `.env` (fails at startup if missing) because `HOST=0.0.0.0` makes docker-bridge peers non-loopback. That token is required from **everyone including localhost** — intentional; do not “fix” by exempting loopback from `API_AUTH_TOKEN`.
 
 You can still force a token for everyone with `API_AUTH_TOKEN` in `.env` (overrides Settings). Prefer dedicated, rotatable API keys.
 

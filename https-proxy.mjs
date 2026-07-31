@@ -6,8 +6,8 @@
  * - Default listen address is 127.0.0.1 (not LAN/internet-facing).
  * - ALWAYS overwrites X-Forwarded-For / X-Real-IP with req.socket.remoteAddress.
  *   Never reads or appends the client's X-Forwarded-For (that value is untrusted).
- * - The app trusts only the rightmost XFF hop / X-Real-IP when the TCP peer is
- *   loopback — so a spoofed left hop cannot become "local".
+ * - The app prefers rightmost X-Forwarded-For when the TCP peer is loopback,
+ *   falling back to X-Real-IP only if XFF is absent.
  * - Does NOT strip Content-Security-Policy or force framing headers.
  * - Cert is localhost-only.
  *
