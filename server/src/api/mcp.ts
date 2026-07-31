@@ -23,6 +23,17 @@ router.post('/servers', async (req, res) => {
     return res.status(400).json({ error: 'command is required for stdio transport' })
     }
 
+    // stdio transport spawns a local process — refuse if explicitly disabled
+    if (transport === 'stdio' && process.env.ENABLE_MCP_STDIO === 'false') {
+      return res.status(403).json({
+        error: 'MCP stdio transport is disabled (ENABLE_MCP_STDIO=false). Use sse or streamable-http, or re-enable stdio.',
+      })
+    }
+
+    if (typeof command === 'string' && (command.includes('\0') || command.length > 4096)) {
+      return res.status(400).json({ error: 'Invalid command' })
+    }
+
     if ((transport === 'sse' || transport === 'streamable-http') && !url) {
     return res.status(400).json({ error: 'url is required for sse/streamable-http transport' })
     }
@@ -37,7 +48,8 @@ router.post('/servers', async (req, res) => {
     headers: headers || undefined,
     env: env || undefined,
     enabled: true,
-    autoConnect: autoConnect !== false,
+    // Prefer explicit opt-in for auto-connect of newly added servers
+    autoConnect: autoConnect === true,
     }
 
     await mcpManager.addServer(config)

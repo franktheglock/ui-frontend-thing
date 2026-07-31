@@ -3,6 +3,7 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import path from 'path'
 import fs from 'fs'
+import { resolveWithin } from '../utils/path-safety'
 
 const execAsync = promisify(exec)
 
@@ -35,7 +36,7 @@ function ensureVenv(): Promise<void> {
 export class PythonTool extends BaseTool {
   id = 'python'
   name = 'python'
-  description = 'Execute Python code and return the output. You can install packages via the packages parameter. \n\nIMPORTANT: To save images or files, save them to the "./output" directory. \n\nCRITICAL: To display these images to the user, you MUST use the exact URL format: `/uploads/python-out/<filename>`. \nExample: `![Graph](/uploads/python-out/myplot.png)`. \n\nDO NOT use relative paths like "./output/" or just the filename. For matplotlib, use the "Agg" backend.'
+  description = 'Execute Python code and return the output. You can install packages via the packages parameter. \n\nIMPORTANT: To save images or files, save them to the "./output" directory. \n\nCRITICAL: To display these images to the user, you MUST use the exact URL format: `/uploads/python-out/<filename>`. \nExample: `![Graph](/uploads/python-out/myplot.png)`. \n\nDO NOT use relative paths like "./output/" or just the filename. For matplotlib, use the "Agg" backend.\n\nNOTE: Runs on the host (venv isolation only — not a security sandbox).'
   parameters = {
     type: 'object',
     properties: {
@@ -68,7 +69,6 @@ export class PythonTool extends BaseTool {
 
     if (!code && !filePath) return 'Error: Provide either `code` or `file_path`'
 
-
     try {
       await ensureVenv()
       
@@ -78,7 +78,12 @@ export class PythonTool extends BaseTool {
       }
 
       if (packages.length > 0) {
-        await execAsync(`"${VENV_PYTHON}" -m pip install ${packages.map(p => `"${p}"`).join(' ')}`, {
+        // Basic package name sanitization — block shell metacharacters
+        const safePackages = packages.filter((p) => /^[A-Za-z0-9_.\-\[\],=<>!~]+$/.test(p))
+        if (safePackages.length !== packages.length) {
+          return 'Error: Invalid package name(s). Only alphanumeric characters and common version operators are allowed.'
+        }
+        await execAsync(`"${VENV_PYTHON}" -m pip install ${safePackages.map(p => `"${p}"`).join(' ')}`, {
           timeout: 300000,
           maxBuffer: 10 * 1024 * 1024,
         })
@@ -92,8 +97,10 @@ export class PythonTool extends BaseTool {
       fs.mkdirSync(outputDir, { recursive: true })
       
       if (filePath) {
-        // Copy from workspace to temp dir
-        const sourcePath = path.join(WORKSPACE_DIR, filePath)
+        const sourcePath = resolveWithin(WORKSPACE_DIR, filePath)
+        if (!sourcePath) {
+          return `Error: Invalid file path (must stay within workspace): ${filePath}`
+        }
         if (!fs.existsSync(sourcePath)) {
           return `Error: File not found: ${filePath}. Use code_edit to create it first.`
         }
@@ -112,10 +119,13 @@ export class PythonTool extends BaseTool {
       const servedFiles: string[] = []
 
       for (const file of generatedFiles) {
-        const src = path.join(outputDir, file)
-        const dest = path.join(publicOutputDir, file)
+        // Basename only — refuse nested/escaped names from the output dir listing
+        const safeName = path.basename(file)
+        if (safeName !== file || safeName === '.' || safeName === '..') continue
+        const src = path.join(outputDir, safeName)
+        const dest = path.join(publicOutputDir, safeName)
         fs.copyFileSync(src, dest)
-        servedFiles.push(file)
+        servedFiles.push(safeName)
       }
 
       let outputMessage = stdout.trim() || (stderr ? '' : '(no output)')
@@ -169,13 +179,20 @@ export class CodeEditTool extends BaseTool {
         fs.mkdirSync(WORKSPACE_DIR, { recursive: true })
       }
 
-      const filePath = path.join(WORKSPACE_DIR, fileName)
+      const filePath = resolveWithin(WORKSPACE_DIR, fileName)
+      if (!filePath) {
+        return `Error: Invalid file_name (must stay within workspace): ${fileName}`
+      }
+
+      // Ensure parent dirs stay inside workspace
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
       await fs.promises.writeFile(filePath, code)
 
       const size = Buffer.byteLength(code, 'utf8')
       const lines = code.split('\n').length
+      const relativeName = path.relative(WORKSPACE_DIR, filePath)
       
-      return `File saved: ${fileName} (${lines} lines, ${size} bytes)\nPath: ${filePath}\n\nYou can now run it with: python(file_path="${fileName}")`
+      return `File saved: ${relativeName} (${lines} lines, ${size} bytes)\nPath: ${filePath}\n\nYou can now run it with: python(file_path="${relativeName}")`
     } catch (error: any) {
       return `Error: ${error.message}`
     }

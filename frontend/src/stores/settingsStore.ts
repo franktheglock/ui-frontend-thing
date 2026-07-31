@@ -17,7 +17,10 @@ export interface ProviderConfig {
     | "hermes-agent"
     | "custom";
   baseUrl?: string;
+  /** Never populated from the server (keys are redacted). Only set locally when the user types a new key. */
   apiKey?: string;
+  /** True when the server has a stored key (actual value is never sent to the client). */
+  hasApiKey?: boolean;
   models: string[];
   enabled: boolean;
   config?: Record<string, any>;
@@ -291,16 +294,32 @@ export const useSettingsStore = create<SettingsState>()(
       updateProvider: (id, updates) => {
         const p = get().providers.find((p) => p.id === id);
         if (p) {
+          // Never re-send empty apiKey (server redacts keys; empty must mean "keep existing")
+          const payload: Record<string, unknown> = { ...p, ...updates };
+          delete payload.hasApiKey;
+          if (
+            payload.apiKey === undefined ||
+            payload.apiKey === null ||
+            payload.apiKey === ""
+          ) {
+            delete payload.apiKey;
+          }
           fetch(`/api/providers/${encodeURIComponent(id)}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...p, ...updates }),
+            body: JSON.stringify(payload),
           }).catch(console.error);
         }
         set((state) => ({
-          providers: state.providers.map((p) =>
-            p.id === id ? { ...p, ...updates } : p,
-          ),
+          providers: state.providers.map((existing) => {
+            if (existing.id !== id) return existing;
+            const next = { ...existing, ...updates };
+            // If user typed a new key, mark hasApiKey locally
+            if (typeof updates.apiKey === "string" && updates.apiKey.trim()) {
+              next.hasApiKey = true;
+            }
+            return next;
+          }),
         }));
       },
       removeProvider: (id) => {

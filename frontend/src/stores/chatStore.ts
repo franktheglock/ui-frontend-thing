@@ -103,8 +103,11 @@ interface ChatState {
   // Per-session streaming state (keyed by sessionId)
   streaming: Record<string, SessionStreamState>
 
+  // Track sessions not yet persisted to the server (id -> true)
+  pendingSessions: Record<string, true>
+
   loadSessions: () => Promise<void>
-  createSession: (model?: string, provider?: string, projectId?: string | null) => Promise<string>
+  createSession: (model?: string, provider?: string, projectId?: string | null, options?: { persist?: boolean }) => Promise<string>
   setCurrentSession: (id: string) => Promise<void>
   deleteSession: (id: string) => Promise<void>
   renameSession: (id: string, title: string) => Promise<void>
@@ -150,6 +153,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   sessions: [],
   currentSessionId: null,
   streaming: {},
+  pendingSessions: {},
 
   loadSessions: async () => {
     try {
@@ -176,7 +180,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     }
   },
 
-  createSession: async (model?: string, provider?: string, projectId?: string | null) => {
+  createSession: async (model?: string, provider?: string, projectId?: string | null, options?: { persist?: boolean }) => {
     const id = generateUUID()
     
     let resolvedModel = model
@@ -216,6 +220,15 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       sessions: [session, ...state.sessions],
       currentSessionId: id,
     }))
+
+    const shouldPersist = options?.persist !== false
+    if (!shouldPersist) {
+      // Track as pending so addMessage will persist it on first message
+      set(state => ({
+        pendingSessions: { ...state.pendingSessions, [id]: true },
+      }))
+      return id
+    }
 
     // Sync to server
     try {
@@ -314,6 +327,33 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   addMessage: async (sessionId, message) => {
+    const state = get()
+
+    // If this session hasn't been persisted to the server yet, persist it now
+    if (state.pendingSessions[sessionId]) {
+      const session = state.sessions.find(s => s.id === sessionId)
+      if (session) {
+        try {
+          await fetch('/api/chat/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: session.id,
+              title: session.title,
+              model: session.model,
+              provider: session.provider,
+              projectId: session.projectId,
+            }),
+          })
+        } catch (err) {
+          console.error('[chatStore] Failed to persist session:', err)
+        }
+        // Remove from pending tracking
+        const { [sessionId]: _, ...rest } = get().pendingSessions
+        set({ pendingSessions: rest })
+      }
+    }
+
     set(state => ({
       sessions: state.sessions.map(s =>
         s.id === sessionId

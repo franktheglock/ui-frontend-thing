@@ -1,28 +1,37 @@
-# AI Chat UI Browser Extension
+# AI Chat New Tab
 
-This Chromium extension lets the frontend import an open browser tab as chat context.
+Replaces the browser's new tab page with the AI Chat UI.  
+Press **Tab** to toggle between chat mode and web search.
 
-## Install
+## Features
 
-1. Open `chrome://extensions` or `edge://extensions`.
-2. Enable Developer mode.
-3. Click **Load unpacked**.
-4. Select this `browser-extension` folder.
+- **AI Chat** — full AI Chat UI as your new tab page (sidebar, messages, model selector, everything)
+- **Tab to Search** — press Tab and the input switches to search mode; Enter opens a web search (DuckDuckGo, Google, or Brave)
+- **Inline Shortcuts** — favicon bookmarks shown on the landing page when you open a new tab (stored in localStorage, configurable)
 
-## Development URLs
+## Installation
 
-The extension activates automatically on local Vite app tabs running on port `5183`, including:
-
-- `http://localhost:5183/*`
-- `http://127.0.0.1:5183/*`
-- local network IPs like `http://192.168.x.x:5183/*`
-- other private LAN ranges like `10.x.x.x` and `172.16.x.x` through `172.31.x.x`
-
-After changing the extension files, click **Reload** on the extension in `chrome://extensions` or `edge://extensions`, then refresh the app tab.
+1. Download the zip from `http://192.168.1.129:9199/` and unzip it
+2. **First time only:** visit `https://192.168.1.129:5184` and click **Advanced → Proceed** to accept the self-signed certificate
+3. Open `chrome://extensions`, enable **Developer mode**
+4. Click **Load unpacked** and select the unzipped folder
+5. Open a new tab → it's now your AI Chat UI
 
 ## How it works
 
-- The frontend posts a request message.
-- The content script forwards it to the extension service worker.
-- The service worker lists tabs or captures the selected tab's text.
-- The frontend sends that snapshot to `/api/upload/browser-tab` and reuses the normal attachment flow.
+The extension uses `chrome_url_overrides.newtab` to load the AI Chat UI in a fullscreen iframe. The AI Chat frontend itself has been modified to support Tab-mode switching and inline shortcuts. No extension chrome, no separate tab bar — the page IS the AI Chat UI.
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `manifest.json` | Extension manifest (v3) |
+| `newtab.html` | Thin new tab page — just an iframe |
+| `options.html` / `options.js` | Settings page (AI Chat URL) |
+| `icons/` | Extension icons |
+
+## Development
+
+After modifying the AI Chat frontend, rebuild with `npm run build` in the frontend/ directory. The Express server serves the updated files on port 5183, and the HTTPS proxy on 5184 passes them through.
+
+Reload the extension at `chrome://extensions` to pick up manifest changes.

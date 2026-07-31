@@ -85,8 +85,19 @@ export class ReadSkillTool extends BaseTool {
 
   async execute(args: Record<string, unknown>): Promise<string> {
     const skillPath = args.path as string
-    const normalizedPath = skillPath.replace(/\//g, '_')
+    if (!skillPath || typeof skillPath !== 'string') {
+      return 'Error: path is required'
+    }
+    // Reject traversal; only allow simple names under skills dir
+    if (skillPath.includes('..') || skillPath.includes('\0') || path.isAbsolute(skillPath)) {
+      return `Error: Invalid skill path: ${skillPath}`
+    }
+    const normalizedPath = skillPath.replace(/\//g, '_').replace(/[^a-zA-Z0-9._-]/g, '_')
     const mdPath = path.join(SKILLS_DIR, normalizedPath, 'SKILL.md')
+    const skillsRoot = path.resolve(SKILLS_DIR)
+    if (!path.resolve(mdPath).startsWith(skillsRoot + path.sep)) {
+      return `Error: Invalid skill path: ${skillPath}`
+    }
 
     if (!await fs.pathExists(mdPath)) {
       // Try finding by name

@@ -8,18 +8,38 @@ import { ImageGenerationTool } from "./image-generation";
 import { MemoryTool } from "./memory";
 import { mcpManager } from "../mcp/mcp-manager";
 
+/**
+ * Host-execution tools (python / terminal) are powerful and not sandboxed.
+ * Disable with ENABLE_TERMINAL_TOOL=false / ENABLE_PYTHON_TOOL=false.
+ * Default is enabled for local laptop use; pair with HOST=127.0.0.1.
+ */
+function envEnabled(name: string, defaultValue = true): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return defaultValue;
+  return !["0", "false", "no", "off"].includes(raw.toLowerCase());
+}
+
 const tools: BaseTool[] = [
   new WebSearchTool(),
   new ReadURLTool(),
-  new PythonTool(),
-  new CodeEditTool(),
-  new TerminalTool(),
   new ImageGenerationTool(),
   new MemoryTool(),
   new ListSkillsTool(),
   new ReadSkillTool(),
   new MakeSkillTool(),
 ];
+
+if (envEnabled("ENABLE_PYTHON_TOOL", true)) {
+  tools.push(new PythonTool(), new CodeEditTool());
+} else {
+  console.log("[tools] Python/code_edit tools disabled (ENABLE_PYTHON_TOOL=false)");
+}
+
+if (envEnabled("ENABLE_TERMINAL_TOOL", true)) {
+  tools.push(new TerminalTool());
+} else {
+  console.log("[tools] Terminal tool disabled (ENABLE_TERMINAL_TOOL=false)");
+}
 
 export function registerTool(tool: BaseTool) {
   tools.push(tool);

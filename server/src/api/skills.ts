@@ -4,6 +4,7 @@ import fs from 'fs-extra'
 import path from 'path'
 import tar from 'tar'
 import { getDb } from '../db'
+import { isInsideDir, resolveWithin } from '../utils/path-safety'
 
 const router = Router()
 function findSkillsDir() {
@@ -17,7 +18,7 @@ function findSkillsDir() {
   return paths[0]
 }
 
-const SKILLS_DIR = process.env.SKILLS_DIR || findSkillsDir()
+const SKILLS_DIR = path.resolve(process.env.SKILLS_DIR || findSkillsDir())
 const SKILLS_API = 'https://skills.sh/api/v1'
 const SKILLS_API_KEY = process.env.SKILLS_API_KEY
 
@@ -27,6 +28,40 @@ function skillsHeaders(): Record<string, string> {
     headers['Authorization'] = `Bearer ${SKILLS_API_KEY}`
   }
   return headers
+}
+
+/**
+ * Write skill files from a remote response, rejecting path traversal (zip/tar-slip style).
+ */
+async function writeSkillFiles(
+  installDir: string,
+  files: { path: string; contents: string }[],
+): Promise<number> {
+  await fs.ensureDir(installDir)
+  let written = 0
+  for (const file of files) {
+    if (!file.path || typeof file.path !== 'string') {
+      throw new Error('Skill file entry missing path')
+    }
+    // Normalize and reject absolute / traversal paths
+    const normalized = file.path.replace(/\\/g, '/')
+    if (
+      path.isAbsolute(file.path) ||
+      normalized.startsWith('/') ||
+      normalized.includes('..') ||
+      normalized.includes('\0')
+    ) {
+      throw new Error(`Refusing skill file with unsafe path: ${file.path}`)
+    }
+    const filePath = resolveWithin(installDir, normalized)
+    if (!filePath) {
+      throw new Error(`Refusing skill file outside install dir: ${file.path}`)
+    }
+    await fs.ensureDir(path.dirname(filePath))
+    await fs.writeFile(filePath, file.contents ?? '')
+    written++
+  }
+  return written
 }
 
 interface SkillsShSkill {
@@ -160,14 +195,13 @@ router.post('/install', async (req, res) => {
       const nameMatch = skillMd?.contents.match(/^---[\s\S]*?name:\s*(.+?)\s*$/m)
       const skillName = nameMatch ? nameMatch[1].trim() : detail.slug
 
-      const installDir = path.join(SKILLS_DIR, detail.source.replace(/\//g, '_'), detail.slug)
-      await fs.ensureDir(installDir)
-
-      for (const file of detail.files) {
-        const filePath = path.join(installDir, file.path)
-        await fs.ensureDir(path.dirname(filePath))
-        await fs.writeFile(filePath, file.contents)
+      const safeSource = detail.source.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64)
+      const safeSlug = detail.slug.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64)
+      const installDir = path.join(SKILLS_DIR, safeSource, safeSlug)
+      if (!isInsideDir(SKILLS_DIR, installDir)) {
+        throw new Error('Invalid skill install path')
       }
+      const fileCount = await writeSkillFiles(installDir, detail.files)
 
       const db = await getDb()
       const now = Date.now()
@@ -178,7 +212,7 @@ router.post('/install', async (req, res) => {
         id, skillName, '1.0.0', skillId, JSON.stringify({ name: skillName, version: '1.0.0', description: '', source: skillId }), now, now
       )
 
-      return res.json({ id, name: skillName, source: skillId, files: detail.files.length })
+      return res.json({ id, name: skillName, source: skillId, files: fileCount })
     }
 
     // -------------------------------------------------------------------------
@@ -205,14 +239,13 @@ router.post('/install', async (req, res) => {
         const nameMatch = skillMd?.contents.match(/^---[\s\S]*?name:\s*(.+?)\s*$/m)
         skillName = nameMatch ? nameMatch[1].trim() : detail.slug
 
-        const installDir = path.join(SKILLS_DIR, detail.source.replace(/\//g, '_'), detail.slug)
-        await fs.ensureDir(installDir)
-
-        for (const file of detail.files) {
-          const filePath = path.join(installDir, file.path)
-          await fs.ensureDir(path.dirname(filePath))
-          await fs.writeFile(filePath, file.contents)
+        const safeSource = detail.source.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64)
+        const safeSlug = detail.slug.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64)
+        const installDir = path.join(SKILLS_DIR, safeSource, safeSlug)
+        if (!isInsideDir(SKILLS_DIR, installDir)) {
+          throw new Error('Invalid skill install path')
         }
+        const fileCount = await writeSkillFiles(installDir, detail.files)
 
         const db = await getDb()
         const now = Date.now()
@@ -223,7 +256,7 @@ router.post('/install', async (req, res) => {
           id, skillName, '1.0.0', parsedSkillId, JSON.stringify({ name: skillName, version: '1.0.0', description: '', source: parsedSkillId }), now, now
         )
 
-        return res.json({ id, name: skillName, source: parsedSkillId, files: detail.files.length })
+        return res.json({ id, name: skillName, source: parsedSkillId, files: fileCount })
       }
 
       // -----------------------------------------------------------------------
@@ -255,10 +288,37 @@ router.post('/install', async (req, res) => {
       await fs.ensureDir(path.dirname(tempPath))
       await fs.writeFile(tempPath, Buffer.from(buffer))
 
-      // Extract
+      // Extract with tar-slip protection
       const extractDir = path.join(SKILLS_DIR, uuidv4())
+      if (!isInsideDir(SKILLS_DIR, extractDir)) {
+        throw new Error('Invalid extract path')
+      }
       await fs.ensureDir(extractDir)
-      await tar.extract({ file: tempPath, cwd: extractDir, strip: 1 })
+      const extractRoot = path.resolve(extractDir)
+      await tar.extract({
+        file: tempPath,
+        cwd: extractDir,
+        strip: 1,
+        filter: (entryPath: string) => {
+          // Reject absolute paths and path traversal (classic tar-slip)
+          if (!entryPath || entryPath.includes('\0')) return false
+          if (path.isAbsolute(entryPath) || entryPath.startsWith('/') || entryPath.startsWith('~')) {
+            console.warn('[skills] Rejected tar entry (absolute):', entryPath)
+            return false
+          }
+          const normalized = entryPath.replace(/\\/g, '/')
+          if (normalized.split('/').some((seg) => seg === '..')) {
+            console.warn('[skills] Rejected tar entry (traversal):', entryPath)
+            return false
+          }
+          const resolved = path.resolve(extractRoot, entryPath)
+          if (!isInsideDir(extractRoot, resolved)) {
+            console.warn('[skills] Rejected tar entry (escape):', entryPath)
+            return false
+          }
+          return true
+        },
+      })
       await fs.remove(tempPath)
 
       // Find SKILL.md and extract name
@@ -354,16 +414,24 @@ router.delete('/:id', async (req, res) => {
 
 router.get('/content/:name', async (req, res) => {
   const skillName = req.params.name
-  const normalizedName = skillName.replace(/\//g, '_')
+  if (!skillName || skillName.includes('..') || skillName.includes('\0')) {
+    return res.status(400).json({ error: 'Invalid skill name' })
+  }
+  const normalizedName = skillName.replace(/\//g, '_').replace(/[^a-zA-Z0-9._-]/g, '_')
 
   // Try direct path first
   let mdPath = path.join(SKILLS_DIR, normalizedName, 'SKILL.md')
+  if (!isInsideDir(SKILLS_DIR, mdPath)) {
+    return res.status(400).json({ error: 'Invalid skill name' })
+  }
 
   if (!await fs.pathExists(mdPath)) {
-    // Search for skill by name in subdirectories
+    // Search for skill by name in subdirectories (one level)
     const entries = await fs.readdir(SKILLS_DIR).catch(() => [] as string[])
     for (const entry of entries) {
+      if (entry.includes('..') || entry.includes('\0')) continue
       const candidatePath = path.join(SKILLS_DIR, entry, 'SKILL.md')
+      if (!isInsideDir(SKILLS_DIR, candidatePath)) continue
       if (await fs.pathExists(candidatePath)) {
         const content = await fs.readFile(candidatePath, 'utf-8')
         const nameMatch = content.match(/^---[\s\S]*?name:\s*(.+?)\s*$/m)
@@ -375,7 +443,7 @@ router.get('/content/:name', async (req, res) => {
     }
   }
 
-  if (!await fs.pathExists(mdPath)) {
+  if (!await fs.pathExists(mdPath) || !isInsideDir(SKILLS_DIR, mdPath)) {
     return res.status(404).json({ error: 'Skill not found' })
   }
 

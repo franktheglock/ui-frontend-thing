@@ -17,8 +17,12 @@ import localImageServerRoutes, {
   maybeAutoStartLocalImageServer,
 } from "./api/local-image-server";
 import hermesRoutes from './api/hermes'
+import networkRoutes from './api/network'
 import { getDb } from "./db";
 import { mcpManager } from "./mcp/mcp-manager";
+import { apiAuthMiddleware, buildCorsOptions } from "./middleware/security";
+import { initListenControl } from "./listen-control";
+import { loadNetworkSecurity } from "./network-security";
 
 const envPaths = new Set([
   path.resolve(process.cwd(), ".env"),
@@ -38,9 +42,27 @@ async function main() {
 
   const app = express();
   const PORT = parseInt(process.env.PORT || "3456", 10);
+  // If HOST is set in env (e.g. Docker), lock it. Otherwise start on loopback and
+  // rebind to 0.0.0.0 when LAN access is enabled in Settings.
+  const hostLocked = process.env.HOST !== undefined && process.env.HOST !== "";
+  let HOST = process.env.HOST || "127.0.0.1";
 
-  app.use(cors());
+  // If LAN was already enabled in a previous session and HOST isn't locked, start open
+  try {
+    const net = await loadNetworkSecurity();
+    if (!hostLocked && net.lanAccessEnabled) {
+      HOST = "0.0.0.0";
+    }
+  } catch {
+    // ignore
+  }
+
+  app.use(cors(buildCorsOptions()));
   app.use(express.json({ limit: "50mb" }));
+
+  // Auth / remote-access guard for all /api/* routes (except health / network bootstrap)
+  app.use(apiAuthMiddleware);
+
   app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
   app.use("/workspace", express.static(path.join(process.cwd(), "workspace")));
 
@@ -61,6 +83,7 @@ async function main() {
   app.use("/api/projects", projectRoutes);
   app.use("/api/local-image-server", localImageServerRoutes);
   app.use("/api/hermes", hermesRoutes);
+  app.use("/api/network", networkRoutes);
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", version: "0.1.0" });
@@ -75,8 +98,21 @@ async function main() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", async () => {
-    console.log(`[server] Running on port ${PORT}`);
+  const server = app.listen(PORT, HOST, async () => {
+    console.log(`[server] Running on http://${HOST}:${PORT}`);
+    try {
+      const net = await loadNetworkSecurity();
+      if (net.lanAccessEnabled) {
+        console.log(
+          `[security] LAN access enabled (token ${net.requireToken ? "required" : "not required"})`,
+        );
+      } else {
+        console.log("[security] LAN access disabled (localhost use)");
+      }
+    } catch {
+      // ignore
+    }
+
     // Initialize MCP servers after server is ready
     try {
       await maybeAutoStartLocalImageServer();
@@ -88,6 +124,13 @@ async function main() {
     } catch (err: any) {
       console.error("[mcp] Failed to initialize:", err.message);
     }
+  });
+
+  initListenControl({
+    server,
+    host: HOST,
+    port: PORT,
+    hostLocked,
   });
 }
 

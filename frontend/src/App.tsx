@@ -16,6 +16,7 @@ import { useChatStore } from "./stores/chatStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { getViewFromPathname, useUIStore } from "./stores/uiStore";
 import { cn } from "./lib/utils";
+import { isNewTabMode } from "./lib/utils";
 
 function ThemeSync() {
   const { theme } = useSettingsStore();
@@ -305,10 +306,20 @@ function App() {
     setCurrentView(currentView);
   }, [currentView, setCurrentView]);
 
+  const isNewTab = isNewTabMode;
+
   useEffect(() => {
     loadSessions().then(() => {
-      const { sessions, currentSessionId } = useChatStore.getState();
-      if (sessions.length === 0 && !currentSessionId) {
+      const { sessions, currentSessionId, pendingSessions } = useChatStore.getState();
+      if (isNewTab) {
+        // Check if there's already an empty pending session we can reuse
+        const emptyPending = sessions.find(s => pendingSessions[s.id] && s.messages.length === 0);
+        if (emptyPending) {
+          setCurrentSession(emptyPending.id);
+        } else {
+          createSession(undefined, undefined, undefined, { persist: false });
+        }
+      } else if (sessions.length === 0 && !currentSessionId) {
         createSession().then((id) => setCurrentSession(id));
       } else if (!currentSessionId && sessions.length > 0) {
         setCurrentSession(sessions[0].id);

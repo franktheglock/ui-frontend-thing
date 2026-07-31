@@ -370,56 +370,60 @@ async function requestLocal(provider: ImageProviderConfig, request: Required<Ima
 }
 
 function getFalEditModel(generateModel: string) {
-  // Common fal edit endpoint patterns
-  if (generateModel.endsWith('/edit') || generateModel.endsWith('/image-to-image')) {
-    return generateModel
-  }
-  // Try known mappings
-  const mappings: Record<string, string> = {
-    'fal-ai/flux/dev': 'fal-ai/flux/dev/image-to-image',
-    'fal-ai/flux/schnell': 'fal-ai/flux/dev/image-to-image',
-    'fal-ai/flux-pro': 'fal-ai/flux-pro/image-to-image',
-    'fal-ai/flux-2-pro': 'fal-ai/flux-2-pro/edit',
-    'fal-ai/flux-2': 'fal-ai/flux-2/edit',
-    'fal-ai/nano-banana': 'fal-ai/nano-banana/edit',
-    'fal-ai/nano-banana-2': 'fal-ai/nano-banana-2/edit',
-    'fal-ai/nano-banana-pro': 'fal-ai/nano-banana-pro/edit',
-    'fal-ai/gemini-3-pro-image-preview': 'fal-ai/gemini-3-pro-image-preview/edit',
-    'fal-ai/gemini-25-flash-image': 'fal-ai/gemini-25-flash-image/edit',
-    'fal-ai/gpt-image-1.5': 'fal-ai/gpt-image-1.5/edit',
-    'fal-ai/ideogram/v3': 'fal-ai/ideogram/v3/edit',
-  }
-  if (mappings[generateModel]) return mappings[generateModel]
-  // Generic fallback patterns
-  if (generateModel.includes('/flux/')) return generateModel.replace(/\/?$/, '/image-to-image')
-  return `${generateModel}/edit`
+  // If already an edit model, return as-is
+  if (generateModel.endsWith('/edit') || generateModel.endsWith('/image-to-image')) return generateModel
+  // Strip known generate-only suffixes before appending /edit
+  const stripped = generateModel
+    .replace(/\/text-to-image$/, '')
+    .replace(/\/generate$/, '')
+    .replace(/\/+$/, '')
+  return `${stripped}/edit`
 }
 
 async function requestFal(provider: ImageProviderConfig, request: Required<ImageGenerationRequest>) {
   const endpoint = joinUrl(provider.baseUrl, provider.model)
+  const isGrok = provider.model.includes('grok') || provider.model.includes('xai')
+
+  const body: Record<string, unknown> = {
+    prompt: request.prompt,
+    num_images: request.variations,
+    seed: request.seed >= 0 ? request.seed : undefined,
+  }
+
+  if (isGrok) {
+    if (request.aspectRatio && request.aspectRatio !== 'auto') {
+      body.aspect_ratio = request.aspectRatio
+    }
+    body.resolution = Math.max(request.width, request.height) >= 1536 ? '2k' : '1k'
+    body.output_format = 'jpeg'
+  } else {
+    body.image_size = { width: request.width, height: request.height }
+    body.num_inference_steps = request.steps
+    body.guidance_scale = request.guidanceScale
+  }
+
   const response = await fetchWithTimeout(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Key ${provider.apiKey}`,
     },
-    body: JSON.stringify({
-      prompt: request.prompt,
-      image_size: {
-        width: request.width,
-        height: request.height,
-      },
-      num_images: request.variations,
-      num_inference_steps: request.steps,
-      guidance_scale: request.guidanceScale,
-      seed: request.seed,
-    }),
+    body: JSON.stringify(body),
   })
 
   const payload = await parseResponseJson(response)
   if (!response.ok) {
-    throw new Error(String((payload as any).detail || (payload as any).error || 'fal.ai image generation failed'))
+    const detail = (payload as any).detail
+    const errPayload = (payload as any).error
+    const message = typeof detail === 'string' ? detail
+      : typeof errPayload === 'string' ? errPayload
+      : typeof errPayload?.message === 'string' ? errPayload.message
+      : typeof detail?.message === 'string' ? detail.message
+      : typeof (payload as any).message === 'string' ? (payload as any).message
+      : `fal gen fail: ${JSON.stringify(payload).slice(0, 500)}`
+    throw new Error(message)
   }
+  console.log('[fal-gen] response:', JSON.stringify(payload).slice(0, 1000))
   return payload
 }
 
@@ -458,25 +462,25 @@ async function requestFalImageEdit(provider: ImageProviderConfig, request: Requi
 
   async function resolveImageUrl(url: string): Promise<string> {
     if (!isLocal(url)) return url
-    // Try catbox first for a public URL, fall back to base64 data URL
-    try {
-      return await getPublicImageUrl(url)
-    } catch {
-      return resolveImageUrlToDataUrl(url)
-    }
+    // Use base64 data URL directly — catbox URLs aren't accessible to fal's servers
+    return resolveImageUrlToDataUrl(url)
   }
 
   const body: Record<string, unknown> = {
     prompt: request.prompt,
-    image_url: await resolveImageUrl(request.sourceImageUrl),
+    image_urls: [await resolveImageUrl(request.sourceImageUrl)],
     num_images: request.variations,
-    num_inference_steps: request.steps,
-    guidance_scale: request.guidanceScale,
-    seed: request.seed,
+    resolution: Math.max(request.width, request.height) >= 1536 ? '2k' : '1k',
+    output_format: 'jpeg',
+    seed: request.seed >= 0 ? request.seed : undefined,
+  }
+
+  if (request.aspectRatio && request.aspectRatio !== 'auto') {
+    body.aspect_ratio = request.aspectRatio
   }
 
   if (request.referenceImageUrl) {
-    body.reference_image_url = await resolveImageUrl(request.referenceImageUrl)
+    body.reference_image_urls = [await resolveImageUrl(request.referenceImageUrl)]
   }
   if (request.strength !== undefined) {
     body.strength = request.strength
@@ -493,8 +497,17 @@ async function requestFalImageEdit(provider: ImageProviderConfig, request: Requi
 
   const payload = await parseResponseJson(response)
   if (!response.ok) {
-    throw new Error(String((payload as any).detail || (payload as any).error || 'fal.ai image editing failed'))
+    const detail = (payload as any).detail
+    const errPayload = (payload as any).error
+    const message = typeof detail === 'string' ? detail
+      : typeof errPayload === 'string' ? errPayload
+      : typeof errPayload?.message === 'string' ? errPayload.message
+      : typeof detail?.message === 'string' ? detail.message
+      : typeof (payload as any).message === 'string' ? (payload as any).message
+      : `fal edit fail: ${JSON.stringify(payload).slice(0, 500)}`
+    throw new Error(message)
   }
+  console.log('[fal-edit] response:', JSON.stringify(payload).slice(0, 1000))
   return payload
 }
 

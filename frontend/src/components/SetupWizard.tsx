@@ -412,8 +412,9 @@ export function SetupWizard() {
 
   const startLocalServer = async () => {
     setLocalImageAction("start");
+    setError(null);
     try {
-      await fetch("/api/local-image-server/start", {
+      const response = await fetch("/api/local-image-server/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -421,7 +422,35 @@ export function SetupWizard() {
           port: Number.parseInt(localImagePort, 10) || 8000,
         }),
       });
-      await refreshLocalImageStatus();
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          payload?.error || payload?.message || "Failed to start local server",
+        );
+      }
+
+      let latest: any = null;
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await refreshLocalImageStatus();
+        const statusResponse = await fetch(
+          `/api/local-image-server/status?port=${encodeURIComponent(localImagePort)}`,
+        );
+        latest = await statusResponse.json().catch(() => ({}));
+        setLocalImageStatus(latest);
+        if (latest.serverReachable) break;
+        if (attempt > 0 && !latest.running && latest.errorLogTail) {
+          throw new Error("Local image server exited during startup.");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+
+      if (latest && !latest.serverReachable && latest.running) {
+        setError("Local image server is still starting. Refresh status in a moment.");
+      } else if (latest && !latest.serverReachable) {
+        setError("Local image server did not become reachable.");
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to start local server");
     } finally {
       setLocalImageAction(null);
     }
@@ -933,6 +962,12 @@ export function SetupWizard() {
                             : "Install & start"}
                         </button>
                       </div>
+                      {localImageStatus?.errorLogTail &&
+                        !localImageStatus?.serverReachable && (
+                          <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap break-all border border-destructive/20 bg-destructive/5 p-2 text-[10px] text-muted-foreground">
+                            {localImageStatus.errorLogTail}
+                          </pre>
+                        )}
                       <ToggleRow
                         title="Run local image server with the app"
                         description="Starts start.bat automatically when this app server starts."

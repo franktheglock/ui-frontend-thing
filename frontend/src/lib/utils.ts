@@ -34,6 +34,9 @@ export function formatFileSize(bytes: number): string {
   return `${bytes} B`
 }
 
+/** True when loaded from the browser extension as a new tab (?newtab) */
+export const isNewTabMode = typeof window !== 'undefined' && window.location.search.includes('newtab')
+
 export async function copyTextToClipboard(text: string): Promise<void> {
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
     try {

@@ -21,7 +21,7 @@ A powerful, extensible, and beautiful web frontend for LLMs. Built for power use
 - **Thinking & Reasoning**: Collapsible reasoning blocks for reasoning models.
 - **Flexible Tool Views**: Multiple tool call display modes including **Timeline Mode** (default vertical step-by-step history), Individual Mode (interleaved thoughts and tool calls chronologically), and Combined Mode.
 - **Web Search & Read URL**: Brave Search, DuckDuckGo, SearxNG, and Google PSE integrations with inline citations, plus tools to scrape web page contents.
-- **Python & Terminal Execution**: Execute code blocks and run shell commands in safe sandboxed environments with configurable execution timeouts.
+- **Python & Terminal Execution**: Execute code blocks and run shell commands on the host (venv isolation for Python packages only — **not a security sandbox**), with configurable timeouts. Disable via `ENABLE_PYTHON_TOOL=false` / `ENABLE_TERMINAL_TOOL=false` if you don't need them.
 - **Conversation Branching**: Spin up a new session starting from any specific historical message.
 - **Performance & Optimization**: Lightweight lazy-loading engine that fetches messages on-demand, combined with asynchronous debounced syntax highlighting and an LRU cache.
 - **Extensible Tool & Skills System**: Easily configure custom tools, load MCP servers, and install custom conversational Skills.
@@ -114,9 +114,42 @@ SEARXNG_URL=http://localhost:8080
 
 # Server Configuration
 PORT=3456
+HOST=127.0.0.1
 DATA_DIR=./data
 SKILLS_DIR=./skills
+
+# Optional: require a token for all /api requests (needed if HOST=0.0.0.0)
+# API_AUTH_TOKEN=change-me
 ```
+
+### Security notes
+
+This app is designed for **local use**. Defaults:
+
+- Binds to `127.0.0.1` only (not the whole LAN / Tailscale interface)
+- CORS allowlist for localhost origins (not `cors()` open-to-all)
+- Provider API keys are **never** returned by `GET /api/providers` (only a `hasApiKey` flag)
+- Empty `apiKey` on PATCH keeps the existing key (cannot wipe/replace via redacted responses)
+- Path traversal blocked for workspace tools and skill install (including tar-slip filters)
+- Hermes proxy only attaches credentials to **loopback** base URLs by default
+
+**LAN access** can be turned on in **Settings → General → Network**:
+
+- Rebinds to `0.0.0.0` when possible (unless `HOST` is set in the environment, e.g. Docker)
+- Allows private-network browser origins
+- **Require access token** is on by default (recommended); uncheck it only on a trusted network
+- Other devices open a listed LAN URL; if a token is required, paste it once on the unlock screen
+
+Python and terminal tools run **on the host** (not a security sandbox). Disable them if unused:
+
+```env
+ENABLE_PYTHON_TOOL=false
+ENABLE_TERMINAL_TOOL=false
+```
+
+You can still force a token for everyone with `API_AUTH_TOKEN` in `.env` (overrides Settings). Prefer dedicated, rotatable API keys.
+
+Browsing/installing skills from [skills.sh](https://skills.sh) sends search queries and install requests to that third-party service.
 
 ## Architecture
 

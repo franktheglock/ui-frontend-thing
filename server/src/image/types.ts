@@ -6,6 +6,8 @@ export interface ImageProviderConfig {
   enabled: boolean
   baseUrl: string
   apiKey: string
+  /** Present on API responses only — actual key is never returned to clients. */
+  hasApiKey?: boolean
   model: string
 }
 

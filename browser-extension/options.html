@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Chat New Tab — Settings</title>
+  <link rel="stylesheet" href="newtab.css" />
+  <style>
+    body {
+      padding: 0;
+      height: auto;
+      min-height: 100vh;
+      overflow-y: auto;
+    }
+
+    .options-container {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 40px 24px;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      color: var(--muted-fg);
+      font-size: 13px;
+      margin-bottom: 32px;
+    }
+
+    .section {
+      margin-bottom: 28px;
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    .section-desc {
+      font-size: 12px;
+      color: var(--muted-fg);
+      margin-bottom: 10px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+
+    input[type="text"],
+    input[type="url"] {
+      width: 100%;
+      background: var(--card);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: var(--font);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+    }
+
+    select {
+      background: var(--card);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: var(--font);
+      outline: none;
+      cursor: pointer;
+    }
+
+    select:focus {
+      border-color: var(--accent);
+    }
+
+    .btn {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font);
+      transition: opacity 0.15s;
+    }
+
+    .btn:hover {
+      opacity: 0.85;
+    }
+
+    .btn-secondary {
+      background: var(--card);
+      color: var(--fg);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--card-hover);
+    }
+
+    .btn-danger {
+      background: #8b0000;
+      color: #fff;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .status {
+      font-size: 12px;
+      color: #4ade80;
+      margin-top: 8px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .status.show {
+      opacity: 1;
+    }
+
+    /* ── Shortcut editor ── */
+    .shortcut-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .shortcut-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .shortcut-row input {
+      flex: 1;
+    }
+
+    .shortcut-row input[type="color"] {
+      width: 36px;
+      height: 36px;
+      padding: 2px;
+      border-radius: 6px;
+      cursor: pointer;
+      background: var(--card);
+      border: 1px solid var(--border);
+      flex: none;
+    }
+
+    .shortcut-row .remove-btn {
+      background: none;
+      border: none;
+      color: var(--muted-fg);
+      cursor: pointer;
+      font-size: 18px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      flex: none;
+    }
+
+    .shortcut-row .remove-btn:hover {
+      color: #ff4444;
+      background: var(--card-hover);
+    }
+
+    .add-shortcut-btn {
+      background: none;
+      border: 1px dashed var(--border);
+      color: var(--muted-fg);
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-family: var(--font);
+      width: 100%;
+      margin-top: 4px;
+    }
+
+    .add-shortcut-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .test-link {
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: none;
+      margin-left: 8px;
+    }
+
+    .test-link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="options-container">
+    <h1>AI Chat New Tab</h1>
+    <p class="subtitle">Configure your new tab page</p>
+
+    <!-- AI Chat URL -->
+    <div class="section">
+      <div class="section-title">AI Chat URL</div>
+      <div class="section-desc">The URL of your AI Chat interface. Defaults to <code>http://192.168.1.129:5183</code>.</div>
+      <input type="url" id="chat-url" placeholder="http://192.168.1.129:5183" />
+    </div>
+
+    <!-- Default Search Engine -->
+    <div class="section">
+      <div class="section-title">Default Search Engine</div>
+      <div class="section-desc">Search engine used in the Web Search tab. Use <code>%s</code> for the query placeholder.</div>
+      <select id="search-engine-presets">
+        <option value="https://duckduckgo.com/?q=%s">DuckDuckGo</option>
+        <option value="https://www.google.com/search?q=%s">Google</option>
+        <option value="https://www.bing.com/search?q=%s">Bing</option>
+        <option value="https://search.brave.com/search?q=%s">Brave</option>
+        <option value="__custom__">Custom…</option>
+      </select>
+      <input type="text" id="search-engine-custom" placeholder="https://example.com/search?q=%s" style="margin-top:8px;display:none" />
+    </div>
+
+    <!-- Shortcuts -->
+    <div class="section">
+      <div class="section-title">Shortcuts</div>
+      <div class="section-desc">Quick-access bookmarks shown on your new tab page.</div>
+      <div id="shortcuts-editor" class="shortcut-list">
+        <!-- rendered by JS -->
+      </div>
+      <button id="add-shortcut" class="add-shortcut-btn">+ Add Shortcut</button>
+    </div>
+
+    <!-- Actions -->
+    <div class="section">
+      <div class="btn-group">
+        <button id="save-btn" class="btn">Save Settings</button>
+        <button id="reset-btn" class="btn btn-secondary">Reset to Defaults</button>
+      </div>
+      <div id="save-status" class="status">✓ Settings saved</div>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

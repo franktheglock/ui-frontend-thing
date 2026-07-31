@@ -4,13 +4,14 @@ import { useChatStore, Message, ToolCall, ToolResult, TimelineEvent, GenerationI
 import { useUIStore } from '../stores/uiStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { MessageBubble } from './MessageBubble'
-import { Globe, Terminal, Link2, ChevronDown, ChevronRight, Wrench, Copy } from 'lucide-react'
+import { Globe, Terminal, Link2, ChevronDown, ChevronRight, Wrench, Copy, Plus, X } from 'lucide-react'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { ThinkingBlock } from './ThinkingBlock'
 import { ToolCallBlock } from './ToolCallBlock'
 import { GenerationInfo } from './GenerationInfo'
 import { useChat } from '../hooks/useChat'
 import { cn } from '../lib/utils'
+import { isNewTabMode } from '../lib/utils'
 import { getActivitySublabel } from '../lib/toolDisplay'
 import { getProviderIcon } from '../lib/providerIcons'
 
@@ -26,6 +27,42 @@ export function ChatWindow() {
   const { regenerateMessage } = useChat()
   const [autoScroll, setAutoScroll] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  const isNewTab = isNewTabMode
+
+  const defaultShortcuts = [
+    { label: 'Gmail', url: 'https://mail.google.com', color: '#ea4335' },
+    { label: 'GitHub', url: 'https://github.com', color: '#2dba4e' },
+    { label: 'Reddit', url: 'https://reddit.com', color: '#ff4500' },
+    { label: 'YouTube', url: 'https://youtube.com', color: '#ff0033' },
+    { label: 'X', url: 'https://x.com', color: '#1da1f2' },
+    { label: 'Calendar', url: 'https://calendar.google.com', color: '#4285f4' },
+  ]
+
+  const [shortcuts, setShortcuts] = useState<{label:string;url:string;color?:string}[]>(() => {
+    try {
+      const stored = localStorage.getItem('ai-chat-shortcuts')
+      return stored ? JSON.parse(stored) : defaultShortcuts
+    } catch { return defaultShortcuts }
+  })
+
+  function saveShortcuts(list: {label:string;url:string;color?:string}[]) {
+    setShortcuts(list)
+    localStorage.setItem('ai-chat-shortcuts', JSON.stringify(list))
+  }
+
+  function addShortcut() {
+    const url = prompt('Website URL:')
+    if (!url) return
+    let label = prompt('Label:')
+    if (!label) label = url.replace(/^https?:\/\//, '').split('/')[0]
+    saveShortcuts([...shortcuts, { label, url, color: '#555' }])
+  }
+
+  function removeShortcut(i: number) {
+    const next = shortcuts.filter((_, idx) => idx !== i)
+    saveShortcuts(next.length > 0 ? next : defaultShortcuts)
+  }
   
   const currentSession = sessions.find(s => s.id === currentSessionId)
   const messages = currentSession?.messages || []
@@ -306,6 +343,55 @@ export function ChatWindow() {
                 </h1>
                 <p className="text-muted-foreground text-lg">{heroSubtitle}</p>
               </div>
+
+              {isNewTab && (
+              <div className="flex items-center justify-center gap-3 flex-wrap max-w-xl">
+                {shortcuts.map((s, i) => (
+                  <div key={i} className="group relative flex flex-col items-center gap-1.5 w-16 p-1.5 rounded-lg hover:bg-secondary/60 transition-colors">
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex flex-col items-center gap-1.5 no-underline"
+                    >
+                      <div
+                        className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-sm overflow-hidden"
+                        style={{ background: s.color || '#555' }}
+                      >
+                        <img
+                          src={`https://www.google.com/s2/favicons?domain=${(() => { try { return new URL(s.url).hostname } catch { return '' } })()}&sz=64`}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.textContent = s.label[0]?.toUpperCase() || '?' }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-muted-foreground/70 group-hover:text-muted-foreground transition-colors truncate max-w-full">
+                        {s.label}
+                      </span>
+                    </a>
+                    <button
+                      onClick={() => removeShortcut(i)}
+                      className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110"
+                      title="Remove shortcut"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                {shortcuts.length < 10 && (
+                  <button
+                    onClick={addShortcut}
+                    className="flex flex-col items-center gap-1.5 w-16 p-1.5 rounded-lg hover:bg-secondary/60 transition-colors"
+                    title="Add shortcut"
+                  >
+                    <div className="w-10 h-10 rounded-lg border-2 border-dashed border-border flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+                      <Plus className="w-5 h-5" />
+                    </div>
+                    <span className="text-[10px] text-muted-foreground/50">Add</span>
+                  </button>
+                )}
+              </div>
+              )}
             </motion.div>
           )})()}
 

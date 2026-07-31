@@ -260,7 +260,13 @@ export function Sidebar() {
                 const { selectedModel, selectedProvider } = useSettingsStore.getState()
                 setCurrentView('chat')
                 navigate(getPathnameForView('chat'))
-                await createSession(selectedModel, selectedProvider, currentProjectId)
+                // If there's already an untitled empty chat, reuse it
+                const existing = useChatStore.getState().sessions.find(s => s.title === 'New Chat' && s.messages.length === 0 && s.provider !== 'hermes-agent')
+                if (existing) {
+                  useChatStore.getState().setCurrentSession(existing.id)
+                } else {
+                  await createSession(selectedModel, selectedProvider, currentProjectId, { persist: false })
+                }
               }}
               className="w-full flex items-center gap-2 px-3 py-2 bg-accent text-accent-foreground rounded-none hover:bg-accent/90 transition-colors font-medium text-sm"
             >

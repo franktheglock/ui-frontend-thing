@@ -80,6 +80,19 @@ function ensureLocalImageCacheDirs(installDir: string) {
   return { cacheDir, huggingFaceDir, torchDir, pipDir, tmpDir, outputDir };
 }
 
+function readLogTail(installDir: string, maxLines = 15) {
+  const logFile = path.join(installDir, "cache", "tmp", "local-image-server.log");
+  if (!fs.existsSync(logFile)) return null;
+
+  try {
+    const content = fs.readFileSync(logFile, "utf-8");
+    const lines = content.split("\n").filter(Boolean);
+    return lines.slice(-maxLines).join("\n");
+  } catch {
+    return null;
+  }
+}
+
 function buildLocalImageEnv(
   installDir: string,
   options?: { fastMode?: boolean; modelVariant?: string; port?: number },
@@ -418,14 +431,7 @@ async function getStatus(installDir: string, port: number) {
     recommendedVariant: recommendVariant(variantSource, detectedHardware),
     errorLogTail: (() => {
       if (!serverReachable && !runningProcess) {
-        const logFile = path.join(installDir, "cache", "tmp", "local-image-server.log");
-        if (fs.existsSync(logFile)) {
-          try {
-            const content = fs.readFileSync(logFile, "utf-8");
-            const lines = content.split("\n").filter(Boolean);
-            return lines.slice(-15).join("\n");
-          } catch {}
-        }
+        return readLogTail(installDir);
       }
       return null;
     })(),
@@ -489,7 +495,12 @@ router.post("/start", async (req, res) => {
   }
 
   if (runningProcess) {
-    res.json({ ok: true, installDir, message: "Already started by this app" });
+    res.json({
+      ok: true,
+      installDir,
+      port,
+      message: "Already started by this app",
+    });
     return;
   }
 
@@ -509,12 +520,25 @@ router.post("/start", async (req, res) => {
   const logFile = path.join(logDir, "local-image-server.log");
   const logFd = fs.openSync(logFile, "a");
 
-  runningProcess = spawn(spawnCmd, spawnArgs, {
-    cwd: installDir,
-    env,
-    detached: true,
-    stdio: ["ignore", logFd, logFd],
-  });
+  try {
+    runningProcess = spawn(spawnCmd, spawnArgs, {
+      cwd: installDir,
+      env,
+      detached: true,
+      stdio: ["ignore", logFd, logFd],
+    });
+  } catch (error: any) {
+    try {
+      fs.closeSync(logFd);
+    } catch {}
+    res.status(500).json({
+      error: error?.message || "Failed to start local image server",
+      installDir,
+      port,
+      errorLogTail: readLogTail(installDir),
+    });
+    return;
+  }
 
   try {
     fs.closeSync(logFd);
@@ -529,7 +553,11 @@ router.post("/start", async (req, res) => {
   });
   runningProcess.unref();
 
-  res.json({ ok: true, installDir, message: "Start requested" });
+  setTimeout(() => {
+    if (runningProcess?.exitCode !== null) runningProcess = null;
+  }, 1000).unref();
+
+  res.json({ ok: true, installDir, port, message: "Start requested" });
 });
 
 router.patch("/settings", async (req, res) => {
@@ -593,7 +621,12 @@ router.post("/llama-unload", async (req, res) => {
   res.status(500).json({ error: "Failed to contact llama server" });
 });
 
-router.post("/stop", (req, res) => {
+router.post("/stop", async (req, res) => {
+  const db = await getDb();
+  const row = (await db.get("SELECT value FROM app_settings WHERE id = ?", "global")) as any;
+  const saved = row?.value ? JSON.parse(row.value || "{}") : {};
+  const port = normalizePort(req.body?.port ?? saved.localImageServerPort);
+
   // Kill tracked process
   if (runningProcess) {
     try {
@@ -610,10 +643,10 @@ router.post("/stop", (req, res) => {
 
   // Kill anything listening on the port
   try {
-    execSync("fuser -k 8000/tcp 2>/dev/null; true", { timeout: 2000 });
+    execSync(`fuser -k ${port}/tcp 2>/dev/null; true`, { timeout: 2000 });
   } catch {}
 
-  res.json({ ok: true, message: "Server stopped" });
+  res.json({ ok: true, port, message: "Server stopped" });
 });
 
 export async function maybeAutoStartLocalImageServer() {

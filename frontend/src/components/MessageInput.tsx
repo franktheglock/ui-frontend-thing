@@ -1,11 +1,12 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Send, Plus, X, Loader2, Mic, Globe2, File as FileIcon, Bot } from 'lucide-react'
+import { Send, Plus, X, Loader2, Mic, Globe2, File as FileIcon, Bot, Search } from 'lucide-react'
 import { Attachment, useChatStore } from '../stores/chatStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { useProjectStore } from '../stores/projectStore'
 import { useChat } from '../hooks/useChat'
 import { cn } from '../lib/utils'
+import { isNewTabMode } from '../lib/utils'
 import { getProviderIcon } from '../lib/providerIcons'
 import { SiteFavicon } from './SiteFavicon'
 import { UploadsPickerModal } from './UploadsPickerModal'
@@ -116,6 +117,8 @@ interface SlashItem {
 
 export function MessageInput({ isLanding }: { isLanding?: boolean }) {
   const [input, setInput] = useState('')
+  const isNewTab = isNewTabMode
+  const [mode, setMode] = useState<'chat' | 'search'>('chat')
   const [pendingAttachments, setPendingAttachments] = useState<PendingComposerAttachment[]>([])
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
@@ -145,6 +148,25 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     inputRef.current = input
   }, [input])
 
+  // Auto-focus the input when loaded as a new tab
+  useEffect(() => {
+    if (!isNewTab) return
+    let attempts = 0
+    const tryFocus = () => {
+      if (textareaRef.current) {
+        textareaRef.current.focus()
+        return true
+      }
+      if (++attempts < 20) {
+        setTimeout(tryFocus, 200)
+      }
+      return false
+    }
+    // Try immediately, then retry every 200ms for up to 4 seconds
+    const timer = setTimeout(tryFocus, 100)
+    return () => clearTimeout(timer)
+  }, [isNewTab])
+
   // Load available skills
   useEffect(() => {
     fetch('/api/skills/local')
@@ -167,11 +189,19 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
 
   useEffect(() => {
     function handleExtensionMessage(event: MessageEvent) {
-      if (event.source !== window) return
       const data = event.data
       if (!data || data.source !== 'ai-chat-ui-extension') return
 
-       if (data.type === 'READY' || data.type === 'PONG') {
+      // FOCUS_INPUT comes from the parent extension page (different window)
+      if (data.type === 'FOCUS_INPUT') {
+        textareaRef.current?.focus()
+        return
+      }
+
+      // Everything below requires same-window messages
+      if (event.source !== window) return
+
+      if (data.type === 'READY' || data.type === 'PONG') {
         setExtensionReady(true)
       }
 
@@ -619,11 +649,35 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
     await sendMessage(content, attachments)
   }, [input, pendingAttachments, isCurrentGenerating, sendMessage, currentProjectId, addFilesToProject])
 
+  const searchEngines = [
+    { label: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=%s' },
+    { label: 'Google', url: 'https://www.google.com/search?q=%s' },
+    { label: 'Brave', url: 'https://search.brave.com/search?q=%s' },
+  ]
+
+  const [searchEngineIndex, setSearchEngineIndex] = useState(0)
+
+  const handleSearchSubmit = useCallback(() => {
+    const query = input.trim()
+    if (!query) return
+    const engine = searchEngines[searchEngineIndex]?.url || searchEngines[0].url
+    const url = engine.replace('%s', encodeURIComponent(query))
+    window.open(url, '_top')
+    setInput('')
+  }, [input, searchEngineIndex])
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!slashMenuOpen) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        handleSubmit()
+        if (isNewTab && mode === 'search') {
+          handleSearchSubmit()
+        } else {
+          handleSubmit()
+        }
+      } else if (e.key === 'Tab' && !e.shiftKey && isNewTab) {
+        e.preventDefault()
+        setMode(prev => prev === 'chat' ? 'search' : 'chat')
       }
       return
     }
@@ -852,9 +906,34 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
             "rounded-2xl",
             "px-3 py-2.5",
             "transition-all duration-300",
-            "focus-within:border-accent/40 focus-within:shadow-[0_0_50px_-10px_rgba(0,0,0,0.5)]"
+            "focus-within:border-accent/40 focus-within:shadow-[0_0_50px_-10px_rgba(0,0,0,0.5)]",
+            isNewTab && mode === 'search' && "border-accent/30 focus-within:border-accent/60"
           )}
         >
+          {/* Mode badge */}
+          {isNewTab && (
+          <div className="flex items-center justify-between px-1">
+            <button
+              onClick={() => setMode(prev => prev === 'chat' ? 'search' : 'chat')}
+              className={cn(
+                "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider transition-all",
+                mode === 'chat'
+                  ? "bg-accent/10 text-accent hover:bg-accent/20"
+                  : "bg-sky-500/10 text-sky-400 hover:bg-sky-500/20"
+              )}
+              title="Press Tab to switch"
+            >
+              {mode === 'chat' ? (
+                <><Send className="w-3 h-3" /> Chat</>
+              ) : (
+                <><Search className="w-3 h-3" /> Search</>
+              )}
+            </button>
+            <span className="text-[9px] text-muted-foreground/40 font-medium uppercase tracking-wider">
+              Tab to switch
+            </span>
+          </div>
+          )}
           {/* Top row: textarea with slash menu */}
           <div className="flex items-end gap-1.5 relative">
             <textarea
@@ -864,7 +943,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
               onKeyDown={handleKeyDown}
               onInput={handleInput}
               onPaste={handlePaste}
-              placeholder="Ask anything (type / for commands)"
+              placeholder={isNewTab ? (mode === 'search' ? "Search the web... (Tab to chat)" : "Ask anything (Tab to search, / for commands)") : "Ask anything (type / for commands)"}
               className="flex-1 px-1.5 py-1 bg-transparent text-sm placeholder:text-muted-foreground/60 focus:outline-none resize-none min-h-[28px] leading-normal"
             />
             {slashMenuOpen && slashMenuItems.length > 0 && (
@@ -923,6 +1002,20 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
 
           {/* Bottom action row */}
           <div className="flex items-center justify-between pt-1">
+            {isNewTab && mode === 'search' ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground/50 font-bold">Engine:</span>
+                <select
+                  value={searchEngineIndex}
+                  onChange={(e) => setSearchEngineIndex(Number(e.target.value))}
+                  className="bg-secondary/50 border border-border/60 rounded-md px-2 py-1 text-xs text-muted-foreground focus:outline-none focus:border-accent/40"
+                >
+                  {searchEngines.map((engine, i) => (
+                    <option key={engine.url} value={i}>{engine.label}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
             <div className="flex items-center gap-2">
               {/* File upload */}
               <div className="relative">
@@ -1144,6 +1237,7 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                 </div>
               )}
             </div>
+            )}
 
             <div className="flex items-center gap-2">
               {/* Mic */}
@@ -1153,7 +1247,8 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
                   "p-2.5 rounded-full transition-all",
                   isListening
                     ? "text-accent bg-accent/10 ring-2 ring-accent/30 animate-pulse"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent/5"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent/5",
+                  mode === 'search' && isNewTab && 'hidden'
                 )}
                 title={isListening ? 'Stop listening' : 'Voice input'}
               >
@@ -1162,17 +1257,19 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
 
               {/* Send */}
               <button
-                onClick={() => handleSubmit()}
-                disabled={!canSubmit}
+                onClick={() => (isNewTab && mode === 'search') ? handleSearchSubmit() : handleSubmit()}
+                disabled={isNewTab && mode === 'search' ? !input.trim() : !canSubmit}
                 className={cn(
                   'p-2.5 rounded-full transition-all flex-shrink-0',
-                  canSubmit
+                  (isNewTab && mode === 'search' ? input.trim() : canSubmit)
                     ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm'
                     : 'bg-muted text-muted-foreground cursor-not-allowed'
                 )}
               >
                 {isUploading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
+                ) : isNewTab && mode === 'search' ? (
+                  <Search className="w-4 h-4" />
                 ) : (
                   <Send className="w-4 h-4" />
                 )}
@@ -1183,12 +1280,14 @@ export function MessageInput({ isLanding }: { isLanding?: boolean }) {
 
         {/* Landing page extras */}
         {isLanding && (
-          <div className="flex items-center justify-center gap-4 text-[10px] uppercase tracking-widest text-muted-foreground/50 font-bold">
-            <span>Fast</span>
-            <div className="w-1 h-1 rounded-full bg-border" />
-            <span>Extensible</span>
-            <div className="w-1 h-1 rounded-full bg-border" />
-            <span>Native</span>
+          <div className="space-y-4">
+            <div className="flex items-center justify-center gap-4 text-[10px] uppercase tracking-widest text-muted-foreground/50 font-bold">
+              <span>Fast</span>
+              <div className="w-1 h-1 rounded-full bg-border" />
+              <span>Extensible</span>
+              <div className="w-1 h-1 rounded-full bg-border" />
+              <span>Native</span>
+            </div>
           </div>
         )}
       </div>

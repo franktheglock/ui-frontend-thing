@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { getDb } from '../db'
 import { createProviderFromConfig, getProvider } from '../providers'
+import { resolveApiKeyUpdate, sanitizeProvider } from '../utils/providers'
 
 const router = Router()
 
@@ -21,12 +22,7 @@ const DEFAULT_PROVIDER_IDS = new Set([
 router.get('/', async (_req, res) => {
   const db = await getDb()
   const providers = await db.all('SELECT * FROM providers')
-  res.json(providers.map((p: any) => ({
-    ...p,
-    models: JSON.parse(p.models || '[]'),
-    enabled: !!p.enabled,
-    config: p.config ? JSON.parse(p.config) : undefined,
-  })))
+  res.json(providers.map((p: any) => sanitizeProvider(p)))
 })
 
 router.post('/', async (req, res) => {
@@ -53,7 +49,10 @@ router.post('/', async (req, res) => {
     console.error(`[providers] Failed to auto-fetch models for ${id}:`, err.message)
   }
 
-  res.json({ id, name, type, baseUrl, apiKey, models: fetchedModels, enabled, config })
+  const row = await db.get('SELECT * FROM providers WHERE id = ?', id) as any
+  res.json(sanitizeProvider(row || {
+    id, name, type, base_url: baseUrl, api_key: apiKey, models: JSON.stringify(fetchedModels), enabled, config: config ? JSON.stringify(config) : null,
+  }))
 })
 
 router.patch('/:id', async (req, res) => {
@@ -64,7 +63,8 @@ router.patch('/:id', async (req, res) => {
 
   const name = req.body.name !== undefined ? req.body.name : current.name
   const baseUrl = req.body.baseUrl !== undefined ? req.body.baseUrl : current.base_url
-  const apiKey = req.body.apiKey !== undefined ? req.body.apiKey : current.api_key
+  // Empty string must NOT wipe an existing key (frontend often re-sends redacted/empty values)
+  const apiKey = resolveApiKeyUpdate(req.body, current.api_key)
   const models = req.body.models !== undefined ? req.body.models : (JSON.parse(current.models || '[]'))
   const enabled = req.body.enabled !== undefined ? req.body.enabled : !!current.enabled
   const config = req.body.config !== undefined ? req.body.config : (current.config ? JSON.parse(current.config) : {})
@@ -91,7 +91,8 @@ router.patch('/:id', async (req, res) => {
     console.error(`[providers] Failed to auto-fetch models for ${req.params.id}:`, err.message)
   }
 
-  res.json({ success: true })
+  const updated = await db.get('SELECT * FROM providers WHERE id = ?', req.params.id) as any
+  res.json({ success: true, provider: sanitizeProvider(updated) })
 })
 
 router.delete('/:id', async (req, res) => {

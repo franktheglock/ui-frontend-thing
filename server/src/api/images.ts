@@ -1,16 +1,16 @@
 import { Router } from 'express'
-import { loadImageSettings, saveImageSettings } from '../image/config'
+import { loadImageSettings, saveImageSettings, sanitizeImageSettings } from '../image/config'
 import { deleteImageGenerationHistoryItem, editImage, generateImages, listImageGenerationHistory, listImageProviderModels, saveImageGenerationRecord } from '../image/service'
 
 const router = Router()
 
 router.get('/settings', async (_req, res) => {
-  res.json({ settings: await loadImageSettings() })
+  res.json({ settings: sanitizeImageSettings(await loadImageSettings()) })
 })
 
 router.patch('/settings', async (req, res) => {
   const next = await saveImageSettings(req.body || {})
-  res.json({ settings: next })
+  res.json({ settings: sanitizeImageSettings(next) })
 })
 
 router.get('/history', async (req, res) => {

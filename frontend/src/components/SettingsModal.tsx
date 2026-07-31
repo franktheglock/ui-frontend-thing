@@ -13,11 +13,15 @@ import {
   RefreshCcw,
   Brain,
   Save,
+  Network,
+  Copy,
+  Check,
 } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useImageStudioStore } from "../stores/imageStudioStore";
 import { useUIStore } from "../stores/uiStore";
 import { cn } from "../lib/utils";
+import { setApiToken } from "../lib/apiAuth";
 
 type SettingsTab = "general" | "providers" | "tools" | "skills" | "memory";
 
@@ -467,8 +471,26 @@ export function SettingsModal() {
   const [localImageModelLoaded, setLocalImageModelLoaded] = useState(false);
   const [localImageServerRunning, setLocalImageServerRunning] = useState(false);
   const [localImageErrorLog, setLocalImageErrorLog] = useState<string | null>(null);
+  const [localImageStartError, setLocalImageStartError] = useState<string | null>(null);
   const [llamaStatus, setLlamaStatus] = useState<any>(null);
   const [llamaUnloading, setLlamaUnloading] = useState<string | null>(null);
+  const [networkLoading, setNetworkLoading] = useState(false);
+  const [networkSaving, setNetworkSaving] = useState(false);
+  const [networkError, setNetworkError] = useState<string | null>(null);
+  const [networkCopied, setNetworkCopied] = useState(false);
+  const [network, setNetwork] = useState<{
+    lanAccessEnabled: boolean;
+    requireToken: boolean;
+    hasToken: boolean;
+    apiAuthToken: string;
+    envTokenLocked: boolean;
+    listenHost: string;
+    listenPort: number;
+    hostLocked: boolean;
+    lanBindActive: boolean;
+    lanUrls: string[];
+    notes: string[];
+  } | null>(null);
   const {
     selectedProvider: selectedImageProvider,
     providers: imageProviders,
@@ -674,7 +696,7 @@ export function SettingsModal() {
     if (!settingsOpen) return;
 
     const checkStatus = () => {
-      fetch("/api/local-image-server/status")
+      fetch(`/api/local-image-server/status?port=${encodeURIComponent(localImagePort)}`)
         .then(r => r.json())
         .then(data => {
           setLocalImageAutoRun(!!data.autoRun);
@@ -717,6 +739,34 @@ export function SettingsModal() {
     } catch {}
     setLocalImageSaving(false);
   };
+
+  const refreshLocalImageServerStatus = React.useCallback(async () => {
+    const response = await fetch(
+      `/api/local-image-server/status?port=${encodeURIComponent(localImagePort)}`,
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || "Failed to read local image server status");
+    }
+    setLocalImageAutoRun(!!data.autoRun);
+    setLocalImagePort(String(data.port || localImagePort || 8000));
+    setLocalImageServerRunning(!!data.serverReachable);
+    setLocalImageErrorLog(data.errorLogTail || null);
+    return data;
+  }, [localImagePort]);
+
+  const waitForLocalImageServer = React.useCallback(async () => {
+    let latest: any = null;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      latest = await refreshLocalImageServerStatus();
+      if (latest.serverReachable) return latest;
+      if (attempt > 0 && !latest.running && latest.errorLogTail) {
+        throw new Error("Local image server exited during startup.");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    return latest;
+  }, [refreshLocalImageServerStatus]);
 
   const loadModelsForImageProvider = React.useCallback(
     async (providerId: string, force = false) => {
@@ -788,6 +838,69 @@ export function SettingsModal() {
       heroTextOptions[Math.floor(Math.random() * heroTextOptions.length)];
     setHeroTitle(randomOption.title);
     setHeroSubtitle(randomOption.subtitle);
+  };
+
+  const loadNetworkSettings = React.useCallback(async () => {
+    setNetworkLoading(true);
+    setNetworkError(null);
+    try {
+      const res = await fetch("/api/network");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to load network settings");
+      }
+      const data = await res.json();
+      setNetwork(data);
+      if (data.apiAuthToken) {
+        setApiToken(data.apiAuthToken);
+      }
+    } catch (err: any) {
+      setNetworkError(err.message || "Failed to load network settings");
+    } finally {
+      setNetworkLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (settingsOpen && activeTab === "general") {
+      void loadNetworkSettings();
+    }
+  }, [settingsOpen, activeTab, loadNetworkSettings]);
+
+  const patchNetwork = async (updates: Record<string, unknown>) => {
+    setNetworkSaving(true);
+    setNetworkError(null);
+    try {
+      const res = await fetch("/api/network", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update network settings");
+      }
+      setNetwork(data);
+      if (data.apiAuthToken) {
+        setApiToken(data.apiAuthToken);
+      }
+    } catch (err: any) {
+      setNetworkError(err.message || "Failed to update network settings");
+      await loadNetworkSettings();
+    } finally {
+      setNetworkSaving(false);
+    }
+  };
+
+  const copyNetworkToken = async () => {
+    if (!network?.apiAuthToken) return;
+    try {
+      await navigator.clipboard.writeText(network.apiAuthToken);
+      setNetworkCopied(true);
+      setTimeout(() => setNetworkCopied(false), 1500);
+    } catch {
+      setNetworkError("Could not copy token to clipboard");
+    }
   };
 
   const tabs = [
@@ -890,6 +1003,152 @@ export function SettingsModal() {
                       rows={4}
                       className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring font-mono"
                     />
+                  </div>
+
+                  {/* Network / LAN access */}
+                  <div className="border border-border rounded-sm p-4 space-y-3 bg-secondary/20">
+                    <div className="flex items-center gap-2">
+                      <Network className="w-4 h-4 text-accent" />
+                      <h3 className="text-sm font-medium">Network</h3>
+                      {(networkLoading || networkSaving) && (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground ml-auto" />
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Use this app from phones and other computers on your network.
+                      Off by default so only this machine can reach the API.
+                    </p>
+
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!network?.lanAccessEnabled}
+                        disabled={!network || networkSaving || networkLoading}
+                        onChange={(e) =>
+                          void patchNetwork({ lanAccessEnabled: e.target.checked })
+                        }
+                        className="rounded border-border mt-0.5"
+                      />
+                      <span className="text-sm">
+                        Allow access from other devices on the LAN
+                      </span>
+                    </label>
+
+                    {network?.lanAccessEnabled && (
+                      <>
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!network?.requireToken}
+                            disabled={
+                              !network ||
+                              networkSaving ||
+                              network.envTokenLocked
+                            }
+                            onChange={(e) =>
+                              void patchNetwork({ requireToken: e.target.checked })
+                            }
+                            className="rounded border-border mt-0.5"
+                          />
+                          <div>
+                            <span className="text-sm">Require access token</span>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              Recommended. Other devices enter the token once.
+                              Uncheck only on a network you fully trust — anyone on
+                              the LAN can then use the API with no secret.
+                            </p>
+                          </div>
+                        </label>
+
+                        {network.requireToken && !network.envTokenLocked && (
+                          <div className="space-y-2">
+                            <label className="text-xs font-medium text-muted-foreground">
+                              Access token
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                readOnly
+                                value={network.apiAuthToken || (network.hasToken ? "••••••••" : "")}
+                                className="flex-1 px-3 py-2 bg-secondary border border-border rounded-sm text-xs font-mono focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => void copyNetworkToken()}
+                                disabled={!network.apiAuthToken}
+                                className="px-2.5 py-2 border border-border rounded-sm hover:bg-secondary transition-colors disabled:opacity-40"
+                                title="Copy token"
+                              >
+                                {networkCopied ? (
+                                  <Check className="w-3.5 h-3.5 text-accent" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={networkSaving}
+                                onClick={() =>
+                                  void patchNetwork({ regenerateToken: true })
+                                }
+                                className="px-2.5 py-2 border border-border rounded-sm text-xs hover:bg-secondary transition-colors disabled:opacity-40"
+                                title="Generate a new token"
+                              >
+                                <RefreshCcw className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground">
+                              On another device, open a LAN URL below and paste this
+                              token if prompted.
+                            </p>
+                          </div>
+                        )}
+
+                        {network.envTokenLocked && (
+                          <p className="text-[11px] text-amber-500/90">
+                            API_AUTH_TOKEN is set in the environment and always
+                            required. The Settings token controls below are locked.
+                          </p>
+                        )}
+
+                        {network.lanUrls?.length > 0 && (
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">
+                              Open on other devices
+                            </label>
+                            <ul className="space-y-1">
+                              {network.lanUrls.map((url) => (
+                                <li key={url}>
+                                  <code className="text-xs font-mono text-foreground bg-secondary px-2 py-1 rounded-sm break-all">
+                                    {url}
+                                  </code>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {network && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Listening on{" "}
+                        <code className="font-mono">
+                          {network.listenHost}:{network.listenPort}
+                        </code>
+                        {network.hostLocked ? " (HOST locked by env)" : ""}.
+                      </p>
+                    )}
+
+                    {network?.notes?.slice(0, 2).map((note) => (
+                      <p key={note} className="text-[11px] text-muted-foreground">
+                        {note}
+                      </p>
+                    ))}
+
+                    {networkError && (
+                      <p className="text-xs text-destructive">{networkError}</p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -1508,7 +1767,11 @@ export function SettingsModal() {
                               onChange={(val: string) =>
                                 updateProvider(provider.id, { apiKey: val })
                               }
-                              placeholder="Optional"
+                              placeholder={
+                                provider.hasApiKey
+                                  ? "Configured (enter new key to replace)"
+                                  : "Optional"
+                              }
                               className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                             />
                           </div>
@@ -1744,7 +2007,11 @@ export function SettingsModal() {
                                     apiKey: val,
                                   }).catch(console.error)
                                 }
-                                placeholder="API Key"
+                                placeholder={
+                                  provider.hasApiKey
+                                    ? "Configured (enter new key to replace)"
+                                    : "API Key"
+                                }
                                 className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                               />
                             </div>
@@ -1828,14 +2095,37 @@ export function SettingsModal() {
                           type="button"
                           onClick={async () => {
                             setLocalImageStarting(true);
+                            setLocalImageStartError(null);
+                            setLocalImageErrorLog(null);
                             try {
-                              await fetch("/api/local-image-server/start", {
+                              const response = await fetch("/api/local-image-server/start", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({ port: parseInt(localImagePort) || 8000, fastMode: true }),
                               });
-                              setLocalImageServerRunning(true);
-                            } catch {}
+                              const payload = await response.json().catch(() => ({}));
+                              if (!response.ok) {
+                                setLocalImageErrorLog(payload?.errorLogTail || null);
+                                throw new Error(
+                                  payload?.error ||
+                                    payload?.message ||
+                                    "Failed to start local image server",
+                                );
+                              }
+                              const status = await waitForLocalImageServer();
+                              if (!status?.serverReachable) {
+                                setLocalImageStartError(
+                                  status?.running
+                                    ? "Local image server is still starting. Refresh status in a moment."
+                                    : "Local image server did not become reachable.",
+                                );
+                              }
+                            } catch (err: any) {
+                              setLocalImageServerRunning(false);
+                              setLocalImageStartError(
+                                err?.message || "Failed to start local image server",
+                              );
+                            }
                             setLocalImageStarting(false);
                           }}
                           disabled={localImageStarting || localImageServerRunning}
@@ -1852,9 +2142,14 @@ export function SettingsModal() {
                           type="button"
                           onClick={async () => {
                             try {
-                              await fetch("/api/local-image-server/stop", { method: "POST" });
+                              await fetch("/api/local-image-server/stop", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ port: parseInt(localImagePort) || 8000 }),
+                              });
                               setLocalImageServerRunning(false);
                               setLocalImageModelLoaded(false);
+                              setLocalImageStartError(null);
                             } catch {}
                           }}
                           disabled={!localImageServerRunning}
@@ -1907,6 +2202,12 @@ export function SettingsModal() {
                           {localImageModelLoaded ? "Unload Model" : "Load Model"}
                         </button>
                       </div>
+
+                      {localImageStartError && !localImageServerRunning && (
+                        <p className="mt-2 text-xs text-destructive">
+                          {localImageStartError}
+                        </p>
+                      )}
 
                       {/* VRAM Monitoring & Unloading UI */}
                       {llamaStatus && llamaStatus.gpus && llamaStatus.gpus.length > 0 && (

@@ -124,15 +124,47 @@ export async function loadImageSettings(): Promise<ImageGenerationSettings> {
   }
 }
 
+/** Redact API keys for client responses. */
+export function sanitizeImageSettings(
+  settings: ImageGenerationSettings,
+): ImageGenerationSettings {
+  return {
+    ...settings,
+    providers: settings.providers.map((provider) => ({
+      ...provider,
+      hasApiKey: !!(provider.apiKey && provider.apiKey.trim()),
+      apiKey: "",
+    })),
+  };
+}
+
 export async function saveImageSettings(
   settings: Partial<ImageGenerationSettings>,
 ): Promise<ImageGenerationSettings> {
   const db = await getDb();
   const current = await loadImageSettings();
+
+  // Preserve existing keys when client sends empty (redacted) apiKey values
+  let providers = settings.providers || current.providers;
+  if (settings.providers) {
+    const currentById = new Map(current.providers.map((p) => [p.id, p]));
+    providers = settings.providers.map((incoming) => {
+      const existing = currentById.get(incoming.id);
+      const keepKey =
+        !incoming.apiKey || !String(incoming.apiKey).trim()
+          ? existing?.apiKey || ""
+          : incoming.apiKey;
+      const { hasApiKey: _has, ...rest } = incoming as ImageProviderConfig & {
+        hasApiKey?: boolean;
+      };
+      return { ...rest, apiKey: keepKey };
+    });
+  }
+
   const next = mergeImageSettings({
     ...current,
     ...settings,
-    providers: settings.providers || current.providers,
+    providers,
   });
 
   await db.run(

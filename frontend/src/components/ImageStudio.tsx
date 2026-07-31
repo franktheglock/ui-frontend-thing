@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Copy, Download, Eye, ImagePlus, Images, Loader2, Maximize2, PencilLine, Settings2, Sparkles, Trash2, Upload, Wand2, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy as CopyIcon, Download, Eye, ImagePlus, Images, Loader2, Maximize2, PencilLine, Settings2, Sparkles, Trash2, Upload, Wand2, X } from 'lucide-react'
 import { useImageStudioStore, type ImageGenerationRecord } from '../stores/imageStudioStore'
 import { useUIStore } from '../stores/uiStore'
 import { cn, formatDate } from '../lib/utils'
@@ -50,6 +50,12 @@ function deriveDimensions(aspectRatio: string, megapixels: number) {
     width: roundToMultiple(width, 64),
     height: roundToMultiple(height, 64),
   }
+}
+
+function simplifyRatio(w: number, h: number) {
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b))
+  const d = gcd(w, h)
+  return `${w / d}:${h / d}`
 }
 
 function getPreviewGridClass(imageCount: number) {
@@ -119,7 +125,7 @@ export function ImageStudio() {
 
   const [mode, setMode] = useState<'generate' | 'edit'>('generate')
   const [prompt, setPrompt] = useState('')
-  const [aspectRatio, setAspectRatio] = useState<typeof aspectPresets[number]['id']>('1:1')
+  const [aspectRatio, setAspectRatio] = useState<string>('1:1')
   const [megapixels, setMegapixels] = useState<typeof megapixelPresets[number]>(1)
   const [width, setWidth] = useState(() => deriveDimensions('1:1', 1).width)
   const [height, setHeight] = useState(() => deriveDimensions('1:1', 1).height)
@@ -138,6 +144,8 @@ export function ImageStudio() {
   const [expandedHistoryIndex, setExpandedHistoryIndex] = useState<number | null>(null)
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false)
   const [providerPopupOpen, setProviderPopupOpen] = useState(false)
+  const [editEndpointNotice, setEditEndpointNotice] = useState<string | null>(null)
+  const [sourceImageSize, setSourceImageSize] = useState<{width:number;height:number} | null>(null)
 
   // Handle pending edit source from FilesView
   useEffect(() => {
@@ -182,6 +190,14 @@ export function ImageStudio() {
     return () => {
       if (sourcePreviewUrl) URL.revokeObjectURL(sourcePreviewUrl)
     }
+  }, [sourcePreviewUrl])
+
+  // Detect source image dimensions for "Original" aspect ratio
+  useEffect(() => {
+    if (!sourcePreviewUrl) { setSourceImageSize(null); return }
+    const img = new Image()
+    img.onload = () => setSourceImageSize({ width: img.naturalWidth, height: img.naturalHeight })
+    img.src = sourcePreviewUrl
   }, [sourcePreviewUrl])
 
   useEffect(() => {
@@ -478,17 +494,24 @@ export function ImageStudio() {
     const trimmedPrompt = prompt.trim()
     if (!trimmedPrompt) return
 
+    // Use source image dimensions when "Original" aspect ratio is selected
+    const effectiveWidth = aspectRatio === 'original' && sourceImageSize ? sourceImageSize.width : width
+    const effectiveHeight = aspectRatio === 'original' && sourceImageSize ? sourceImageSize.height : height
+    const effectiveAspectRatio = aspectRatio === 'original' && sourceImageSize
+      ? simplifyRatio(sourceImageSize.width, sourceImageSize.height)
+      : aspectRatio
+
     if (mode === 'generate') {
       const payloads = selectedProviders.map((provId) => ({
         prompt: trimmedPrompt,
         providerId: provId,
-        width,
-        height,
+        width: effectiveWidth,
+        height: effectiveHeight,
         steps,
         guidanceScale,
         seed,
         variations,
-        aspectRatio,
+        aspectRatio: effectiveAspectRatio,
       }))
 
       const multiRes = await generateMultiImages(payloads)
@@ -531,13 +554,13 @@ export function ImageStudio() {
         providerId: selectedProvider,
         sourceImageUrl: sourceAttachment?.url || historySourceImageUrl,
         referenceImageUrl: referenceAttachment?.url,
-        width,
-        height,
+        width: effectiveWidth,
+        height: effectiveHeight,
         steps,
         guidanceScale,
         seed,
         variations,
-        aspectRatio,
+        aspectRatio: effectiveAspectRatio,
       })
 
       setPreviewRecord({
@@ -590,7 +613,10 @@ export function ImageStudio() {
                   <label className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Mode</label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
-                      onClick={() => setMode('generate')}
+                      onClick={() => {
+                        setMode('generate')
+                        setEditEndpointNotice(null)
+                      }}
                       className={cn(
                         'flex items-center justify-center gap-2 border px-2.5 py-1.5 text-[11px] transition-colors',
                         mode === 'generate'
@@ -602,7 +628,12 @@ export function ImageStudio() {
                       Text to Image
                     </button>
                     <button
-                      onClick={() => setMode('edit')}
+                      onClick={() => {
+                        setMode('edit')
+                        if (activeProvider?.id === 'fal') {
+                          setEditEndpointNotice(`Editing uses "${activeProvider.model}/edit" as the endpoint. Not all fal models support image-to-image.`)
+                        }
+                      }}
                       className={cn(
                         'flex items-center justify-center gap-2 border px-2.5 py-1.5 text-[11px] transition-colors',
                         mode === 'edit'
@@ -615,6 +646,16 @@ export function ImageStudio() {
                     </button>
                   </div>
                 </div>
+
+                {editEndpointNotice && (
+                  <div className="flex items-start gap-2 rounded-sm border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-400">
+                    <span className="mt-px">⚠️</span>
+                    <span>{editEndpointNotice}</span>
+                    <button onClick={() => setEditEndpointNotice(null)} className="ml-auto shrink-0 text-amber-400/60 hover:text-amber-400">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
 
                 {/* Mobile-only preview — shown between mode and prompt, hidden on lg+ */}
                 <div className="lg:hidden">
@@ -940,7 +981,7 @@ export function ImageStudio() {
                   <div className="space-y-1.5">
                     <label className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Aspect Ratio</label>
                     <div className="flex flex-wrap gap-2">
-                      {aspectPresets.map((preset) => (
+                      {[...aspectPresets, ...(mode === 'edit' && sourceImageSize ? [{ id: 'original', label: 'Original' }] : []), ...(mode === 'edit' ? [{ id: 'auto', label: 'Auto' }] : [])].map((preset) => (
                         <button
                           key={preset.id}
                           onClick={() => setAspectRatio(preset.id)}
@@ -1321,7 +1362,7 @@ export function ImageStudio() {
                       className="flex h-7 w-7 items-center justify-center border border-border bg-background/90 text-muted-foreground transition-colors hover:text-foreground"
                       aria-label="Copy options"
                     >
-                      <Copy className="h-3.5 w-3.5" />
+                      <CopyIcon className="h-3.5 w-3.5" />
                     </button>
                     <button
                       type="button"
@@ -1449,19 +1490,83 @@ export function ImageStudio() {
                       <button
                         type="button"
                         onClick={handleCloseExpandedLightbox}
-                        className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center border border-border bg-background/90 text-muted-foreground transition-colors hover:text-foreground"
+                        className="absolute right-0 top-0 z-20 flex h-10 w-10 items-center justify-center border border-border bg-background/90 text-muted-foreground transition-colors hover:text-foreground"
                         aria-label="Close history lightbox"
                       >
                         <X className="h-4 w-4" />
                       </button>
 
                       <div className="flex h-full max-h-[84vh] w-full items-center justify-center">
-                        <img src={expandedHistoryItem.image.url} alt={expandedHistoryItem.record.prompt} className="max-h-full max-w-full object-contain" />
+                        {expandedHistoryItem.record.params?.sourceImageUrl ? (
+                          <div className="relative h-full w-full overflow-hidden select-none" style={{ cursor: 'ew-resize' }}>
+                            <img
+                              src={expandedHistoryItem.record.params.sourceImageUrl as string}
+                              alt="Original"
+                              draggable="false"
+                              className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+                            />
+                            <div
+                              className="absolute inset-0 overflow-hidden"
+                              id="compare-slider"
+                              style={{ clipPath: 'inset(0 50% 0 0)' }}
+                            >
+                              <img
+                                src={expandedHistoryItem.image.url}
+                                alt={expandedHistoryItem.record.prompt}
+                                draggable="false"
+                                className="pointer-events-none h-full w-full object-contain"
+                              />
+                            </div>
+                            <div
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                const container = e.currentTarget.parentElement!
+                                const onMove = (me: MouseEvent) => {
+                                  me.preventDefault()
+                                  const rect = container.getBoundingClientRect()
+                                  const pct = Math.max(0, Math.min(100, ((me.clientX - rect.left) / rect.width) * 100))
+                                  document.getElementById('compare-slider')!.style.clipPath = `inset(0 ${100 - pct}% 0 0)`
+                                  document.getElementById('compare-handle')!.style.left = `${pct}%`
+                                }
+                                window.addEventListener('mousemove', onMove)
+                                window.addEventListener('mouseup', () => window.removeEventListener('mousemove', onMove), { once: true })
+                              }}
+                              onTouchStart={(e) => {
+                                const container = e.currentTarget.parentElement!
+                                const onMove = (te: TouchEvent) => {
+                                  const rect = container.getBoundingClientRect()
+                                  const pct = Math.max(0, Math.min(100, ((te.touches[0].clientX - rect.left) / rect.width) * 100))
+                                  document.getElementById('compare-slider')!.style.clipPath = `inset(0 ${100 - pct}% 0 0)`
+                                  document.getElementById('compare-handle')!.style.left = `${pct}%`
+                                }
+                                window.addEventListener('touchmove', onMove, { passive: true })
+                                window.addEventListener('touchend', () => window.removeEventListener('touchmove', onMove), { once: true })
+                              }}
+                              id="compare-handle"
+                              className="absolute inset-y-0 z-10 w-8 -ml-4 flex items-center justify-center cursor-ew-resize"
+                              style={{ left: '50%' }}
+                            >
+                              <div className="pointer-events-none flex items-center justify-center w-8 h-8 rounded-full bg-white/90 shadow-md border border-border text-foreground text-xs font-bold">
+                                ↔
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <img src={expandedHistoryItem.image.url} alt={expandedHistoryItem.record.prompt} className="max-h-full max-w-full object-contain" />
+                        )}
                       </div>
 
                       <div className="flex w-full items-end justify-between gap-4 border-t border-border/70 bg-background px-1 py-3">
                         <p className="line-clamp-3 max-w-3xl text-sm leading-6 text-foreground">{expandedHistoryItem.record.prompt}</p>
                         <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyPrompt(expandedHistoryItem.record.prompt)}
+                            className="flex h-10 items-center gap-2 border border-border bg-secondary/20 px-3 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                          >
+                            <CopyIcon className="h-4 w-4" />
+                            Copy Prompt
+                          </button>
                           <button
                             type="button"
                             onClick={() => {

@@ -132,7 +132,11 @@ const ProviderSection = memo(function ProviderSection({
               />
               <input
                 type="password"
-                placeholder="API Key (optional)"
+                placeholder={
+                  provider.hasApiKey
+                    ? 'Configured (enter new key to replace)'
+                    : 'API Key (optional)'
+                }
                 value={draft.apiKey}
                 onChange={(e) => setDraft((prev) => ({ ...prev, apiKey: e.target.value }))}
                 className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
@@ -147,12 +151,16 @@ const ProviderSection = memo(function ProviderSection({
               <div className="flex gap-2">
                 <button
                   onClick={() => {
-                    onUpdate(provider.id, {
+                    const updates: Record<string, unknown> = {
                       name: draft.name || provider.name,
                       baseUrl: draft.baseUrl,
-                      apiKey: draft.apiKey,
                       models: draft.models.split(',').map((model: string) => model.trim()).filter(Boolean),
-                    })
+                    }
+                    // Only send apiKey when the user entered a new non-empty value
+                    if (draft.apiKey && draft.apiKey.trim()) {
+                      updates.apiKey = draft.apiKey
+                    }
+                    onUpdate(provider.id, updates)
                     setIsEditing(false)
                   }}
                   className="flex-1 px-3 py-2 bg-accent text-accent-foreground rounded-sm text-sm hover:bg-accent/90 transition-colors"

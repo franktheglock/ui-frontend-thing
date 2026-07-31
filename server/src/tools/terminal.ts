@@ -1,13 +1,16 @@
 import { BaseTool } from './base'
 import { exec } from 'child_process'
 import { promisify } from 'util'
+import path from 'path'
 
 const execAsync = promisify(exec)
+
+const WORKSPACE_DIR = path.join(process.cwd(), 'workspace')
 
 export class TerminalTool extends BaseTool {
   id = 'terminal'
   name = 'terminal'
-  description = 'Execute a shell command in the terminal and return the output. Useful for file operations, system information, git commands, and other CLI tasks. Runs with a 30-second timeout.'
+  description = 'Execute a shell command in the terminal and return the output. Useful for file operations, system information, git commands, and other CLI tasks. Runs with a 30-second timeout.\n\nNOTE: Runs directly on the host process (not a security sandbox). Commands start with cwd set to the workspace directory.'
   parameters = {
     type: 'object',
     properties: {
@@ -33,6 +36,7 @@ export class TerminalTool extends BaseTool {
       const { stdout, stderr } = await execAsync(command, {
         timeout: timeoutSec,
         maxBuffer: 1024 * 1024,
+        cwd: WORKSPACE_DIR,
       })
 
       if (stderr && !stdout) {

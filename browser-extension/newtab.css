@@ -1,0 +1,392 @@
+/* ── Reset & Base ── */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: hsl(0, 0%, 7%);
+  --fg: hsl(0, 0%, 95%);
+  --card: hsl(0, 0%, 10%);
+  --card-hover: hsl(0, 0%, 14%);
+  --border: hsl(0, 0%, 18%);
+  --muted-fg: hsl(0, 0%, 55%);
+  --accent: hsl(43, 96%, 56%);
+  --accent-dim: hsl(43, 50%, 25%);
+  --radius: 8px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--fg);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(0, 0%, 30%); }
+
+/* ── Top Bar ── */
+#topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#tabs {
+  display: flex;
+  gap: 0;
+}
+
+.tab {
+  background: none;
+  border: none;
+  color: var(--muted-fg);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 20px;
+  cursor: pointer;
+  position: relative;
+  transition: color 0.15s;
+  font-family: var(--font);
+}
+
+.tab:hover {
+  color: var(--fg);
+}
+
+.tab.active {
+  color: var(--accent);
+}
+
+.tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px 1px 0 0;
+}
+
+#topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#settings-btn {
+  background: none;
+  border: none;
+  color: var(--muted-fg);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+#settings-btn:hover {
+  background: var(--card);
+  color: var(--fg);
+}
+
+/* ── Shortcuts ── */
+#shortcuts-section {
+  flex-shrink: 0;
+  padding: 14px 20px 10px;
+}
+
+#shortcuts-grid {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.shortcut {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 72px;
+  padding: 8px 4px;
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--fg);
+  transition: background 0.15s;
+  cursor: pointer;
+}
+
+.shortcut:hover {
+  background: var(--card-hover);
+}
+
+.shortcut-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.shortcut-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.shortcut-label {
+  font-size: 11px;
+  color: var(--muted-fg);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 68px;
+}
+
+.shortcut-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 72px;
+  padding: 8px 4px;
+  border-radius: var(--radius);
+  border: none;
+  background: none;
+  color: var(--muted-fg);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  font-family: var(--font);
+}
+
+.shortcut-add:hover {
+  background: var(--card-hover);
+  color: var(--fg);
+}
+
+.shortcut-add-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1.5px dashed var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+/* ── Tab Panels ── */
+.tab-panel {
+  display: none;
+  flex: 1;
+  min-height: 0;
+}
+
+.tab-panel.active {
+  display: flex;
+}
+
+/* ── Panel: AI Chat ── */
+#panel-chat {
+  flex-direction: column;
+}
+
+#chat-frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+}
+
+/* ── Panel: Web Search ── */
+#panel-search {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 80px;
+}
+
+#search-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  max-width: 580px;
+}
+
+#search-logo {
+  font-size: 48px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+#search-form {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 0 16px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+#search-form:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+#search-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--fg);
+  font-size: 16px;
+  padding: 14px 8px;
+  font-family: var(--font);
+}
+
+#search-input::placeholder {
+  color: var(--muted-fg);
+}
+
+#search-go {
+  background: none;
+  border: none;
+  color: var(--muted-fg);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+#search-go:hover {
+  background: var(--card-hover);
+  color: var(--accent);
+}
+
+#search-engines {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+
+#search-engine-select {
+  background: var(--card);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: var(--font);
+  cursor: pointer;
+  outline: none;
+}
+
+#search-engine-select:focus {
+  border-color: var(--accent);
+}
+
+/* ── Loading state ── */
+#panel-chat.loading #chat-frame {
+  opacity: 0;
+}
+
+#panel-chat.loading::before {
+  content: 'Connecting to AI Chat…';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-fg);
+  font-size: 14px;
+}
+
+/* ── Error state ── */
+#panel-chat.error #chat-frame {
+  opacity: 0;
+}
+
+#panel-chat.error #chat-error {
+  display: flex;
+}
+
+#chat-error {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  position: absolute;
+  inset: 0;
+}
+
+#chat-error-icon {
+  font-size: 36px;
+  line-height: 1;
+}
+
+#chat-error-text {
+  color: var(--muted-fg);
+  font-size: 14px;
+  text-align: center;
+  max-width: 360px;
+  line-height: 1.5;
+}
+
+#chat-error-detail {
+  font-size: 11px;
+  color: var(--border);
+  font-family: monospace;
+}
+
+#chat-retry-btn {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: opacity 0.15s;
+  margin-top: 4px;
+}
+
+#chat-retry-btn:hover {
+  opacity: 0.85;
+}

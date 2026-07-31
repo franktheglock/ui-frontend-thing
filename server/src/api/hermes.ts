@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { getDb } from '../db'
+import { isLoopbackHost } from '../utils/path-safety'
 
 const router = Router()
 
@@ -7,6 +8,10 @@ const router = Router()
  * Proxy to the Hermes Agent API server.
  * Reads the hermes-agent provider config from the DB for auth,
  * so the frontend doesn't need to know the API key.
+ *
+ * Security: only proxies to loopback hosts by default so this never becomes
+ * an open credential-attaching reverse proxy to an attacker-controlled base URL.
+ * Set HERMES_ALLOW_REMOTE=true to allow non-loopback base URLs (use with care).
  */
 
 async function getHermesConfig(): Promise<{ baseUrl: string; apiKey: string | null } | null> {
@@ -26,15 +31,64 @@ async function getHermesConfig(): Promise<{ baseUrl: string; apiKey: string | nu
   }
 }
 
+function assertSafeHermesTarget(baseUrl: string): string | null {
+  let parsed: URL
+  try {
+    parsed = new URL(baseUrl)
+  } catch {
+    return 'Hermes base URL is invalid'
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return 'Hermes base URL must be http or https'
+  }
+
+  const allowRemote = process.env.HERMES_ALLOW_REMOTE === 'true'
+  if (!allowRemote && !isLoopbackHost(parsed.hostname)) {
+    return (
+      `Hermes proxy refuses non-loopback host "${parsed.hostname}". ` +
+      `Point hermes-agent at localhost, or set HERMES_ALLOW_REMOTE=true if you intentionally proxy remotely.`
+    )
+  }
+
+  return null
+}
+
 async function proxyRequest(req: Request, res: Response) {
   const config = await getHermesConfig()
   if (!config) {
     return res.status(503).json({ error: 'Hermes Agent provider not configured or disabled' })
   }
 
+  const targetError = assertSafeHermesTarget(config.baseUrl)
+  if (targetError) {
+    return res.status(403).json({ error: targetError })
+  }
+
   // Strip /api/hermes prefix to get the target path
   const targetPath = req.path.replace(/^\/+/, '')
-  const targetUrl = `${config.baseUrl}/${targetPath}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`
+  // Prevent open-proxy path tricks (absolute URL in path, scheme-relative, etc.)
+  if (
+    targetPath.includes('://') ||
+    targetPath.startsWith('//') ||
+    targetPath.includes('\\')
+  ) {
+    return res.status(400).json({ error: 'Invalid Hermes proxy path' })
+  }
+
+  const query = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''
+  const targetUrl = `${config.baseUrl}/${targetPath}${query}`
+
+  // Final check: resolved URL host must still match configured host
+  try {
+    const resolved = new URL(targetUrl)
+    const expected = new URL(config.baseUrl)
+    if (resolved.origin !== expected.origin) {
+      return res.status(400).json({ error: 'Hermes proxy refused cross-origin redirect target' })
+    }
+  } catch {
+    return res.status(400).json({ error: 'Invalid Hermes target URL' })
+  }
 
   try {
     const headers: Record<string, string> = {
@@ -48,6 +102,7 @@ async function proxyRequest(req: Request, res: Response) {
       method: req.method,
       headers,
       body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
+      redirect: 'manual',
     })
 
     // For SSE endpoints (runs/events), pipe the stream through

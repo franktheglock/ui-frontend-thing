@@ -5,11 +5,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    # Publish only on the host loopback interface (not 0.0.0.0 on the host)
     ports:
-      - "3456:3456"
+      - "127.0.0.1:3456:3456"
     environment:
       - NODE_ENV=production
       - PORT=3456
+      # Container must listen on all interfaces; host publish is loopback-only above.
+      - HOST=0.0.0.0
+      - API_AUTH_TOKEN=${API_AUTH_TOKEN:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3456,http://127.0.0.1:3456}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -20,6 +25,8 @@ services:
       - SEARXNG_URL=${SEARXNG_URL}
       - DATA_DIR=/app/data
       - SKILLS_DIR=/app/skills
+      - ENABLE_TERMINAL_TOOL=${ENABLE_TERMINAL_TOOL:-true}
+      - ENABLE_PYTHON_TOOL=${ENABLE_PYTHON_TOOL:-true}
     volumes:
       - ./data:/app/data
       - ./uploads:/app/uploads

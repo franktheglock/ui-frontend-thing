@@ -1,33 +1,32 @@
 {
   "manifest_version": 3,
-  "name": "AI Chat UI Tab Bridge",
-  "version": "0.1.0",
-  "description": "Lets AI Chat UI import browser tabs as message context.",
+  "name": "AI Chat New Tab",
+  "version": "0.3.0",
+  "description": "Replaces the new tab page with the AI Chat UI — with Tab to search and inline shortcuts.",
   "permissions": [
-    "activeTab",
-    "tabs",
-    "scripting"
+    "storage"
   ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
-  "optional_host_permissions": [
-    "http://*/*",
-    "https://*/*"
-  ],
-  "background": {
-    "service_worker": "service-worker.js"
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; frame-src https://192.168.1.129:5184"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
-      "js": [
-        "content-script.js"
-      ],
-      "run_at": "document_start"
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_title": "AI Chat New Tab",
+    "default_icon": {
+      "16": "icons/icon16.svg",
+      "48": "icons/icon48.svg",
+      "128": "icons/icon128.svg"
     }
-  ]
+  },
+  "icons": {
+    "16": "icons/icon16.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  }
 }

@@ -8,6 +8,7 @@ export interface ImageProviderConfig {
   enabled: boolean
   baseUrl: string
   apiKey: string
+  hasApiKey?: boolean
   model: string
 }
 
@@ -147,11 +148,27 @@ export const useImageStudioStore = create<ImageStudioState>()((set, get) => ({
   },
 
   updateProvider: async (providerId, updates) => {
-    const providers = get().providers.map((provider) => provider.id === providerId ? { ...provider, ...updates } : provider)
+    const providers = get().providers.map((provider) => {
+      if (provider.id !== providerId) return provider
+      const next = { ...provider, ...updates }
+      if (typeof updates.apiKey === 'string' && updates.apiKey.trim()) {
+        next.hasApiKey = true
+      }
+      return next
+    })
     set({ providers })
 
     try {
-      await patchImageSettings({ providers })
+      // Strip empty apiKeys so the server keeps existing secrets
+      const payload = providers.map((p) => {
+        const { hasApiKey: _h, ...rest } = p
+        if (!rest.apiKey || !rest.apiKey.trim()) {
+          const { apiKey: _k, ...withoutKey } = rest
+          return withoutKey
+        }
+        return rest
+      })
+      await patchImageSettings({ providers: payload as ImageProviderConfig[] })
     } catch (error) {
       await get().loadSettings()
       throw error
