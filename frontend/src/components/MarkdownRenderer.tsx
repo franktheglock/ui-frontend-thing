@@ -7,6 +7,7 @@ import { CodeBlock } from './CodeBlock'
 import { CitationPill } from './CitationPill'
 import { Message, useChatStore } from '../stores/chatStore'
 import { cn } from '../lib/utils'
+import { protectCurrencyDollars } from '../lib/markdown'
 
 function extractText(node: any): string {
   if (!node) return ''
@@ -251,7 +252,7 @@ export function MarkdownRenderer({ content, streaming = false, searchHighlight }
     return [...sessionUrls, ...liveUrls]
   }, [allMessages, liveState, streaming])
   const processedContent = React.useMemo(
-    () => preprocessCitations(content, urls),
+    () => protectCurrencyDollars(preprocessCitations(content, urls)),
     [content, urls]
   )
 

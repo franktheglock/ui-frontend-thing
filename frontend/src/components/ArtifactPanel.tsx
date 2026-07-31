@@ -11,6 +11,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import rehypeHighlight from 'rehype-highlight'
 import 'katex/dist/katex.min.css'
+import { protectCurrencyDollars } from '../lib/markdown'
 
 export function ArtifactPanel() {
   const { activeArtifact, artifactPanelOpen, setArtifactPanelOpen, setActiveArtifact } = useUIStore()
@@ -671,7 +672,7 @@ export function ArtifactPanel() {
                       remarkPlugins={[remarkGfm, remarkMath]} 
                       rehypePlugins={[rehypeKatex, rehypeHighlight]}
                     >
-                      {activeArtifact.content}
+                      {protectCurrencyDollars(activeArtifact.content)}
                     </ReactMarkdown>
                   </div>
                 </div>
