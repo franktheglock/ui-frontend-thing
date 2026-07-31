@@ -60,7 +60,8 @@ async function main() {
   app.use(cors(buildCorsOptions()));
   app.use(express.json({ limit: "50mb" }));
 
-  // Auth / remote-access guard for all /api/* routes (except health / network bootstrap)
+  // Auth / remote-access guard for /api/* and sensitive static mounts
+  // (/uploads, /workspace). Must run before express.static for those paths.
   app.use(apiAuthMiddleware);
 
   app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));

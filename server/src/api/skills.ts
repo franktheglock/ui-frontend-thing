@@ -207,12 +207,15 @@ router.post('/install', async (req, res) => {
       const now = Date.now()
       const id = uuidv4()
 
+      const installPath = path.relative(SKILLS_DIR, installDir)
       await db.run(
         'INSERT INTO skills (id, name, version, source, manifest, installed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        id, skillName, '1.0.0', skillId, JSON.stringify({ name: skillName, version: '1.0.0', description: '', source: skillId }), now, now
+        id, skillName, '1.0.0', skillId, JSON.stringify({
+          name: skillName, version: '1.0.0', description: '', source: skillId, installPath,
+        }), now, now
       )
 
-      return res.json({ id, name: skillName, source: skillId, files: fileCount })
+      return res.json({ id, name: skillName, source: skillId, files: fileCount, installPath })
     }
 
     // -------------------------------------------------------------------------
@@ -251,12 +254,15 @@ router.post('/install', async (req, res) => {
         const now = Date.now()
         const id = uuidv4()
 
+        const installPath = path.relative(SKILLS_DIR, installDir)
         await db.run(
           'INSERT INTO skills (id, name, version, source, manifest, installed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          id, skillName, '1.0.0', parsedSkillId, JSON.stringify({ name: skillName, version: '1.0.0', description: '', source: parsedSkillId }), now, now
+          id, skillName, '1.0.0', parsedSkillId, JSON.stringify({
+            name: skillName, version: '1.0.0', description: '', source: parsedSkillId, installPath,
+          }), now, now
         )
 
-        return res.json({ id, name: skillName, source: parsedSkillId, files: fileCount })
+        return res.json({ id, name: skillName, source: parsedSkillId, files: fileCount, installPath })
       }
 
       // -----------------------------------------------------------------------
@@ -338,12 +344,15 @@ router.post('/install', async (req, res) => {
       const now = Date.now()
       const id = uuidv4()
 
+      const installPath = path.relative(SKILLS_DIR, extractDir)
       await db.run(
         'INSERT INTO skills (id, name, version, source, manifest, installed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        id, skillName, '1.0.0', downloadUrl, JSON.stringify({ name: skillName, version: '1.0.0', description: '', source: downloadUrl }), now, now
+        id, skillName, '1.0.0', downloadUrl, JSON.stringify({
+          name: skillName, version: '1.0.0', description: '', source: downloadUrl, installPath,
+        }), now, now
       )
 
-      return res.json({ id, name: skillName, source: downloadUrl, path: extractDir })
+      return res.json({ id, name: skillName, source: downloadUrl, path: extractDir, installPath })
     }
   } catch (error: any) {
     res.status(500).json({ error: error.message })
@@ -353,6 +362,86 @@ router.post('/install', async (req, res) => {
 // ---------------------------------------------------------------------------
 // Local skill management (list / delete)
 // ---------------------------------------------------------------------------
+
+/**
+ * Resolve a filesystem directory to delete for a skill row.
+ * Never treats skill.source (often a URL or skills.sh id) as a path.
+ */
+async function resolveSkillInstallDir(skill: {
+  id: string
+  name?: string
+  source?: string
+  manifest?: string
+}): Promise<string | null> {
+  let manifest: any = {}
+  try {
+    manifest = skill.manifest ? JSON.parse(skill.manifest) : {}
+  } catch {
+    manifest = {}
+  }
+
+  const candidates: string[] = []
+
+  if (typeof manifest.installPath === 'string' && manifest.installPath) {
+    candidates.push(path.join(SKILLS_DIR, manifest.installPath))
+  }
+
+  // Directory named after the DB id (filesystem-scanned skills use entry as id)
+  if (skill.id && !skill.id.includes('/') && !skill.id.includes('://')) {
+    candidates.push(path.join(SKILLS_DIR, skill.id))
+  }
+
+  // Nested installs: source like "owner/repo/slug" → owner_repo_slug is wrong;
+  // prefer installPath. Also try source with / → _
+  if (skill.source && !skill.source.includes('://') && !skill.source.startsWith('http')) {
+    candidates.push(path.join(SKILLS_DIR, skill.source.replace(/\//g, '_')))
+    candidates.push(path.join(SKILLS_DIR, skill.source))
+  }
+
+  // Search by skill name in SKILL.md under SKILLS_DIR (one and two levels)
+  if (skill.name) {
+    try {
+      const top = await fs.readdir(SKILLS_DIR)
+      for (const entry of top) {
+        const level1 = path.join(SKILLS_DIR, entry)
+        const md1 = path.join(level1, 'SKILL.md')
+        if (await fs.pathExists(md1)) {
+          const content = await fs.readFile(md1, 'utf-8')
+          const nameMatch = content.match(/^---[\s\S]*?name:\s*(.+?)\s*$/m)
+          if (nameMatch && nameMatch[1].trim() === skill.name) {
+            candidates.push(level1)
+          }
+        }
+        try {
+          const nested = await fs.readdir(level1)
+          for (const child of nested) {
+            const level2 = path.join(level1, child)
+            const md2 = path.join(level2, 'SKILL.md')
+            if (await fs.pathExists(md2)) {
+              const content = await fs.readFile(md2, 'utf-8')
+              const nameMatch = content.match(/^---[\s\S]*?name:\s*(.+?)\s*$/m)
+              if (nameMatch && nameMatch[1].trim() === skill.name) {
+                candidates.push(level2)
+              }
+            }
+          }
+        } catch {
+          // not a directory
+        }
+      }
+    } catch {
+      // skills dir missing
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (!isInsideDir(SKILLS_DIR, candidate)) continue
+    if (await fs.pathExists(candidate)) {
+      return candidate
+    }
+  }
+  return null
+}
 
 router.get('/local', async (_req, res) => {
   try {
@@ -381,7 +470,7 @@ router.get('/local', async (_req, res) => {
             name: skillName,
             version: '1.0.0',
             source: entry,
-            manifest: { name: skillName, description: skillDesc, version: '1.0.0' },
+            manifest: { name: skillName, description: skillDesc, version: '1.0.0', installPath: entry },
             installed_at: (await fs.stat(skillMdPath)).mtimeMs,
             updated_at: (await fs.stat(skillMdPath)).mtimeMs,
           })
@@ -401,13 +490,17 @@ router.delete('/:id', async (req, res) => {
   if (!skill) return res.status(404).json({ error: 'Skill not found' })
 
   try {
-    await fs.remove(skill.source)
-  } catch {}
+    const installDir = await resolveSkillInstallDir(skill)
+    if (installDir && isInsideDir(SKILLS_DIR, installDir)) {
+      await fs.remove(installDir)
+    }
+  } catch (err: any) {
+    console.error('[skills] Failed to remove install dir:', err.message)
+  }
 
   await db.run('DELETE FROM skills WHERE id = ?', req.params.id)
   res.json({ success: true })
 })
-
 // ---------------------------------------------------------------------------
 // Read skill content for active skill injection
 // ---------------------------------------------------------------------------

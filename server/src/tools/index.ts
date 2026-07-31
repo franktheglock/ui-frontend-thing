@@ -10,13 +10,12 @@ import { mcpManager } from "../mcp/mcp-manager";
 
 /**
  * Host-execution tools (python / terminal) are powerful and not sandboxed.
- * Disable with ENABLE_TERMINAL_TOOL=false / ENABLE_PYTHON_TOOL=false.
- * Default is enabled for local laptop use; pair with HOST=127.0.0.1.
+ * Opt-in only: set ENABLE_TERMINAL_TOOL=true / ENABLE_PYTHON_TOOL=true.
  */
-function envEnabled(name: string, defaultValue = true): boolean {
+function envEnabled(name: string, defaultValue = false): boolean {
   const raw = process.env[name];
   if (raw === undefined || raw === "") return defaultValue;
-  return !["0", "false", "no", "off"].includes(raw.toLowerCase());
+  return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
 }
 
 const tools: BaseTool[] = [
@@ -29,18 +28,19 @@ const tools: BaseTool[] = [
   new MakeSkillTool(),
 ];
 
-if (envEnabled("ENABLE_PYTHON_TOOL", true)) {
+if (envEnabled("ENABLE_PYTHON_TOOL", false)) {
   tools.push(new PythonTool(), new CodeEditTool());
+  console.log("[tools] Python/code_edit tools enabled (ENABLE_PYTHON_TOOL=true)");
 } else {
-  console.log("[tools] Python/code_edit tools disabled (ENABLE_PYTHON_TOOL=false)");
+  console.log("[tools] Python/code_edit tools disabled (set ENABLE_PYTHON_TOOL=true to enable)");
 }
 
-if (envEnabled("ENABLE_TERMINAL_TOOL", true)) {
+if (envEnabled("ENABLE_TERMINAL_TOOL", false)) {
   tools.push(new TerminalTool());
+  console.log("[tools] Terminal tool enabled (ENABLE_TERMINAL_TOOL=true)");
 } else {
-  console.log("[tools] Terminal tool disabled (ENABLE_TERMINAL_TOOL=false)");
+  console.log("[tools] Terminal tool disabled (set ENABLE_TERMINAL_TOOL=true to enable)");
 }
-
 export function registerTool(tool: BaseTool) {
   tools.push(tool);
 }

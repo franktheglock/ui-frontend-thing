@@ -1,8 +1,9 @@
+import fs from 'fs'
 import path from 'path'
 
 /**
  * Resolve `userPath` under `baseDir`. Returns null if the result escapes baseDir
- * (path traversal via `..`, absolute paths, symlinks resolved outside, etc.).
+ * (path traversal via `..`, absolute paths, or symlinks that resolve outside).
  */
 export function resolveWithin(baseDir: string, userPath: string): string | null {
   if (userPath == null || typeof userPath !== 'string' || userPath.trim() === '') {
@@ -14,10 +15,59 @@ export function resolveWithin(baseDir: string, userPath: string): string | null 
     return null
   }
 
-  const resolvedBase = path.resolve(baseDir)
+  if (userPath.includes('\0')) {
+    return null
+  }
+
+  let resolvedBase: string
+  try {
+    resolvedBase = fs.existsSync(baseDir)
+      ? fs.realpathSync(path.resolve(baseDir))
+      : path.resolve(baseDir)
+  } catch {
+    resolvedBase = path.resolve(baseDir)
+  }
+
   const resolved = path.resolve(resolvedBase, userPath)
 
   if (resolved !== resolvedBase && !resolved.startsWith(resolvedBase + path.sep)) {
+    return null
+  }
+
+  // Symlink check: if the path (or nearest existing ancestor) realpaths outside base, reject
+  try {
+    if (fs.existsSync(resolved)) {
+      const realPath = fs.realpathSync(resolved)
+      if (realPath !== resolvedBase && !realPath.startsWith(resolvedBase + path.sep)) {
+        return null
+      }
+      return realPath
+    }
+
+    // New file / missing path — walk up to deepest existing ancestor
+    let ancestor = path.dirname(resolved)
+    while (true) {
+      if (fs.existsSync(ancestor)) {
+        const realAncestor = fs.realpathSync(ancestor)
+        if (realAncestor !== resolvedBase && !realAncestor.startsWith(resolvedBase + path.sep)) {
+          return null
+        }
+        const rel = path.relative(ancestor, resolved)
+        if (rel.startsWith('..') || path.isAbsolute(rel)) {
+          return null
+        }
+        const candidate = path.resolve(realAncestor, rel)
+        if (candidate !== resolvedBase && !candidate.startsWith(resolvedBase + path.sep)) {
+          return null
+        }
+        return candidate
+      }
+      if (ancestor === resolvedBase || ancestor === path.dirname(ancestor)) {
+        break
+      }
+      ancestor = path.dirname(ancestor)
+    }
+  } catch {
     return null
   }
 
@@ -36,12 +86,21 @@ export function mustResolveWithin(baseDir: string, userPath: string, label = 'pa
 }
 
 /**
- * Return true if `candidate` is strictly inside (or equal to) `baseDir`.
+ * Return true if `candidate` is strictly inside (or equal to) `baseDir`,
+ * using realpath when paths exist.
  */
 export function isInsideDir(baseDir: string, candidate: string): boolean {
-  const resolvedBase = path.resolve(baseDir)
-  const resolved = path.resolve(candidate)
-  return resolved === resolvedBase || resolved.startsWith(resolvedBase + path.sep)
+  try {
+    const resolvedBase = fs.existsSync(baseDir)
+      ? fs.realpathSync(path.resolve(baseDir))
+      : path.resolve(baseDir)
+    const resolved = fs.existsSync(candidate)
+      ? fs.realpathSync(path.resolve(candidate))
+      : path.resolve(candidate)
+    return resolved === resolvedBase || resolved.startsWith(resolvedBase + path.sep)
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -65,4 +124,38 @@ export function isLoopbackAddress(address: string | undefined): boolean {
   if (address === '::ffff:127.0.0.1') return true
   if (address.startsWith('::ffff:127.')) return true
   return false
+}
+
+/**
+ * Client IP for access control.
+ * When TRUST_PROXY is set (or X-Forwarded-For is present from a reverse proxy),
+ * prefer the leftmost X-Forwarded-For hop — never treat a proxied request as
+ * loopback just because the proxy connected from 127.0.0.1.
+ */
+export function getClientIp(req: {
+  socket: { remoteAddress?: string }
+  headers: Record<string, string | string[] | undefined>
+}): string | undefined {
+  const remote = req.socket.remoteAddress
+  const trustProxy =
+    process.env.TRUST_PROXY === 'true' ||
+    process.env.TRUST_PROXY === '1' ||
+    // Always honor X-Forwarded-For when the immediate peer is loopback —
+    // that is the https-proxy.mjs / local reverse-proxy case that would
+    // otherwise bypass LAN/token checks by appearing local.
+    isLoopbackAddress(remote)
+
+  if (trustProxy) {
+    const xff = req.headers['x-forwarded-for']
+    const raw = Array.isArray(xff) ? xff[0] : xff
+    if (raw && typeof raw === 'string') {
+      const first = raw.split(',')[0].trim()
+      if (first) return first
+    }
+    const xri = req.headers['x-real-ip']
+    const real = Array.isArray(xri) ? xri[0] : xri
+    if (real && typeof real === 'string' && real.trim()) return real.trim()
+  }
+
+  return remote
 }

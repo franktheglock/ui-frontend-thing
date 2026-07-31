@@ -139,13 +139,16 @@ This app is designed for **local use**. Defaults:
 - Allows private-network browser origins
 - **Require access token** is on by default (recommended); uncheck it only on a trusted network
 - Other devices open a listed LAN URL; if a token is required, paste it once on the unlock screen
+- `/uploads` and `/workspace` follow the same access rules as `/api`
 
-Python and terminal tools run **on the host** (not a security sandbox). Disable them if unused:
+Python and terminal tools run **on the host** (not a security sandbox). They are **opt-in**:
 
 ```env
-ENABLE_PYTHON_TOOL=false
-ENABLE_TERMINAL_TOOL=false
+ENABLE_PYTHON_TOOL=true
+ENABLE_TERMINAL_TOOL=true
 ```
+
+The optional `https-proxy.mjs` (browser-extension HTTPS) defaults to **127.0.0.1** and forwards `X-Forwarded-For` so it cannot be used as an auth bypass. Do not set `PROXY_HOST=0.0.0.0` without a token.
 
 You can still force a token for everyone with `API_AUTH_TOKEN` in `.env` (overrides Settings). Prefer dedicated, rotatable API keys.
 

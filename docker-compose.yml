@@ -5,7 +5,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # Publish only on the host loopback interface (not 0.0.0.0 on the host)
+    # CRITICAL: keep 127.0.0.1: prefix. Publishing as "3456:3456" exposes the API
+    # on the LAN. Enable LAN in Settings (and prefer a token) if you need that.
     ports:
       - "127.0.0.1:3456:3456"
     environment:
@@ -13,6 +14,7 @@ services:
       - PORT=3456
       # Container must listen on all interfaces; host publish is loopback-only above.
       - HOST=0.0.0.0
+      # Optional hard token for every client (including docker-bridge traffic)
       - API_AUTH_TOKEN=${API_AUTH_TOKEN:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3456,http://127.0.0.1:3456}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -25,8 +27,9 @@ services:
       - SEARXNG_URL=${SEARXNG_URL}
       - DATA_DIR=/app/data
       - SKILLS_DIR=/app/skills
-      - ENABLE_TERMINAL_TOOL=${ENABLE_TERMINAL_TOOL:-true}
-      - ENABLE_PYTHON_TOOL=${ENABLE_PYTHON_TOOL:-true}
+      # Host-exec tools are opt-in (unsandboxed)
+      - ENABLE_TERMINAL_TOOL=${ENABLE_TERMINAL_TOOL:-false}
+      - ENABLE_PYTHON_TOOL=${ENABLE_PYTHON_TOOL:-false}
     volumes:
       - ./data:/app/data
       - ./uploads:/app/uploads

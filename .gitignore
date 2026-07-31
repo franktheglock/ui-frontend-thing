@@ -12,6 +12,8 @@ build/
 .env.local
 .env.*.local
 
+# Local TLS material for optional https-proxy.mjs (never commit keys)
+certs/
 # Data & uploads
 data/
 uploads/

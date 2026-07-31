@@ -959,53 +959,7 @@ export function SettingsModal() {
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {activeTab === "general" && (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <label className="text-sm font-medium">
-                          Hero Title
-                        </label>
-                        <button
-                          type="button"
-                          onClick={handleSurpriseHeroText}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-accent/40 hover:bg-secondary/80"
-                        >
-                          <Sparkles className="w-3.5 h-3.5 text-accent" />
-                          <span>Surprise Me</span>
-                        </button>
-                      </div>
-                      <LocalInput
-                        type="text"
-                        value={heroTitle}
-                        onChange={setHeroTitle}
-                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">
-                        Hero Subtitle
-                      </label>
-                      <LocalInput
-                        type="text"
-                        value={heroSubtitle}
-                        onChange={setHeroSubtitle}
-                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">System Prompt</label>
-                    <LocalTextarea
-                      value={systemPrompt}
-                      onChange={setSystemPrompt}
-                      rows={4}
-                      className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring font-mono"
-                    />
-                  </div>
-
-                  {/* Network / LAN access */}
+                  {/* Network / LAN access — top of General so it's easy to find */}
                   <div className="border border-border rounded-sm p-4 space-y-3 bg-secondary/20">
                     <div className="flex items-center gap-2">
                       <Network className="w-4 h-4 text-accent" />
@@ -1149,6 +1103,52 @@ export function SettingsModal() {
                     {networkError && (
                       <p className="text-xs text-destructive">{networkError}</p>
                     )}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-sm font-medium">
+                          Hero Title
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleSurpriseHeroText}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-secondary px-3 py-1 text-xs text-foreground transition-colors hover:border-accent/40 hover:bg-secondary/80"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-accent" />
+                          <span>Surprise Me</span>
+                        </button>
+                      </div>
+                      <LocalInput
+                        type="text"
+                        value={heroTitle}
+                        onChange={setHeroTitle}
+                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        Hero Subtitle
+                      </label>
+                      <LocalInput
+                        type="text"
+                        value={heroSubtitle}
+                        onChange={setHeroSubtitle}
+                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">System Prompt</label>
+                    <LocalTextarea
+                      value={systemPrompt}
+                      onChange={setSystemPrompt}
+                      rows={4}
+                      className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring font-mono"
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
