@@ -14,8 +14,9 @@ services:
       - PORT=3456
       # Container must listen on all interfaces; host publish is loopback-only above.
       - HOST=0.0.0.0
-      # Strongly recommended: set a token. Required for any non-loopback client when HOST is set.
-      - API_AUTH_TOKEN=${API_AUTH_TOKEN:-}
+      # Required: compose sets HOST=0.0.0.0, so non-loopback (docker-bridge) peers
+      # need a token. Fails loudly at `docker compose up` if unset.
+      - API_AUTH_TOKEN=${API_AUTH_TOKEN:?set API_AUTH_TOKEN in .env — required when HOST is set}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3456,http://127.0.0.1:3456}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
