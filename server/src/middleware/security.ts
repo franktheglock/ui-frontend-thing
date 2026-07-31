@@ -1,10 +1,9 @@
 import type { CorsOptions } from 'cors'
 import type { NextFunction, Request, Response } from 'express'
-import { getClientIp, isLoopbackAddress, isLoopbackHost } from '../utils/path-safety'
+import { getClientIp, isLoopbackAddress } from '../utils/path-safety'
 import {
   getEnvAuthToken,
   isPrivateNetworkOrigin,
-  isPrivateOrLocalHostname,
   loadNetworkSecurity,
 } from '../network-security'
 import { getListenInfo } from '../listen-control'
@@ -53,7 +52,6 @@ export function buildCorsOptions(): CorsOptions {
 
   return {
     origin(origin, callback) {
-      // Non-browser clients (curl, same-origin no Origin header) have no Origin
       if (!origin) {
         callback(null, true)
         return
@@ -89,17 +87,18 @@ function extractProvidedToken(req: Request): string {
   return bearer || xToken
 }
 
+/**
+ * Only health and unlock stay public. Network status is handled by its route
+ * with a minimal public payload (no LAN IP leak).
+ */
 function isBootstrapPath(path: string, method: string): boolean {
   if (path === '/api/health' || path === '/health') return true
+  if (path === '/api/network/unlock' && method === 'POST') return true
+  // Minimal public network status (route redacts sensitive fields itself)
   if (path === '/api/network' && method === 'GET') return true
-  if (path === '/api/network/unlock' && (method === 'POST' || method === 'GET')) return true
   return false
 }
 
-/**
- * Paths that hold user data / generated artifacts and must follow the same
- * access rules as /api (not world-readable when LAN+token is on).
- */
 function isProtectedNonApiPath(path: string): boolean {
   return (
     path === '/uploads' ||
@@ -110,14 +109,14 @@ function isProtectedNonApiPath(path: string): boolean {
 }
 
 /**
- * Auth + remote-access guard.
+ * Auth + remote-access guard for /api/* and /uploads|/workspace.
  *
- * Applies to /api/* and sensitive static mounts (/uploads, /workspace).
- * Uses getClientIp() so a reverse proxy on loopback cannot make remote
- * clients appear local (honors X-Forwarded-For from loopback peers).
+ * Client IP uses getClientIp (rightmost XFF / X-Real-IP only when peer is
+ * loopback). Loopback is trusted only when the *resolved* client IP is local —
+ * a reverse proxy must overwrite XFF with the real peer (see https-proxy.mjs).
  *
- * Fail-closed: non-loopback clients are denied when LAN is disabled,
- * even if HOST is locked (Docker). Enable LAN in Settings to allow them.
+ * When HOST is env-locked (Docker), non-loopback clients always need a token —
+ * no Host-header exception.
  */
 export function apiAuthMiddleware(req: Request, res: Response, next: NextFunction) {
   const path = req.path || ''
@@ -139,6 +138,7 @@ export function apiAuthMiddleware(req: Request, res: Response, next: NextFunctio
     const clientIp = getClientIp(req)
     const isLocal = isLoopbackAddress(clientIp)
     const provided = extractProvidedToken(req)
+    const { hostLocked } = getListenInfo()
 
     // Env token always wins — required from everyone (including loopback)
     if (envToken) {
@@ -151,31 +151,24 @@ export function apiAuthMiddleware(req: Request, res: Response, next: NextFunctio
       return next()
     }
 
-    // True local clients (no forwarded remote IP): allow without settings token
+    // True local clients (resolved IP is loopback): allow
     if (isLocal) {
       return next()
     }
 
-    // Non-loopback client — fail closed when LAN is off.
-    // Docker exception: hostLocked + private peer + Host targets loopback.
-    // Safe when compose publishes 127.0.0.1:port only (LAN cannot reach the port
-    // to spoof Host). If you publish 0.0.0.0:port, enable LAN + token instead.
+    // Non-loopback — fail closed when LAN is off.
+    // No Host-header exception (spoofable when the port is published on all interfaces).
+    // Docker with ports published as 127.0.0.1:… is protected by the kernel bind;
+    // enable LAN (and optionally a token) for container access via the bridge IP.
     if (!settings.lanAccessEnabled) {
-      const { hostLocked } = getListenInfo()
-      const hostHeader = String(req.headers.host || '').split(':')[0]
-      const hostIsLoopback = isLoopbackHost(hostHeader)
-      const peerIsPrivate = clientIp ? isPrivateOrLocalHostname(clientIp) : false
-      if (hostLocked && peerIsPrivate && hostIsLoopback) {
-        return next()
-      }
       return res.status(403).json({
         error:
-          'Remote API access is disabled. Enable LAN access in Settings → General → Network.',
+          'Remote API access is disabled. Enable LAN access in Settings → General → Network' +
+          (hostLocked ? ' (HOST is env-locked / Docker: LAN must be on for non-loopback peers).' : '.'),
         code: 'LAN_DISABLED',
       })
     }
 
-    // LAN enabled
     if (settings.requireToken) {
       const expected = settings.apiAuthToken
       if (!expected) {

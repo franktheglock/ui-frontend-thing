@@ -148,7 +148,7 @@ ENABLE_PYTHON_TOOL=true
 ENABLE_TERMINAL_TOOL=true
 ```
 
-The optional `https-proxy.mjs` (browser-extension HTTPS) defaults to **127.0.0.1** and forwards `X-Forwarded-For` so it cannot be used as an auth bypass. Do not set `PROXY_HOST=0.0.0.0` without a token.
+The optional `https-proxy.mjs` (browser-extension HTTPS) defaults to **127.0.0.1** and **overwrites** `X-Forwarded-For` / `X-Real-IP` with the TCP peer (never trusts client-supplied XFF). Do not set `PROXY_HOST=0.0.0.0` without a token on the app.
 
 You can still force a token for everyone with `API_AUTH_TOKEN` in `.env` (overrides Settings). Prefer dedicated, rotatable API keys.
 

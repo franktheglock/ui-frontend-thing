@@ -3,17 +3,19 @@
  *
  * SECURITY NOTES
  * --------------
- * - Default listen address is 127.0.0.1 so it is NOT an internet/LAN-facing bypass.
- * - Forwards X-Forwarded-For / X-Real-IP so the app does NOT treat every proxied
- *   request as loopback (the app honors these when the peer is loopback).
- * - Does NOT strip Content-Security-Policy or force X-Frame-Options: ALLOWALL.
- * - Cert is generated for localhost only (no machine-specific LAN IPs committed).
+ * - Default listen address is 127.0.0.1 (not LAN/internet-facing).
+ * - ALWAYS overwrites X-Forwarded-For / X-Real-IP with req.socket.remoteAddress.
+ *   Never reads or appends the client's X-Forwarded-For (that value is untrusted).
+ * - The app trusts only the rightmost XFF hop / X-Real-IP when the TCP peer is
+ *   loopback — so a spoofed left hop cannot become "local".
+ * - Does NOT strip Content-Security-Policy or force framing headers.
+ * - Cert is localhost-only.
  *
  * Usage:
  *   PROXY_PORT=5184 TARGET_PORT=5183 node https-proxy.mjs
  *
- * To expose on the LAN (not recommended without a token on the app):
- *   PROXY_HOST=0.0.0.0 node https-proxy.mjs
+ * Exposing on the LAN requires PROXY_HOST=0.0.0.0 AND a token on the app
+ * (Settings LAN token or API_AUTH_TOKEN). Prefer not to.
  */
 import https from 'node:https'
 import http from 'node:http'
@@ -42,7 +44,6 @@ function ensureCert() {
   console.log('[https-proxy] Generating self-signed certificate for localhost...')
   fs.mkdirSync(CERT_DIR, { recursive: true })
 
-  // Localhost-only cert — do not bake personal LAN IPs into the repo
   execSync(
     `openssl req -x509 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -days 365 -nodes ` +
       `-subj "/CN=localhost/O=AI-Chat-Proxy/C=US" ` +
@@ -54,12 +55,12 @@ function ensureCert() {
   return { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) }
 }
 
-function clientIp(req) {
-  const xff = req.headers['x-forwarded-for']
-  if (typeof xff === 'string' && xff.trim()) {
-    return xff.split(',')[0].trim()
-  }
-  return req.socket.remoteAddress || '0.0.0.0'
+/** Only the TCP peer — never client-asserted X-Forwarded-For. */
+function tcpPeerIp(req) {
+  const addr = req.socket.remoteAddress || '0.0.0.0'
+  // Normalize IPv4-mapped IPv6
+  if (addr.startsWith('::ffff:')) return addr.slice(7)
+  return addr
 }
 
 function startProxy() {
@@ -68,19 +69,19 @@ function startProxy() {
   if (PROXY_HOST === '0.0.0.0' || PROXY_HOST === '::') {
     console.warn(
       '[https-proxy] WARNING: PROXY_HOST binds all interfaces. ' +
-        'Proxied clients will be access-controlled via X-Forwarded-For on the app. ' +
-        'Enable a LAN token (or API_AUTH_TOKEN) on the app.',
+        'The app will see real client IPs via X-Real-IP (overwritten here). ' +
+        'You MUST enable a LAN access token or API_AUTH_TOKEN on the app.',
     )
   }
 
   const server = https.createServer({ key, cert }, (req, res) => {
-    const remote = clientIp(req)
+    const peer = tcpPeerIp(req)
     const headers = { ...req.headers }
 
-    // Preserve chain; app uses leftmost hop when peer is loopback
-    const prior = typeof headers['x-forwarded-for'] === 'string' ? headers['x-forwarded-for'] : ''
-    headers['x-forwarded-for'] = prior ? `${prior}, ${remote}` : remote
-    headers['x-real-ip'] = remote
+    // REPLACE — never append or trust the client-supplied chain.
+    // This proxy is the outermost hop; there is no legitimate prior chain.
+    headers['x-forwarded-for'] = peer
+    headers['x-real-ip'] = peer
     headers['x-forwarded-proto'] = 'https'
     headers['x-forwarded-host'] = headers.host || `localhost:${PROXY_PORT}`
 
@@ -100,8 +101,6 @@ function startProxy() {
     }
 
     const proxyReq = http.request(options, (proxyRes) => {
-      // Pass response headers through unchanged — do NOT strip CSP or force ALLOWALL.
-      // Extension iframe: load the same-origin HTTPS page, or configure CSP on the app.
       res.writeHead(proxyRes.statusCode || 200, proxyRes.headers)
       proxyRes.pipe(res)
     })

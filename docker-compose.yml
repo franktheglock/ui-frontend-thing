@@ -5,8 +5,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # CRITICAL: keep 127.0.0.1: prefix. Publishing as "3456:3456" exposes the API
-    # on the LAN. Enable LAN in Settings (and prefer a token) if you need that.
+    # Keep 127.0.0.1: prefix for host-only access. Publishing as "3456:3456" is
+    # possible but non-local clients ALWAYS need a token (HOST-locked mode).
     ports:
       - "127.0.0.1:3456:3456"
     environment:
@@ -14,7 +14,7 @@ services:
       - PORT=3456
       # Container must listen on all interfaces; host publish is loopback-only above.
       - HOST=0.0.0.0
-      # Optional hard token for every client (including docker-bridge traffic)
+      # Strongly recommended: set a token. Required for any non-loopback client when HOST is set.
       - API_AUTH_TOKEN=${API_AUTH_TOKEN:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3456,http://127.0.0.1:3456}
       - OPENAI_API_KEY=${OPENAI_API_KEY}

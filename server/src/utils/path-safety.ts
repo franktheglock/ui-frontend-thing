@@ -128,9 +128,15 @@ export function isLoopbackAddress(address: string | undefined): boolean {
 
 /**
  * Client IP for access control.
- * When TRUST_PROXY is set (or X-Forwarded-For is present from a reverse proxy),
- * prefer the leftmost X-Forwarded-For hop — never treat a proxied request as
- * loopback just because the proxy connected from 127.0.0.1.
+ *
+ * When the immediate TCP peer is loopback (or TRUST_PROXY=true), we treat the
+ * request as coming through a local reverse proxy and read X-Real-IP /
+ * X-Forwarded-For. We take the **rightmost** XFF hop — that is the address the
+ * immediate proxy observed on its TCP peer. The leftmost hop is client-asserted
+ * and must never be trusted.
+ *
+ * Proxies in front of this app MUST overwrite (not append client-supplied)
+ * X-Forwarded-For with the socket remote address. See https-proxy.mjs.
  */
 export function getClientIp(req: {
   socket: { remoteAddress?: string }
@@ -140,21 +146,51 @@ export function getClientIp(req: {
   const trustProxy =
     process.env.TRUST_PROXY === 'true' ||
     process.env.TRUST_PROXY === '1' ||
-    // Always honor X-Forwarded-For when the immediate peer is loopback —
-    // that is the https-proxy.mjs / local reverse-proxy case that would
-    // otherwise bypass LAN/token checks by appearing local.
     isLoopbackAddress(remote)
 
-  if (trustProxy) {
-    const xff = req.headers['x-forwarded-for']
-    const raw = Array.isArray(xff) ? xff[0] : xff
-    if (raw && typeof raw === 'string') {
-      const first = raw.split(',')[0].trim()
-      if (first) return first
+  if (!trustProxy) {
+    // Direct client connection — ignore any client-supplied forwarding headers
+    return remote
+  }
+
+  const hasForwardingHeaders = !!(
+    req.headers['x-real-ip'] ||
+    req.headers['x-forwarded-for']
+  )
+
+  // Prefer X-Real-IP when present (our proxy sets this to socket.remoteAddress only)
+  const xri = req.headers['x-real-ip']
+  const real = Array.isArray(xri) ? xri[0] : xri
+  if (real && typeof real === 'string' && real.trim()) {
+    const ip = real.trim()
+    // Never grant loopback privilege via a forwarding header — that is how
+    // `X-Forwarded-For: 127.0.0.1` used to skip the token check through a proxy.
+    if (isLoopbackAddress(ip)) {
+      return '203.0.113.1' // TEST-NET-3 sentinel: non-local, non-private
     }
-    const xri = req.headers['x-real-ip']
-    const real = Array.isArray(xri) ? xri[0] : xri
-    if (real && typeof real === 'string' && real.trim()) return real.trim()
+    return ip
+  }
+
+  const xff = req.headers['x-forwarded-for']
+  const raw = Array.isArray(xff) ? xff[0] : xff
+  if (raw && typeof raw === 'string' && raw.trim()) {
+    const hops = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (hops.length > 0) {
+      // Rightmost hop = closest to us = set by the immediate trusted proxy
+      const ip = hops[hops.length - 1]
+      if (isLoopbackAddress(ip)) {
+        return '203.0.113.1'
+      }
+      return ip
+    }
+  }
+
+  // Loopback peer with no forwarding headers = genuine local client
+  if (!hasForwardingHeaders) {
+    return remote
   }
 
   return remote
