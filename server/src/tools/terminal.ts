@@ -10,7 +10,12 @@ const WORKSPACE_DIR = path.join(process.cwd(), 'workspace')
 export class TerminalTool extends BaseTool {
   id = 'terminal'
   name = 'terminal'
-  description = 'Execute a shell command in the terminal and return the output. Useful for file operations, system information, git commands, and other CLI tasks. Runs with a 30-second timeout.\n\nNOTE: Runs directly on the host process (not a security sandbox). Commands start with cwd set to the workspace directory.'
+  description = [
+    'Execute a shell command on the host (not a security sandbox). 30s default timeout.',
+    'cwd is the persistent workspace/ directory — same place as code_edit and the python tool.',
+    'Python plots for the browser still need to go through the python tool\'s ./output → /uploads/python-out/ publish step;',
+    'files only in workspace/ are not automatically web-served.',
+  ].join(' ')
   parameters = {
     type: 'object',
     properties: {

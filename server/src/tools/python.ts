@@ -8,12 +8,16 @@ import { resolveWithin } from '../utils/path-safety'
 const execAsync = promisify(exec)
 
 const VENV_DIR = path.join(process.cwd(), '.venv')
-const VENV_PYTHON = process.platform === 'win32' 
+const VENV_PYTHON = process.platform === 'win32'
   ? path.join(VENV_DIR, 'Scripts', 'python.exe')
   : path.join(VENV_DIR, 'bin', 'python')
 
+/** Persistent workspace shared with the terminal tool and code_edit. */
 const WORKSPACE_DIR = path.join(process.cwd(), 'workspace')
-const UPLOADS_DIR = path.join(process.cwd(), 'uploads')
+/** Where user-facing plot/files are published for the browser. */
+const PUBLIC_OUTPUT_DIR = path.join(process.cwd(), 'uploads', 'python-out')
+/** Relative output folder inside the workspace (cwd when scripts run). */
+const OUTPUT_REL = 'output'
 
 function ensureVenv(): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -27,31 +31,81 @@ function ensureVenv(): Promise<void> {
           if (error2) reject(new Error(`Python not found (tried 'python' and 'python3'). ${error2.message}`))
           else resolve()
         })
-      }
-      else resolve()
+      } else resolve()
     })
   })
+}
+
+function ensureDirs() {
+  for (const dir of [WORKSPACE_DIR, path.join(WORKSPACE_DIR, OUTPUT_REL), PUBLIC_OUTPUT_DIR]) {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  }
+}
+
+/** Snapshot basenames → mtimeMs for files directly under dir. */
+function snapshotDir(dir: string): Map<string, number> {
+  const map = new Map<string, number>()
+  if (!fs.existsSync(dir)) return map
+  for (const name of fs.readdirSync(dir)) {
+    if (name === '.' || name === '..') continue
+    try {
+      const st = fs.statSync(path.join(dir, name))
+      if (st.isFile()) map.set(name, st.mtimeMs)
+    } catch {
+      // ignore
+    }
+  }
+  return map
+}
+
+/**
+ * Pick a public filename that does not clobber an existing upload.
+ * `plot.png` → `plot.png` or `plot-1785509108070.png` if taken.
+ */
+function uniquePublicName(preferred: string): string {
+  const safe = path.basename(preferred)
+  const dest = path.join(PUBLIC_OUTPUT_DIR, safe)
+  if (!fs.existsSync(dest)) return safe
+  const ext = path.extname(safe)
+  const stem = path.basename(safe, ext)
+  return `${stem}-${Date.now()}${ext}`
 }
 
 export class PythonTool extends BaseTool {
   id = 'python'
   name = 'python'
-  description = 'Execute Python code and return the output. You can install packages via the packages parameter. \n\nIMPORTANT: To save images or files, save them to the "./output" directory. \n\nCRITICAL: To display these images to the user, you MUST use the exact URL format: `/uploads/python-out/<filename>`. \nExample: `![Graph](/uploads/python-out/myplot.png)`. \n\nDO NOT use relative paths like "./output/" or just the filename. For matplotlib, use the "Agg" backend.\n\nNOTE: Runs on the host (venv isolation only — not a security sandbox).'
+  description = [
+    'Execute Python code on the host (venv only — not a security sandbox).',
+    '',
+    '## Layout (important)',
+    '- Working directory is the persistent `workspace/` folder (same as the terminal tool).',
+    '- `code_edit` writes scripts into that workspace; run them with file_path.',
+    '- Save plots/files under `./output/` (i.e. workspace/output/).',
+    '- After the run, NEW/UPDATED files in `./output/` are published to the web at `/uploads/python-out/<filename>`.',
+    '- Prefer unique output filenames (e.g. include a topic or timestamp). If a name already exists in python-out, the tool renames automatically and reports the final URL.',
+    '',
+    '## Showing images to the user',
+    'Use the exact markdown URLs returned by the tool, e.g. `![plot](/uploads/python-out/myplot.png)`.',
+    'Do NOT invent paths like `./output/foo.png` in the chat — those are not served to the browser.',
+    '',
+    'Use matplotlib with the Agg backend. Install packages with the packages parameter.',
+  ].join('\n')
   parameters = {
     type: 'object',
     properties: {
       code: {
         type: 'string',
-        description: 'The Python code to execute (optional if file_path is provided)',
+        description: 'Python code to run (optional if file_path is set). cwd is the persistent workspace/.',
       },
       file_path: {
         type: 'string',
-        description: 'Path to a Python file in the workspace to execute (e.g. "script.py"). Alternative to inline code.',
+        description:
+          'Script path relative to the persistent workspace/ (e.g. "analysis.py" from code_edit). Prefer this for multi-step work.',
       },
       packages: {
         type: 'array',
         items: { type: 'string' },
-        description: 'List of pip packages to install before running code (e.g. ["numpy", "pandas", "matplotlib"])',
+        description: 'pip packages to install before running (e.g. ["numpy", "matplotlib"])',
       },
       timeout: {
         type: 'number',
@@ -71,75 +125,103 @@ export class PythonTool extends BaseTool {
 
     try {
       await ensureVenv()
-      
-      const publicOutputDir = path.join(UPLOADS_DIR, 'python-out')
-      if (!fs.existsSync(publicOutputDir)) {
-        fs.mkdirSync(publicOutputDir, { recursive: true })
-      }
+      ensureDirs()
+
+      const workspaceOutput = path.join(WORKSPACE_DIR, OUTPUT_REL)
 
       if (packages.length > 0) {
-        // Basic package name sanitization — block shell metacharacters
         const safePackages = packages.filter((p) => /^[A-Za-z0-9_.\-\[\],=<>!~]+$/.test(p))
         if (safePackages.length !== packages.length) {
           return 'Error: Invalid package name(s). Only alphanumeric characters and common version operators are allowed.'
         }
-        await execAsync(`"${VENV_PYTHON}" -m pip install ${safePackages.map(p => `"${p}"`).join(' ')}`, {
-          timeout: 300000,
-          maxBuffer: 10 * 1024 * 1024,
-        })
+        await execAsync(
+          `"${VENV_PYTHON}" -m pip install ${safePackages.map((p) => `"${p}"`).join(' ')}`,
+          { timeout: 300000, maxBuffer: 10 * 1024 * 1024 },
+        )
       }
 
-      const runId = `run-${Date.now()}`
-      const tempDir = path.join(process.cwd(), 'tmp', runId)
-      const outputDir = path.join(tempDir, 'output')
-      const tempScript = path.join(tempDir, 'script.py')
-      
-      fs.mkdirSync(outputDir, { recursive: true })
-      
+      const before = snapshotDir(workspaceOutput)
+
+      let scriptPath: string
+      let cleanupScript: string | null = null
+
       if (filePath) {
         const sourcePath = resolveWithin(WORKSPACE_DIR, filePath)
         if (!sourcePath) {
           return `Error: Invalid file path (must stay within workspace): ${filePath}`
         }
         if (!fs.existsSync(sourcePath)) {
-          return `Error: File not found: ${filePath}. Use code_edit to create it first.`
+          return `Error: File not found in workspace: ${filePath}. Use code_edit to create it first.`
         }
-        fs.copyFileSync(sourcePath, tempScript)
+        scriptPath = sourcePath
       } else {
-        await fs.promises.writeFile(tempScript, code)
+        // Ephemeral script file inside workspace so cwd/imports stay consistent
+        cleanupScript = path.join(WORKSPACE_DIR, `.python-run-${Date.now()}.py`)
+        await fs.promises.writeFile(cleanupScript, code)
+        scriptPath = cleanupScript
       }
 
-      const { stdout, stderr } = await execAsync(`"${VENV_PYTHON}" "${tempScript}"`, {
-        timeout: timeoutSec,
-        maxBuffer: 10 * 1024 * 1024,
-        cwd: tempDir,
-      })
+      let stdout = ''
+      let stderr = ''
+      try {
+        const result = await execAsync(`"${VENV_PYTHON}" "${scriptPath}"`, {
+          timeout: timeoutSec,
+          maxBuffer: 10 * 1024 * 1024,
+          cwd: WORKSPACE_DIR,
+        })
+        stdout = result.stdout
+        stderr = result.stderr
+      } finally {
+        if (cleanupScript) {
+          await fs.promises.unlink(cleanupScript).catch(() => {})
+        }
+      }
 
-      const generatedFiles = fs.existsSync(outputDir) ? fs.readdirSync(outputDir) : []
-      const servedFiles: string[] = []
+      const after = snapshotDir(workspaceOutput)
+      const published: { original: string; publicName: string; url: string }[] = []
 
-      for (const file of generatedFiles) {
-        // Basename only — refuse nested/escaped names from the output dir listing
-        const safeName = path.basename(file)
-        if (safeName !== file || safeName === '.' || safeName === '..') continue
-        const src = path.join(outputDir, safeName)
-        const dest = path.join(publicOutputDir, safeName)
+      for (const [name, mtime] of after) {
+        const prev = before.get(name)
+        if (prev !== undefined && prev >= mtime) continue // unchanged
+        if (name.includes('/') || name.includes('\\') || name === '.' || name === '..') continue
+
+        const src = path.join(workspaceOutput, name)
+        const publicName = uniquePublicName(name)
+        const dest = path.join(PUBLIC_OUTPUT_DIR, publicName)
         fs.copyFileSync(src, dest)
-        servedFiles.push(safeName)
+        published.push({
+          original: name,
+          publicName,
+          url: `/uploads/python-out/${publicName}`,
+        })
       }
 
       let outputMessage = stdout.trim() || (stderr ? '' : '(no output)')
-      
+
       if (stderr) {
         outputMessage += `\n\nStderr:\n${stderr}`
       }
 
-      if (servedFiles.length > 0) {
-        const fileLinks = servedFiles.map(f => `![${f}](/uploads/python-out/${f})`).join('\n')
-        outputMessage += `\n\n### 📁 GENERATED FILES\n**CRITICAL:** To show these to the user, you MUST copy and paste the markdown below exactly as-is into your response:\n\n${fileLinks}`
-      }
+      outputMessage +=
+        `\n\n### Environment\n` +
+        `- cwd: persistent workspace (\`workspace/\`) — same as terminal & code_edit\n` +
+        `- write plots/files to: \`./output/\` (workspace/output/)\n` +
+        `- browser URLs: only files listed below under /uploads/python-out/`
 
-      await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {})
+      if (published.length > 0) {
+        const lines = published.map((p) => {
+          const rename =
+            p.original !== p.publicName
+              ? ` (renamed from \`${p.original}\` to avoid overwrite)`
+              : ''
+          return `- \`${p.original}\`${rename} → \`${p.url}\`\n  ![${p.publicName}](${p.url})`
+        })
+        outputMessage +=
+          `\n\n### Published files (paste the markdown into your reply)\n${lines.join('\n')}`
+      } else {
+        outputMessage +=
+          '\n\n### Published files\nNone. Save outputs under `./output/` to publish them.'
+      }
 
       return outputMessage
     } catch (error: any) {
@@ -152,17 +234,22 @@ export class PythonTool extends BaseTool {
 export class CodeEditTool extends BaseTool {
   id = 'code_edit'
   name = 'code_edit'
-  description = 'Write or update a Python file in the persistent workspace. Use this for long code that would exceed token limits, or to iteratively edit code across multiple turns. Files persist across tool calls. After editing, use the `python` tool with `file_path` to run it.'
+  description = [
+    'Write or update a file in the persistent workspace/ directory.',
+    'These files survive across tool calls and are visible to both `python` (file_path) and `terminal`.',
+    'They are NOT automatically served to the browser — only files written under workspace/output/ and published by the python tool appear at /uploads/python-out/.',
+    'After editing a .py file, run it with: python(file_path="your_script.py").',
+  ].join(' ')
   parameters = {
     type: 'object',
     properties: {
       file_name: {
         type: 'string',
-        description: 'The filename to write to (e.g. "script.py", "analysis.py"). Saved in the workspace directory.',
+        description: 'Path relative to workspace/ (e.g. "script.py", "analysis/plot.py").',
       },
       code: {
         type: 'string',
-        description: 'The Python code to write to the file. This completely replaces the file contents.',
+        description: 'Full file contents (overwrites the file).',
       },
     },
     required: ['file_name', 'code'],
@@ -175,24 +262,25 @@ export class CodeEditTool extends BaseTool {
     if (!fileName || !code) return 'Error: Both `file_name` and `code` are required'
 
     try {
-      if (!fs.existsSync(WORKSPACE_DIR)) {
-        fs.mkdirSync(WORKSPACE_DIR, { recursive: true })
-      }
+      ensureDirs()
 
       const filePath = resolveWithin(WORKSPACE_DIR, fileName)
       if (!filePath) {
         return `Error: Invalid file_name (must stay within workspace): ${fileName}`
       }
 
-      // Ensure parent dirs stay inside workspace
       await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
       await fs.promises.writeFile(filePath, code)
 
       const size = Buffer.byteLength(code, 'utf8')
       const lines = code.split('\n').length
       const relativeName = path.relative(WORKSPACE_DIR, filePath)
-      
-      return `File saved: ${relativeName} (${lines} lines, ${size} bytes)\nPath: ${filePath}\n\nYou can now run it with: python(file_path="${relativeName}")`
+
+      return (
+        `Saved to persistent workspace: \`${relativeName}\` (${lines} lines, ${size} bytes)\n` +
+        `Run with: python(file_path="${relativeName}")\n` +
+        `Note: this is source code, not a browser URL. For images, have the script write to ./output/ and use the /uploads/python-out/ URL the python tool returns.`
+      )
     } catch (error: any) {
       return `Error: ${error.message}`
     }
