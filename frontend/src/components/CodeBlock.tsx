@@ -82,7 +82,7 @@ export function CodeBlock({ language, content, highlighted }: CodeBlockProps) {
     return () => clearTimeout(timer)
   }, [content, language, highlighted])
 
-  const isPreviewable = ['html', 'svg', 'markdown', 'mermaid'].includes(language) || 
+  const isPreviewable = ['html', 'svg', 'markdown'].includes(language) || 
     content.includes('<!DOCTYPE html>') || 
     content.includes('<html')
 
@@ -108,7 +108,7 @@ export function CodeBlock({ language, content, highlighted }: CodeBlockProps) {
     setArtifactPanelOpen(true)
   }
 
-  // Generate Mermaid frame contents locally
+  // Generate Mermaid frame contents locally - inline with pan/zoom (same UX as artifact but inline)
   const mermaidSrcDoc = React.useMemo(() => {
     if (language !== 'mermaid') return ''
     const isDark = theme !== 'light'
@@ -122,37 +122,55 @@ export function CodeBlock({ language, content, highlighted }: CodeBlockProps) {
       <head>
         <script src="/mermaid.min.js"></script>
         <style>
-          body {
+          html, body {
             margin: 0;
-            padding: 16px;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
             background-color: ${bgColor};
             color: ${textColor};
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            min-height: 100vh;
             font-family: system-ui, -apple-system, sans-serif;
             box-sizing: border-box;
-            overflow: auto;
+            cursor: grab;
+            user-select: none;
+            -webkit-user-select: none;
           }
-          .mermaid {
-            opacity: 0;
-            transition: opacity 0.3s ease-in-out;
-            max-width: 100%;
+          #viewport {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+            touch-action: none;
           }
-          .mermaid[data-processed="true"] {
-            opacity: 1;
+          #svg-wrapper {
+            transform-origin: 0 0;
+            position: absolute;
+            top: 0;
+            left: 0;
+            display: inline-block;
+          }
+          #container {
+            display: inline-block;
+          }
+          #container svg {
+            max-width: none !important;
+            max-height: none !important;
+            display: block;
           }
           #error-container {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            right: 16px;
+            z-index: 10;
             display: none;
             color: #ef4444;
             border: 1px solid rgba(239, 68, 68, 0.2);
-            background: rgba(239, 68, 68, 0.05);
-            padding: 16px;
+            background: rgba(239, 68, 68, 0.1);
+            padding: 12px;
             font-family: monospace;
-            font-size: 13px;
-            max-width: 600px;
-            margin: auto;
+            font-size: 12px;
             border-radius: 4px;
             white-space: pre-wrap;
           }
@@ -160,39 +178,109 @@ export function CodeBlock({ language, content, highlighted }: CodeBlockProps) {
       </head>
       <body>
         <div id="error-container"></div>
-        <div class="mermaid">
-${content}
+        <div id="viewport">
+          <div id="svg-wrapper">
+            <div id="container"></div>
+          </div>
         </div>
         <script>
-          window.addEventListener('error', function(e) {
-            const errDiv = document.getElementById('error-container');
-            if (errDiv) {
-              errDiv.style.display = 'block';
-              errDiv.textContent = 'Mermaid syntax error:\\n' + e.message;
-            }
-          });
-          try {
-            mermaid.initialize({
-              startOnLoad: true,
-              theme: '${mermaidTheme}',
-              securityLevel: 'loose',
-              themeVariables: {
-                background: '${bgColor}',
-                primaryColor: '${isDark ? '#1f2937' : '#f3f4f6'}',
+          let scale = 1;
+          let translateX = 0;
+          let translateY = 0;
+          function updateTransform() {
+            const el = document.getElementById('svg-wrapper');
+            if (el) el.style.transform = 'translate(' + translateX + 'px, ' + translateY + 'px) scale(' + scale + ')';
+          }
+          function centerAndFit() {
+            const container = document.getElementById('container');
+            const svgEl = container.querySelector('svg');
+            const viewport = document.getElementById('viewport');
+            if (svgEl && viewport) {
+              const vw = viewport.clientWidth;
+              const vh = viewport.clientHeight;
+              let svgW = 800, svgH = 400;
+              if (svgEl.viewBox && svgEl.viewBox.baseVal && svgEl.viewBox.baseVal.width > 0) {
+                svgW = svgEl.viewBox.baseVal.width;
+                svgH = svgEl.viewBox.baseVal.height;
+              } else {
+                const r = svgEl.getBoundingClientRect();
+                if (r.width > 0) { svgW = r.width; svgH = r.height; }
               }
-            });
-          } catch (err) {
-            const errDiv = document.getElementById('error-container');
-            if (errDiv) {
-              errDiv.style.display = 'block';
-              errDiv.textContent = 'Failed to initialize Mermaid:\\n' + err.message;
+              let s = Math.min(vw / svgW, vh / svgH) * 0.92;
+              s = Math.min(Math.max(0.1, s), 1.4);
+              scale = s;
+              translateX = (vw - svgW * scale) / 2;
+              translateY = (vh - svgH * scale) / 2;
+              updateTransform();
             }
           }
+          try {
+            mermaid.initialize({ startOnLoad: false, theme: '${mermaidTheme}', securityLevel: 'loose', themeVariables: { background: '${bgColor}', primaryColor: '${isDark ? '#1f2937' : '#f3f4f6'}' } });
+          } catch(e) {}
+          // pan
+          let isPanning = false, startX=0, startY=0;
+          window.addEventListener('mousedown', function(e){ if(e.button!==0) return; isPanning=true; startX=e.clientX-translateX; startY=e.clientY-translateY; document.body.style.cursor='grabbing'; });
+          window.addEventListener('mousemove', function(e){ if(!isPanning) return; translateX=e.clientX-startX; translateY=e.clientY-startY; updateTransform(); });
+          window.addEventListener('mouseup', function(){ isPanning=false; document.body.style.cursor='grab'; });
+          window.addEventListener('mouseleave', function(){ isPanning=false; document.body.style.cursor='grab'; });
+          window.addEventListener('wheel', function(e){ e.preventDefault(); const xs=(e.clientX-translateX)/scale, ys=(e.clientY-translateY)/scale; const z=0.1; if(e.deltaY<0) scale+=scale*z; else scale-=scale*z; scale=Math.min(Math.max(0.05, scale), 15); translateX=e.clientX-xs*scale; translateY=e.clientY-ys*scale; updateTransform(); }, {passive:false});
+          // touch pan + pinch
+          let lastTouchX=0, lastTouchY=0, isTouching=false, pinchStartDist=0, pinchStartScale=1;
+          function getDist(t){ const dx=t[0].clientX-t[1].clientX, dy=t[0].clientY-t[1].clientY; return Math.hypot(dx,dy); }
+          function getCenter(t){ return { x:(t[0].clientX+t[1].clientX)/2, y:(t[0].clientY+t[1].clientY)/2 }; }
+          window.addEventListener('touchstart', function(e){
+            if(e.touches.length===1){ isTouching=true; lastTouchX=e.touches[0].clientX; lastTouchY=e.touches[0].clientY; }
+            else if(e.touches.length===2){ isTouching=false; pinchStartDist=getDist(e.touches); pinchStartScale=scale; }
+          }, {passive:false});
+          window.addEventListener('touchmove', function(e){
+            if(e.touches.length===2){ e.preventDefault(); const d=getDist(e.touches); if(pinchStartDist>0){ const c=getCenter(e.touches); const xs=(c.x-translateX)/scale, ys=(c.y-translateY)/scale; let ns=pinchStartScale*(d/pinchStartDist); ns=Math.min(Math.max(0.05, ns),15); translateX=c.x-xs*ns; translateY=c.y-ys*ns; scale=ns; updateTransform(); } return; }
+            if(!isTouching||e.touches.length!==1) return; e.preventDefault(); const dx=e.touches[0].clientX-lastTouchX, dy=e.touches[0].clientY-lastTouchY; translateX+=dx; translateY+=dy; lastTouchX=e.touches[0].clientX; lastTouchY=e.touches[0].clientY; updateTransform();
+          }, {passive:false});
+          window.addEventListener('touchend', function(e){
+            if(e.touches.length===0){ isTouching=false; pinchStartDist=0; }
+            else if(e.touches.length===1){ pinchStartDist=0; isTouching=true; lastTouchX=e.touches[0].clientX; lastTouchY=e.touches[0].clientY; }
+          });
+          function doRender(){
+            const id='m-'+Math.floor(Math.random()*1e6);
+            mermaid.render(id, \`${content.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`).then(function(r){
+              const c=document.getElementById('container');
+              c.innerHTML=r.svg;
+              if(r.bindFunctions) r.bindFunctions(c);
+              centerAndFit();
+            }).catch(function(err){
+              const e=document.getElementById('error-container');
+              if(e){ e.style.display='block'; e.textContent='Mermaid syntax error:\\n'+(err.message||err); }
+            });
+          }
+          // mermaid may not be loaded yet when this script runs via srcDoc
+          if (window.mermaid) doRender();
+          else window.addEventListener('load', doRender);
         </script>
       </body>
       </html>
     `
   }, [content, language, theme])
+
+  // Mermaid: inline rendered diagram, not a codeblock, no artifact popup
+  if (language === 'mermaid') {
+    return (
+      <div className="my-5 rounded-sm border border-border overflow-hidden bg-card">
+        <iframe
+          srcDoc={mermaidSrcDoc}
+          className="w-full h-[380px] md:h-[420px] border-0 block"
+          sandbox="allow-scripts"
+          title="Mermaid diagram"
+          loading="lazy"
+        />
+        <div className="flex items-center justify-between px-2.5 py-1.5 bg-secondary/40 border-t border-border text-[11px] text-muted-foreground">
+          <span className="font-mono">drag to pan · pinch or scroll to zoom</span>
+          <button onClick={handleCopy} className="flex items-center gap-1 px-2 py-1 rounded-sm hover:bg-background transition-colors">
+            {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />} {copied ? 'Copied' : 'Copy source'}
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="my-4 rounded-sm border border-border overflow-hidden bg-secondary/50">
@@ -262,13 +350,6 @@ ${content}
         <div className="p-4 bg-background">
           {language === 'svg' ? (
             <div dangerouslySetInnerHTML={{ __html: content }} />
-          ) : language === 'mermaid' ? (
-            <iframe
-              srcDoc={mermaidSrcDoc}
-              className="w-full h-[300px] border-0 rounded-sm bg-[#121212] dark:bg-[#121212]"
-              sandbox="allow-scripts"
-              title="Mermaid Flowchart Preview"
-            />
           ) : (
             <iframe
               srcDoc={content}

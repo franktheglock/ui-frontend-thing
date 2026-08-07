@@ -239,7 +239,7 @@ function ArtifactStreamSync() {
       const { language, content, startIndex } = lastBlock;
       const langLower = language.toLowerCase();
       
-      const isPreviewable = ['html', 'svg', 'markdown', 'mermaid'].includes(langLower) ||
+      const isPreviewable = ['html', 'svg', 'markdown'].includes(langLower) ||
         content.includes('<!DOCTYPE html>') ||
         content.includes('<html');
 
