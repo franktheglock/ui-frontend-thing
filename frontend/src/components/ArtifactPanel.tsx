@@ -232,6 +232,7 @@ export function ArtifactPanel() {
             height: 100%;
             position: relative;
             overflow: hidden;
+            touch-action: none;
           }
           #svg-wrapper {
             transform-origin: 0 0;
@@ -393,21 +394,62 @@ export function ArtifactPanel() {
             updateTransform();
           }, { passive: false });
 
-          // Touch support
+          // Touch support - pan with 1 finger, pinch-zoom with 2
           let lastTouchX = 0;
           let lastTouchY = 0;
           let isTouching = false;
+          let pinchStartDist = 0;
+          let pinchStartScale = 1;
+          let pinchCenterX = 0;
+          let pinchCenterY = 0;
+
+          function getTouchDist(touches) {
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.hypot(dx, dy);
+          }
+          function getTouchCenter(touches) {
+            return {
+              x: (touches[0].clientX + touches[1].clientX) / 2,
+              y: (touches[0].clientY + touches[1].clientY) / 2
+            };
+          }
 
           window.addEventListener('touchstart', function(e) {
             if (e.touches.length === 1) {
               isTouching = true;
               lastTouchX = e.touches[0].clientX;
               lastTouchY = e.touches[0].clientY;
+            } else if (e.touches.length === 2) {
+              isTouching = false;
+              pinchStartDist = getTouchDist(e.touches);
+              pinchStartScale = scale;
+              const c = getTouchCenter(e.touches);
+              pinchCenterX = c.x;
+              pinchCenterY = c.y;
             }
-          });
+          }, { passive: false });
 
           window.addEventListener('touchmove', function(e) {
+            if (e.touches.length === 2) {
+              e.preventDefault();
+              const dist = getTouchDist(e.touches);
+              if (pinchStartDist > 0) {
+                const c = getTouchCenter(e.touches);
+                const xs = (c.x - translateX) / scale;
+                const ys = (c.y - translateY) / scale;
+                let newScale = pinchStartScale * (dist / pinchStartDist);
+                newScale = Math.min(Math.max(0.05, newScale), 15);
+                // keep pinch center stable
+                translateX = c.x - xs * newScale;
+                translateY = c.y - ys * newScale;
+                scale = newScale;
+                updateTransform();
+              }
+              return;
+            }
             if (!isTouching || e.touches.length !== 1) return;
+            e.preventDefault();
             const dx = e.touches[0].clientX - lastTouchX;
             const dy = e.touches[0].clientY - lastTouchY;
             translateX += dx;
@@ -415,10 +457,19 @@ export function ArtifactPanel() {
             lastTouchX = e.touches[0].clientX;
             lastTouchY = e.touches[0].clientY;
             updateTransform();
-          });
+          }, { passive: false });
 
-          window.addEventListener('touchend', function() {
-            isTouching = false;
+          window.addEventListener('touchend', function(e) {
+            if (e.touches.length === 0) {
+              isTouching = false;
+              pinchStartDist = 0;
+            } else if (e.touches.length === 1) {
+              // switch back to pan after pinch ends
+              pinchStartDist = 0;
+              isTouching = true;
+              lastTouchX = e.touches[0].clientX;
+              lastTouchY = e.touches[0].clientY;
+            }
           });
 
           // Message listener
