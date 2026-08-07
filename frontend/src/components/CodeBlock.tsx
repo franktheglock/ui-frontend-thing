@@ -57,6 +57,7 @@ export function CodeBlock({ language, content, highlighted }: CodeBlockProps) {
   const [viewMode, setViewMode] = useState<'code' | 'preview'>('code')
   const { setActiveArtifact, setArtifactPanelOpen } = useUIStore()
   const { theme } = useSettingsStore()
+  const mermaidFrameRef = React.useRef<HTMLIFrameElement>(null)
 
   const [highlightedHtml, setHighlightedHtml] = useState<string | null>(() => {
     if (highlighted) return null
@@ -108,7 +109,7 @@ export function CodeBlock({ language, content, highlighted }: CodeBlockProps) {
     setArtifactPanelOpen(true)
   }
 
-  // Generate Mermaid frame contents locally - inline with pan/zoom (same UX as artifact but inline)
+  // Generate Mermaid frame contents locally - static shell, content streamed via postMessage
   const mermaidSrcDoc = React.useMemo(() => {
     if (language !== 'mermaid') return ''
     const isDark = theme !== 'light'
@@ -187,6 +188,8 @@ export function CodeBlock({ language, content, highlighted }: CodeBlockProps) {
           let scale = 1;
           let translateX = 0;
           let translateY = 0;
+          let lastValidSvg = '';
+          let isFirstRender = true;
           function updateTransform() {
             const el = document.getElementById('svg-wrapper');
             if (el) el.style.transform = 'translate(' + translateX + 'px, ' + translateY + 'px) scale(' + scale + ')';
@@ -240,38 +243,53 @@ export function CodeBlock({ language, content, highlighted }: CodeBlockProps) {
             if(e.touches.length===0){ isTouching=false; pinchStartDist=0; }
             else if(e.touches.length===1){ pinchStartDist=0; isTouching=true; lastTouchX=e.touches[0].clientX; lastTouchY=e.touches[0].clientY; }
           });
-          function doRender(){
-            const id='m-'+Math.floor(Math.random()*1e6);
-            const mermaidContent = ${JSON.stringify(content)};
-            mermaid.render(id, mermaidContent).then(function(r){
+          window.addEventListener('message', function(event){
+            const data = event.data;
+            if (!data || typeof data.content !== 'string') return;
+            const content = data.content;
+            const renderId = 'm-' + Math.floor(Math.random()*1e6);
+            mermaid.render(renderId, content).then(function(r){
               const c=document.getElementById('container');
+              const errDiv=document.getElementById('error-container');
               c.innerHTML=r.svg;
               if(r.bindFunctions) r.bindFunctions(c);
-              centerAndFit();
+              lastValidSvg = r.svg;
+              if (isFirstRender) { centerAndFit(); isFirstRender=false; }
+              if (errDiv) errDiv.style.display='none';
             }).catch(function(err){
-              const e=document.getElementById('error-container');
-              if(e){ e.style.display='block'; e.textContent='Mermaid syntax error:\\n'+(err.message||err); }
+              const errDiv=document.getElementById('error-container');
+              // keep last valid during streaming, only show error if we have never rendered
+              if (lastValidSvg) {
+                // silently keep previous render while streaming
+                return;
+              }
+              if(errDiv){ errDiv.style.display='block'; errDiv.textContent='Mermaid syntax error:\\n'+(err.message||err); }
             });
-          }
-          // mermaid may not be loaded yet when this script runs via srcDoc
-          if (window.mermaid) doRender();
-          else window.addEventListener('load', doRender);
+          });
         </script>
       </body>
       </html>
     `
-  }, [content, language, theme])
+  }, [language, theme])
 
-  // Mermaid: inline rendered diagram, not a codeblock, no artifact popup
+  React.useEffect(() => {
+    if (language !== 'mermaid') return
+    const win = mermaidFrameRef.current?.contentWindow
+    if (win) win.postMessage({ content }, '*')
+  }, [content, language])
+
+  // Mermaid: inline rendered diagram, not a codeblock, no artifact popup - streams via postMessage
   if (language === 'mermaid') {
     return (
       <div className="my-5 rounded-sm border border-border overflow-hidden bg-card">
         <iframe
+          ref={mermaidFrameRef}
           srcDoc={mermaidSrcDoc}
           className="w-full h-[380px] md:h-[420px] border-0 block"
           sandbox="allow-scripts"
           title="Mermaid diagram"
           loading="lazy"
+          onLoad={() => mermaidFrameRef.current?.contentWindow?.postMessage({ content }, '*')}
         />
         <div className="flex items-center justify-between px-2.5 py-1.5 bg-secondary/40 border-t border-border text-[11px] text-muted-foreground">
           <span className="font-mono">drag to pan · pinch or scroll to zoom</span>
