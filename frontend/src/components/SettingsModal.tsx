@@ -16,14 +16,17 @@ import {
   Network,
   Copy,
   Check,
+  Shield,
 } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useImageStudioStore } from "../stores/imageStudioStore";
 import { useUIStore } from "../stores/uiStore";
+import { useAuthStore } from "../stores/authStore";
+import { AdminPanel } from "./AdminPanel";
 import { cn } from "../lib/utils";
 import { setApiToken } from "../lib/apiAuth";
 
-type SettingsTab = "general" | "providers" | "tools" | "skills" | "memory";
+type SettingsTab = "general" | "providers" | "tools" | "skills" | "memory" | "admin";
 
 const reasoningEffortOptions = [
   { value: "auto", label: "Provider default" },
@@ -438,6 +441,8 @@ export function SettingsModal() {
   } = useSettingsStore();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
+  const { user: authUser } = useAuthStore();
+  const isAdmin = authUser?.role === "admin";
   const [skillSearch, setSkillSearch] = useState("");
   const [skillView, setSkillView] = useState<
     "trending" | "all-time" | "curated"
@@ -909,6 +914,7 @@ export function SettingsModal() {
     { id: "tools" as SettingsTab, label: "Tools", icon: Wrench },
     { id: "memory" as SettingsTab, label: "Memory", icon: Brain },
     { id: "skills" as SettingsTab, label: "Skills", icon: Download },
+    ...(isAdmin ? [{ id: "admin" as SettingsTab, label: "Admin", icon: Shield }] : []),
   ];
 
   return (
@@ -942,6 +948,7 @@ export function SettingsModal() {
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
+                  data-admin-tab={tab.id==="admin"? "true": undefined}
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
                     "flex items-center gap-2 px-4 py-2.5 text-sm border-b-2 transition-colors",
@@ -1302,6 +1309,7 @@ export function SettingsModal() {
                       <option value="parallel">Parallel Search</option>
                       <option value="exa">Exa</option>
                       <option value="tavily">Tavily</option>
+                      <option value="tinyfish">TinyFish</option>
                     </select>
                   </div>
 
@@ -1378,6 +1386,18 @@ export function SettingsModal() {
                           setSearchConfig({
                             ...searchConfig,
                             tavilyApiKey: val,
+                          })
+                        }
+                        className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <LocalInput
+                        type="password"
+                        placeholder="TinyFish API Key"
+                        value={searchConfig.tinyfishApiKey || ""}
+                        onChange={(val: string) =>
+                          setSearchConfig({
+                            ...searchConfig,
+                            tinyfishApiKey: val,
                           })
                         }
                         className="w-full px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-ring"
@@ -1717,6 +1737,11 @@ export function SettingsModal() {
                 </div>
               )}
 
+              {activeTab === "admin" && (
+                <div className="space-y-4">
+                  <AdminPanel />
+                </div>
+              )}
               {activeTab === "providers" && (
                 <div className="space-y-4">
                   {providers.length === 0 ? (

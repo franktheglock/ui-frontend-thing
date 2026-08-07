@@ -44,7 +44,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   loadProjects: async () => {
     set({ loading: true })
     try {
-      const res = await fetch('/api/projects')
+      const res = await fetch('/api/projects', { credentials: 'include' })
       if (!res.ok) return
       const projects = await res.json()
       if (Array.isArray(projects)) set({ projects })
@@ -79,6 +79,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     try {
       await fetch(`/api/projects/${id}`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       })
@@ -103,7 +104,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   loadProjectFiles: async (projectId) => {
     try {
-      const res = await fetch(`/api/projects/${projectId}/files`)
+      const res = await fetch(`/api/projects/${projectId}/files`, {
+        credentials: 'include' })
       if (!res.ok) return
       const files = await res.json()
       set(state => ({
@@ -119,6 +121,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   addFilesToProject: async (projectId, files) => {
     const res = await fetch(`/api/projects/${projectId}/files`, {
+        credentials: 'include',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ files }),
@@ -145,6 +148,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     }))
     try {
       await fetch(`/api/projects/${projectId}/files`, {
+        credentials: 'include',
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),

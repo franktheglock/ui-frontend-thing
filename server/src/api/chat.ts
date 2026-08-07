@@ -11,12 +11,30 @@ import { safeJsonParse } from "../utils/json";
 
 const router = Router();
 
+// All chat routes require authenticated user
+import { requireAuth } from "../middleware/auth";
+router.use(requireAuth as any);
+
+function getUserId(req: Request): string {
+  return (req as any).user?.id as string;
+}
+
+function isProviderAllowed(req: Request, providerId: string): boolean {
+  const user: any = (req as any).user;
+  if (user?.role === 'admin') return true;
+  const allowed = user?.allowed_providers as string[] | null | undefined;
+  if (!allowed || allowed.length === 0) return true;
+  return allowed.includes(providerId);
+}
+
 router.get("/sessions", async (req, res) => {
   const db = await getDb();
+  const userId = getUserId(req);
   const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
+  // Ensure project belongs to user if filtering
   const sessions = projectId
-    ? await db.all("SELECT * FROM sessions WHERE project_id = ? ORDER BY updated_at DESC", projectId)
-    : await db.all("SELECT * FROM sessions ORDER BY updated_at DESC");
+    ? await db.all("SELECT * FROM sessions WHERE user_id = ? AND project_id = ? ORDER BY updated_at DESC", userId, projectId)
+    : await db.all("SELECT * FROM sessions WHERE user_id = ? ORDER BY updated_at DESC", userId);
   res.json(
     sessions.map((s) => ({
       ...s,
@@ -32,9 +50,10 @@ router.get("/sessions", async (req, res) => {
 
 router.get("/sessions/:id", async (req, res) => {
   const db = await getDb();
+  const userId = getUserId(req);
   const session = await db.get(
-    "SELECT * FROM sessions WHERE id = ?",
-    req.params.id,
+    "SELECT * FROM sessions WHERE id = ? AND user_id = ?",
+    req.params.id, userId,
   );
   if (!session) return res.status(404).json({ error: "Session not found" });
 
@@ -70,8 +89,12 @@ router.post("/sessions", async (req, res) => {
   const now = Date.now();
 
   try {
+    const userId = getUserId(req);
+    if (provider && !isProviderAllowed(req, provider)) {
+      return res.status(403).json({ error: `Provider ${provider} not allowed for this user` });
+    }
     await db.run(
-      "INSERT INTO sessions (id, project_id, title, model, provider, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO sessions (id, project_id, title, model, provider, system_prompt, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       id,
       projectId || null,
       title || "New Chat",
@@ -80,6 +103,7 @@ router.post("/sessions", async (req, res) => {
       systemPrompt || null,
       now,
       now,
+      userId,
     );
     res.json({
       id,
@@ -100,7 +124,8 @@ router.post("/sessions", async (req, res) => {
 
 router.delete("/sessions/:id", async (req, res) => {
   const db = await getDb();
-  await db.run("DELETE FROM sessions WHERE id = ?", req.params.id);
+  const userId = getUserId(req);
+  await db.run("DELETE FROM sessions WHERE id = ? AND user_id = ?", req.params.id, userId);
   res.json({ success: true });
 });
 
@@ -110,7 +135,8 @@ router.post("/sessions/:id/branch", async (req, res) => {
   const sourceSessionId = req.params.id;
 
   try {
-    const session = await db.get("SELECT * FROM sessions WHERE id = ?", sourceSessionId);
+    const userId = getUserId(req);
+    const session = await db.get("SELECT * FROM sessions WHERE id = ? AND user_id = ?", sourceSessionId, userId);
     if (!session) {
       return res.status(404).json({ error: "Source session not found" });
     }
@@ -132,7 +158,7 @@ router.post("/sessions/:id/branch", async (req, res) => {
     const newTitle = `Branch: ${session.title}`;
 
     await db.run(
-      "INSERT INTO sessions (id, project_id, title, model, provider, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO sessions (id, project_id, title, model, provider, system_prompt, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       newSessionId,
       session.project_id || null,
       newTitle,
@@ -140,7 +166,8 @@ router.post("/sessions/:id/branch", async (req, res) => {
       session.provider,
       session.system_prompt || null,
       now,
-      now
+      now,
+      userId
     );
 
     for (const msg of messagesToClone) {
@@ -172,6 +199,7 @@ router.post("/sessions/:id/branch", async (req, res) => {
 
 router.patch("/sessions/:id", async (req, res) => {
   const db = await getDb();
+  const userId = getUserId(req);
   const { title, lastResponseId, model, provider, projectId } = req.body;
   const updates: string[] = [];
   const values: any[] = [];
@@ -189,6 +217,7 @@ router.patch("/sessions/:id", async (req, res) => {
     values.push(model);
   }
   if (provider !== undefined) {
+    if (!isProviderAllowed(req, provider)) return res.status(403).json({ error: `Provider ${provider} not allowed` });
     updates.push("provider = ?");
     values.push(provider);
   }
@@ -204,6 +233,9 @@ router.patch("/sessions/:id", async (req, res) => {
   values.push(Date.now());
   values.push(req.params.id);
 
+  // verify ownership
+  const own = await db.get("SELECT id FROM sessions WHERE id = ? AND user_id = ?", req.params.id, userId) as any;
+  if (!own) return res.status(404).json({ error: "Session not found" });
   await db.run(
     `UPDATE sessions SET ${updates.join(", ")} WHERE id = ?`,
     values,
@@ -213,6 +245,9 @@ router.patch("/sessions/:id", async (req, res) => {
 
 router.post("/sessions/:id/messages", async (req, res) => {
   const db = await getDb();
+  const userId = getUserId(req);
+  const owned = await db.get("SELECT id FROM sessions WHERE id = ? AND user_id = ?", req.params.id, userId) as any;
+  if (!owned) return res.status(404).json({ error: "Session not found" });
   const {
     id: msgId,
     role,
@@ -330,6 +365,15 @@ router.patch("/sessions/:sessionId/messages/:messageId", async (req, res) => {
 
 router.get("/messages/:id/poll-cost", async (req, res) => {
   const db = await getDb();
+  // verify message belongs to user's session
+  try {
+    const userId = getUserId(req);
+    const msgSess = await db.get("SELECT session_id FROM messages WHERE id = ?", req.params.id) as any;
+    if (msgSess) {
+      const own = await db.get("SELECT id FROM sessions WHERE id = ? AND user_id = ?", msgSess.session_id, userId) as any;
+      if (!own) return res.status(404).json({ error: "Not found" });
+    }
+  } catch {}
   const { provider, responseId } = req.query;
   const { id } = req.params;
 
@@ -451,7 +495,7 @@ function getCleanErrorMessage(error: any, provider: string): string {
 }
 
 router.post("/completions", async (req, res) => {
-  const {
+  let {
     messages,
     model,
     provider,
@@ -468,6 +512,43 @@ router.post("/completions", async (req, res) => {
   console.log(
     `[chat] /completions - Request: { model: "${model}", provider: "${provider}", sessionId: "${sessionId}" }`,
   );
+
+  // Enforce provider allow-list and spend limits
+  try {
+    const uid = getUserId(req);
+    const dbAuth = await getDb();
+    const userRow = await dbAuth.get('SELECT * FROM users WHERE id = ?', uid) as any;
+    if (userRow) {
+      if (!isProviderAllowed(req, provider)) {
+        return res.status(403).json({ error: `Provider ${provider} not allowed for this user` });
+      }
+      const limit = Number(userRow.spend_limit) || 0;
+      const used = Number(userRow.spend_used) || 0;
+      if (limit > 0 && used >= limit) {
+        return res.status(402).json({ error: `Spend limit reached ($${used.toFixed(2)} / $${limit.toFixed(2)}). Contact admin.` , code: 'SPEND_LIMIT'});
+      }
+    }
+    // Simplified model picker: if global alias mode, resolve display name to provider/model
+    try {
+      const settingsRow = await dbAuth.get("SELECT value FROM app_settings WHERE id = ?", "global") as any;
+      const s = settingsRow?.value ? JSON.parse(settingsRow.value) : {};
+      if (s.useSimplifiedPicker) {
+        // If model or provider matches an alias display_name, resolve
+        const aliasTarget = model || provider;
+        if (aliasTarget) {
+          const alias = await dbAuth.get("SELECT * FROM model_aliases WHERE display_name = ? COLLATE NOCASE AND enabled = 1", String(aliasTarget)) as any;
+          if (alias) {
+            provider = alias.provider_id;
+            model = alias.model;
+          } else {
+            // Also try provider+model alias lookup loose: search by display_name = model
+            const alias2 = await dbAuth.get("SELECT * FROM model_aliases WHERE display_name = ? COLLATE NOCASE AND enabled = 1", String(model)) as any;
+            if (alias2) { provider = alias2.provider_id; model = alias2.model; }
+          }
+        }
+      }
+    } catch {}
+  } catch {}
 
   try {
     const providerInstance = await getProvider(provider);
@@ -493,13 +574,14 @@ router.post("/completions", async (req, res) => {
       ? JSON.parse(settingsRow.value || "{}")
       : {};
     const memoryEnabled = appSettings.memoryEnabled !== false;
+    const uidForProj = getUserId(req);
     const projectContext = sessionId
       ? await db.get(
           `SELECT p.id, p.name, p.description, p.memory
            FROM sessions s
            JOIN projects p ON p.id = s.project_id
-           WHERE s.id = ?`,
-          sessionId,
+           WHERE s.id = ? AND s.user_id = ?`,
+          sessionId, uidForProj,
         )
       : null;
     const projectFiles = projectContext

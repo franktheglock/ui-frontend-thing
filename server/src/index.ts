@@ -18,9 +18,12 @@ import localImageServerRoutes, {
 } from "./api/local-image-server";
 import hermesRoutes from './api/hermes'
 import networkRoutes from './api/network'
+import authRoutes from './api/auth'
+import modelAliasRoutes from './api/model-aliases'
 import { getDb } from "./db";
 import { mcpManager } from "./mcp/mcp-manager";
 import { apiAuthMiddleware, buildCorsOptions } from "./middleware/security";
+import { attachUser } from "./middleware/auth";
 import { initListenControl } from "./listen-control";
 import { loadNetworkSecurity } from "./network-security";
 
@@ -59,10 +62,42 @@ async function main() {
 
   app.use(cors(buildCorsOptions()));
   app.use(express.json({ limit: "50mb" }));
+  // Attach user from cookie (if present) before any route logic
+  app.use(attachUser as any);
 
   // Auth / remote-access guard for /api/* and sensitive static mounts
   // (/uploads, /workspace). Must run before express.static for those paths.
   app.use(apiAuthMiddleware);
+
+  // Require cookie auth for all /api/* except bootstrap/public auth endpoints
+  app.use((req: any, res, next) => {
+    const p = req.path || '';
+    const m = req.method || 'GET';
+    // Public / bootstrap paths (same as security.isBootstrap + auth me for polling)
+    const isPublic =
+      p === '/api/health' || p === '/health' ||
+      (p === '/api/network' && m === 'GET') ||
+      (p === '/api/network/unlock' && m === 'POST') ||
+      (p.startsWith('/api/auth/') ) ||
+      p === '/api/model-aliases-public' ||
+      (p === '/api/settings' && m === 'GET') ||
+      false;
+    if (isPublic) return next();
+    if (p.startsWith('/api/')) {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Not authenticated', code: 'LOGIN_REQUIRED' });
+      }
+      // Enforce approval status again (attachUser already filtered pending)
+      if (req.user.status !== 'approved') {
+        return res.status(403).json({ error: 'Account pending approval', code: 'PENDING_APPROVAL' });
+      }
+    }
+    // Protect uploads/workspace statically - require auth too
+    if ((p === '/uploads' || p.startsWith('/uploads/') || p === '/workspace' || p.startsWith('/workspace/')) ) {
+      if (!req.user) return res.status(401).json({ error: 'Not authenticated', code: 'LOGIN_REQUIRED' });
+    }
+    next();
+  });
 
   app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
   app.use("/workspace", express.static(path.join(process.cwd(), "workspace")));
@@ -71,6 +106,17 @@ async function main() {
   const workspaceDir = path.join(process.cwd(), "workspace");
   if (!fs.existsSync(workspaceDir))
     fs.mkdirSync(workspaceDir, { recursive: true });
+
+  app.use("/api/auth", authRoutes);
+  // public aliases list (enabled) — also mounted under /api/model-aliases for admin; expose same path with auth gate inside file
+  // For non-admin, GET is allowed with filtered view; POST/PATCH/DELETE require admin (handled in router)
+  app.use("/api/model-aliases", modelAliasRoutes);
+
+  // Public endpoint for model aliases (enabled only) — no admin needed
+  app.get("/api/model-aliases-public", async (_req, res) => {
+    const { listEnabledAliases } = await import("./api/model-aliases");
+    res.json(await listEnabledAliases());
+  });
 
   app.use("/api/chat", chatRoutes);
   app.use("/api/settings", settingsRoutes);

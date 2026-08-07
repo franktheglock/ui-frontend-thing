@@ -415,6 +415,7 @@ export function ToolsModal() {
     { id: 'parallel' as const, name: 'Parallel', description: 'AI-native search API' },
     { id: 'exa' as const, name: 'Exa', description: 'Neural search for LLMs' },
     { id: 'tavily' as const, name: 'Tavily', description: 'AI search engine' },
+    { id: 'tinyfish' as const, name: 'TinyFish', description: 'Fast agent-tuned search (docs.tinyfish.ai)' },
   ]
 
   const statusColors: Record<string, string> = {
@@ -599,6 +600,19 @@ export function ToolsModal() {
                     placeholder="tvly-..."
                     className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
                   />
+                </label>
+              )}
+              {defaultSearchProvider === 'tinyfish' && (
+                <label className="block">
+                  <span className="text-xs text-muted-foreground">TinyFish API Key <a href="https://docs.tinyfish.ai/" target="_blank" rel="noreferrer" className="text-accent underline">docs</a></span>
+                  <input
+                    type="password"
+                    value={searchConfig.tinyfishApiKey || ''}
+                    onChange={e => setSearchConfig({ ...searchConfig, tinyfishApiKey: e.target.value })}
+                    placeholder="TinyFish API key"
+                    className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-sm text-sm focus:outline-none focus:border-accent"
+                  />
+                  <span className="text-[11px] text-muted-foreground">Get one at https://agent.tinyfish.ai/api-keys</span>
                 </label>
               )}
             </div>

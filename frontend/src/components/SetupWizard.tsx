@@ -267,9 +267,17 @@ const searchOptions = [
     description:
       "Research-focused search API with concise answer-oriented results.",
   },
+  {
+    id: "tinyfish",
+    label: "TinyFish",
+    needsConfig: true,
+    placeholder: "TinyFish API key",
+    description: "Fast web search tuned for agents — https://docs.tinyfish.ai/",
+  },
 ] as const;
 
 type Step =
+  | "admin"
   | "welcome"
   | "providers"
   | "search"
@@ -317,9 +325,19 @@ export function SetupWizard() {
   const [showThinking, setShowThinking] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminDisplayName, setAdminDisplayName] = useState("Admin");
+  const [adminCreated, setAdminCreated] = useState(false);
+  const [hasAdmin, setHasAdmin] = useState<boolean | null>(null);
 
+  useEffect(() => {
+    fetch("/api/auth/setup-status", { credentials: "include" }).then(r=>r.json()).then(d=>setHasAdmin(!!d.hasAdmin)).catch(()=>setHasAdmin(true))
+  }, [])
+
+  const baseSteps: Step[] = hasAdmin === false ? ["admin", "welcome"] : ["welcome"]
   const steps: Step[] = [
-    "welcome",
+    ...baseSteps,
     "providers",
     "search",
     "tools",
@@ -365,6 +383,7 @@ export function SetupWizard() {
     refreshLocalImageStatus().catch(console.error);
   }, [step, localImagePort]);
 
+  if (hasAdmin === null) return null
   if (
     !sharedSettingsLoaded ||
     !providersLoaded ||
@@ -386,6 +405,16 @@ export function SetupWizard() {
     );
     if (recommendedVariant?.key) setLocalImageModel(recommendedVariant.key);
   };
+
+  const createAdminAccount = async () => {
+    setError(null); setSaving(true);
+    try {
+      const res = await fetch("/api/auth/setup-admin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ email: adminEmail, password: adminPassword, displayName: adminDisplayName }) });
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok) { setError(data.error || "Failed to create admin"); return false }
+      setAdminCreated(true); return true;
+    } catch (e:any) { setError(e.message); return false } finally { setSaving(false) }
+  }
 
   const setupLocalServer = async () => {
     setLocalImageAction("setup");
@@ -478,6 +507,8 @@ export function SetupWizard() {
     if (searchProvider === "exa") return { exaApiKey: searchValue.trim() };
     if (searchProvider === "tavily")
       return { tavilyApiKey: searchValue.trim() };
+    if (searchProvider === "tinyfish")
+      return { tinyfishApiKey: searchValue.trim() };
     return {};
   };
 
@@ -634,9 +665,8 @@ export function SetupWizard() {
   };
 
   const canContinue =
-    step !== "providers" ||
-    !selectedProvider.needsKey ||
-    !!apiKeys[selectedProviderId]?.trim();
+    (step === "admin" ? (hasAdmin === true || adminCreated) : true) &&
+    (step !== "providers" || !selectedProvider.needsKey || !!apiKeys[selectedProviderId]?.trim());
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
@@ -668,6 +698,37 @@ export function SetupWizard() {
               />
             ))}
           </div>
+
+          {step === "admin" && (
+            <div className="space-y-4">
+              <WizardSection
+                title="Create admin account"
+                description="First, create the administrator account. This admin will approve new users, set spend limits, allowed providers, and manage the simplified model picker."
+              />
+              {adminCreated ? (
+                <div className="rounded-md border border-green-500/20 bg-green-500/10 px-3 py-2 text-sm text-green-700">Admin account created. You can continue.</div>
+              ) : hasAdmin === false ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-medium">Admin display name</label>
+                    <input value={adminDisplayName} onChange={e=>setAdminDisplayName(e.target.value)} placeholder="Admin" className="mt-1 w-full px-3 py-2 bg-secondary border border-border rounded-md text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium">Admin email</label>
+                    <input type="email" value={adminEmail} onChange={e=>setAdminEmail(e.target.value)} placeholder="admin@example.com" className="mt-1 w-full px-3 py-2 bg-secondary border border-border rounded-md text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium">Password (≥8 chars)</label>
+                    <input type="password" value={adminPassword} onChange={e=>setAdminPassword(e.target.value)} placeholder="••••••••" className="mt-1 w-full px-3 py-2 bg-secondary border border-border rounded-md text-sm" />
+                  </div>
+                  {error && <div className="text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded px-3 py-2">{error}</div>}
+                  <button onClick={async ()=>{ const ok = await createAdminAccount(); if (ok) setHasAdmin(true) }} disabled={saving} className="w-full py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">{saving ? "Creating…" : "Create admin account"}</button>
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">Admin already exists. Continue.</div>
+              )}
+            </div>
+          )}
 
           {step === "welcome" && (
             <WizardSection

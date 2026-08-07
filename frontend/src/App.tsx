@@ -17,6 +17,7 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { getViewFromPathname, useUIStore } from "./stores/uiStore";
 import { cn } from "./lib/utils";
 import { isNewTabMode } from "./lib/utils";
+import { AuthGate } from "./components/AuthGate";
 
 function ThemeSync() {
   const { theme } = useSettingsStore();
@@ -61,7 +62,7 @@ function ModelSync() {
 
     async function loadProvidersAndModels() {
       try {
-        const res = await fetch("/api/providers");
+        const res = await fetch("/api/providers", { credentials: "include" });
         if (!res.ok) return;
         const backendProviders = await res.json();
         if (cancelled) return;
@@ -75,6 +76,7 @@ function ModelSync() {
           try {
             const modelRes = await fetch(
               `/api/providers/${encodeURIComponent(p.id)}/models`,
+              { credentials: "include" }
             );
             if (modelRes.ok) {
               const models = await modelRes.json();
@@ -136,8 +138,8 @@ function SharedSettingsSync() {
     const loadSharedState = async () => {
       try {
         const [settingsRes, toolsRes] = await Promise.all([
-          fetch("/api/settings"),
-          fetch("/api/tools"),
+          fetch("/api/settings", { credentials: "include" }),
+          fetch("/api/tools", { credentials: "include" }),
         ]);
 
         if (cancelled) return;
@@ -277,6 +279,8 @@ function ArtifactStreamSync() {
   // 3. Auto-open panel when a streaming artifact starts
   useEffect(() => {
     if (!isGenerating) return;
+    // On mobile, don't auto-takeover the screen - let user open manually
+    if (typeof window !== 'undefined' && window.innerWidth < 768) return;
 
     const currentId = currentStreamingArtifactIdRef.current;
     if (currentId && currentId !== closedArtifactIdRef.current) {
@@ -348,7 +352,7 @@ function App() {
     (currentSession.messages.length === 0 && !isCurrentGenerating);
 
   return (
-    <>
+    <AuthGate>
       <ThemeSync />
       <SharedSettingsSync />
       <ModelSync />
@@ -387,7 +391,7 @@ function App() {
         <ModelSelector />
         <SetupWizard />
       </div>
-    </>
+    </AuthGate>
   );
 }
 
