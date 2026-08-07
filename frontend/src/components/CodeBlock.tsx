@@ -242,7 +242,8 @@ export function CodeBlock({ language, content, highlighted }: CodeBlockProps) {
           });
           function doRender(){
             const id='m-'+Math.floor(Math.random()*1e6);
-            mermaid.render(id, \`${content.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`).then(function(r){
+            const mermaidContent = ${JSON.stringify(content)};
+            mermaid.render(id, mermaidContent).then(function(r){
               const c=document.getElementById('container');
               c.innerHTML=r.svg;
               if(r.bindFunctions) r.bindFunctions(c);

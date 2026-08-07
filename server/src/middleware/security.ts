@@ -52,7 +52,7 @@ export function buildCorsOptions(): CorsOptions {
 
   return {
     origin(origin, callback) {
-      if (!origin) {
+      if (!origin || origin === 'null') {
         callback(null, true)
         return
       }
