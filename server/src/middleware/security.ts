@@ -96,6 +96,14 @@ function isBootstrapPath(path: string, method: string): boolean {
   if (path === '/api/network/unlock' && method === 'POST') return true
   // Minimal public network status (route redacts sensitive fields itself)
   if (path === '/api/network' && method === 'GET') return true
+  // Auth bootstraps — allow account creation / login without LAN token or prior auth
+  if (path === '/api/auth/login' && method === 'POST') return true
+  if (path === '/api/auth/register' && method === 'POST') return true
+  if (path === '/api/auth/setup-admin' && method === 'POST') return true
+  if (path === '/api/auth/setup-status' && method === 'GET') return true
+  if (path === '/api/auth/me' && method === 'GET') return true
+  if (path === '/api/model-aliases-public' && method === 'GET') return true
+  if (path === '/api/settings' && method === 'GET') return true
   return false
 }
 

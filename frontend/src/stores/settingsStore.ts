@@ -62,6 +62,7 @@ type SharedSettingsSlice = Pick<
   | "maxToolTurns"
   | "memoryEnabled"
   | "setupComplete"
+  | "useSimplifiedPicker"
 >;
 
 export interface SettingsState {
@@ -100,7 +101,8 @@ export interface SettingsState {
     | "google"
     | "parallel"
     | "exa"
-    | "tavily";
+    | "tavily"
+    | "tinyfish";
   searchConfig: Record<string, string>;
   artifactsEnabled: boolean;
   skillsDirectory: string;
@@ -109,6 +111,7 @@ export interface SettingsState {
   maxToolTurns: number;
   memoryEnabled: boolean;
   setupComplete: boolean;
+  useSimplifiedPicker: boolean;
 
   setTheme: (
     theme:
@@ -157,7 +160,8 @@ export interface SettingsState {
       | "google"
       | "parallel"
       | "exa"
-      | "tavily",
+      | "tavily"
+  | "tinyfish",
   ) => void;
   setSearchConfig: (config: Record<string, string>) => void;
   setArtifactsEnabled: (enabled: boolean) => void;
@@ -167,6 +171,7 @@ export interface SettingsState {
   setMaxToolTurns: (turns: number) => void;
   setMemoryEnabled: (enabled: boolean) => void;
   setSetupComplete: (complete: boolean) => void;
+  setUseSimplifiedPicker: (v: boolean) => void;
 }
 
 const SHARED_SETTINGS_KEYS = [
@@ -187,10 +192,12 @@ const SHARED_SETTINGS_KEYS = [
   "maxToolTurns",
   "memoryEnabled",
   "setupComplete",
+  "useSimplifiedPicker",
 ] as const satisfies ReadonlyArray<keyof SharedSettingsSlice>;
 
 function syncSharedSettings(updates: Partial<SharedSettingsSlice>) {
   fetch("/api/settings", {
+    credentials: "include",
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
@@ -199,6 +206,7 @@ function syncSharedSettings(updates: Partial<SharedSettingsSlice>) {
 
 function syncToolState(tool: ToolConfig) {
   fetch(`/api/tools/${encodeURIComponent(tool.id)}`, {
+    credentials: "include",
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -241,6 +249,7 @@ export const useSettingsStore = create<SettingsState>()(
       maxToolTurns: 0,
       memoryEnabled: true,
       setupComplete: false,
+      useSimplifiedPicker: false,
 
       setTheme: (theme) => set({ theme }),
       toggleSidebar: () =>
@@ -286,6 +295,7 @@ export const useSettingsStore = create<SettingsState>()(
       addProvider: (provider) => {
         fetch("/api/providers", {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(provider),
         }).catch(console.error);
@@ -306,6 +316,7 @@ export const useSettingsStore = create<SettingsState>()(
           }
           fetch(`/api/providers/${encodeURIComponent(id)}`, {
             method: "PATCH",
+            credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
           }).catch(console.error);
@@ -325,6 +336,7 @@ export const useSettingsStore = create<SettingsState>()(
       removeProvider: (id) => {
         fetch(`/api/providers/${encodeURIComponent(id)}`, {
           method: "DELETE",
+          credentials: "include",
         }).catch(console.error);
         set((state) => ({
           providers: state.providers.filter((p) => p.id !== id),
@@ -364,6 +376,7 @@ export const useSettingsStore = create<SettingsState>()(
       removeTool: (id) => {
         fetch(`/api/tools/${encodeURIComponent(id)}`, {
           method: "DELETE",
+          credentials: "include",
         }).catch(console.error);
         set((state) => ({
           tools: state.tools.filter((t) => t.id !== id),
@@ -426,6 +439,10 @@ export const useSettingsStore = create<SettingsState>()(
       setSetupComplete: (setupComplete) => {
         set({ setupComplete });
         syncSharedSettings({ setupComplete });
+      },
+      setUseSimplifiedPicker: (useSimplifiedPicker) => {
+        set({ useSimplifiedPicker });
+        syncSharedSettings({ useSimplifiedPicker });
       },
     }),
     {

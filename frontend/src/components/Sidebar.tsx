@@ -21,9 +21,12 @@ import {
   Loader2,
   PlusCircle,
   X,
+  LogOut,
+  Shield,
 } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useAuthStore } from '../stores/authStore'
 import { useProjectStore } from '../stores/projectStore'
 import { getPathnameForView, getViewFromPathname, useUIStore } from '../stores/uiStore'
 import { cn, formatDate } from '../lib/utils'
@@ -53,6 +56,8 @@ export function Sidebar() {
     removeFileFromProject,
   } = useProjectStore()
   const { sidebarOpen, toggleSidebar, theme, setTheme, selectedProvider } = useSettingsStore()
+  const { user, logout } = useAuthStore()
+  const isAdmin = user?.role === 'admin'
   const { setCurrentView, setSettingsOpen, setToolSelectorOpen, setSearchHighlight } = useUIStore()
   const navigate = useNavigate()
   const location = useLocation()
@@ -260,10 +265,11 @@ export function Sidebar() {
                 const { selectedModel, selectedProvider } = useSettingsStore.getState()
                 setCurrentView('chat')
                 navigate(getPathnameForView('chat'))
-                // If there's already an untitled empty chat, reuse it
-                const existing = useChatStore.getState().sessions.find(s => s.title === 'New Chat' && s.messages.length === 0 && s.provider !== 'hermes-agent')
+                // If there's already an untitled empty draft chat, reuse it — only pending (not-yet-persisted) empties are truly empty
+                const state = useChatStore.getState()
+                const existing = state.sessions.find(s => s.title === 'New Chat' && s.messages.length === 0 && state.pendingSessions[s.id] && s.provider !== 'hermes-agent')
                 if (existing) {
-                  useChatStore.getState().setCurrentSession(existing.id)
+                  state.setCurrentSession(existing.id)
                 } else {
                   await createSession(selectedModel, selectedProvider, currentProjectId, { persist: false })
                 }
@@ -636,13 +642,51 @@ export function Sidebar() {
               <Sun className="w-4 h-4" />
               Theme: {theme}
             </button>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="w-full flex items-center gap-2 px-2.5 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary rounded-none transition-colors"
-            >
-              <Settings className="w-4 h-4" />
-              Settings
-            </button>
+            <div className="border-t border-border mt-2 pt-2">
+              <div className="flex items-center gap-2 px-2 py-1.5">
+                <button
+                  onClick={() => setSettingsOpen(true)}
+                  className="flex-1 flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary rounded-sm transition-colors"
+                  title="Settings"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span className="truncate">Settings</span>
+                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => { setSettingsOpen(true); setTimeout(()=>{ const el=document.querySelector('[data-admin-tab]'); (el as HTMLElement)?.click() }, 100)}}
+                    className="p-1.5 text-amber-600 hover:bg-amber-500/10 rounded-sm"
+                    title="Admin"
+                  >
+                    <Shield className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  onClick={logout}
+                  className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-sm"
+                  title="Sign out"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              {user && (
+                <div className="flex items-center gap-2 px-2.5 py-2 mt-1 bg-secondary/30 rounded-sm">
+                  <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center text-[11px] font-medium text-primary shrink-0">
+                    {(user.displayName || user.display_name || user.email || '?').trim().charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium truncate leading-none">{user.displayName || user.display_name || user.email.split('@')[0]}</div>
+                    <div className="text-[11px] text-muted-foreground truncate">{user.email}</div>
+                    {(Number(user.spendLimit ?? user.spend_limit ?? 0) > 0 || Number(user.spendUsed ?? user.spend_used ?? 0) > 0) && (
+                      <div className="text-[10px] text-muted-foreground/70 truncate">
+                        ${Number(user.spendUsed ?? user.spend_used ?? 0).toFixed(2)} / {Number(user.spendLimit ?? user.spend_limit ?? 0) === 0 ? '∞' : '$' + Number(user.spendLimit ?? user.spend_limit).toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                  {isAdmin && <span className="text-[10px] px-1 py-0.5 bg-amber-500/15 text-amber-600 rounded shrink-0">ADMIN</span>}
+                </div>
+              )}
+            </div>
           </div>
           </motion.aside>
           <UploadsPickerModal

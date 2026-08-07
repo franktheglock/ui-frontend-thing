@@ -479,7 +479,91 @@ export function ArtifactPanel() {
 
   if (!artifactPanelOpen || !activeArtifact) return null
 
-  const widthValue = isMobile ? '100vw' : `${currentWidth}px`
+  // Mobile: render as bottom sheet, not full-screen takeover. Desktop: side panel.
+  if (isMobile) {
+    return (
+      <AnimatePresence>
+        {/* Backdrop */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/40 z-30 md:hidden"
+          onClick={() => { setArtifactPanelOpen(false); setActiveArtifact(null) }}
+        />
+        <motion.div
+          initial={{ y: '100%' }}
+          animate={{ y: 0 }}
+          exit={{ y: '100%' }}
+          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+          className="fixed inset-x-0 bottom-0 z-40 md:hidden bg-card border-t border-border rounded-t-xl flex flex-col overflow-hidden shadow-2xl"
+          style={{ height: '68vh', maxHeight: '78vh' }}
+        >
+          {/* Drag handle */}
+          <div className="flex justify-center pt-2 pb-1 shrink-0">
+            <div className="w-10 h-1 rounded-full bg-border" />
+          </div>
+          {/* Header - compact */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border h-11 shrink-0">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <Code className="w-4 h-4 text-accent shrink-0" />
+              <span className="text-xs font-semibold truncate text-foreground">{activeArtifact.title}</span>
+              <span className="text-[10px] bg-secondary border border-border px-1 py-0.5 font-mono text-muted-foreground uppercase rounded-sm hidden sm:inline">
+                {activeArtifact.language || activeArtifact.type}
+              </span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={handleCopy} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-sm">
+                {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+              </button>
+              <button onClick={() => { setArtifactPanelOpen(false); setActiveArtifact(null) }} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-sm">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          {/* Preview/Code toggle for mobile */}
+          {previewSupported && (
+            <div className="flex items-center justify-center gap-1 p-2 border-b border-border bg-secondary/20 shrink-0">
+              <button
+                onClick={() => setActiveTab('preview')}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs rounded-sm border ${activeTab === 'preview' ? 'bg-card border-border text-foreground font-medium shadow-sm' : 'border-transparent text-muted-foreground'}`}
+              >
+                <Eye className="w-3.5 h-3.5" /> Preview
+              </button>
+              <button
+                onClick={() => setActiveTab('code')}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs rounded-sm border ${activeTab === 'code' ? 'bg-card border-border text-foreground font-medium shadow-sm' : 'border-transparent text-muted-foreground'}`}
+              >
+                <Code className="w-3.5 h-3.5" /> Code
+              </button>
+            </div>
+          )}
+          {/* Content - takes remaining */}
+          <div className="flex-1 overflow-hidden relative bg-card">
+            {activeTab === 'preview' ? (
+              <div className="w-full h-full">
+                {type === 'html' ? (
+                  <iframe srcDoc={activeArtifact.content} className="w-full h-full border-0 bg-white" sandbox="allow-scripts" title="HTML Preview" />
+                ) : isMermaid ? (
+                  <iframe ref={iframeRef} srcDoc={mermaidSrcDoc} className="w-full h-full border-0" sandbox="allow-scripts" title="Mermaid" onLoad={() => { if (iframeRef.current?.contentWindow) iframeRef.current.contentWindow.postMessage({ content: activeArtifact.content, isStreaming: activeArtifact.id.includes('-artifact-'), artifactId: activeArtifact.id }, '*') }} />
+                ) : type === 'svg' || lang === 'svg' ? (
+                  <div className="w-full h-full flex items-center justify-center p-4 overflow-auto" dangerouslySetInnerHTML={{ __html: activeArtifact.content }} />
+                ) : type === 'markdown' || lang === 'markdown' ? (
+                  <div className="w-full h-full overflow-auto p-4 bg-background"><div className="prose prose-sm dark:prose-invert max-w-none"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]}>{protectCurrencyDollars(activeArtifact.content)}</ReactMarkdown></div></div>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">No preview</div>
+                )}
+              </div>
+            ) : (
+              <div className="w-full h-full overflow-auto font-mono text-xs bg-[#0d1117]"><pre className="p-4 leading-relaxed overflow-x-auto flex-1"><code dangerouslySetInnerHTML={{ __html: highlightedCode }} /></pre></div>
+            )}
+          </div>
+        </motion.div>
+      </AnimatePresence>
+    )
+  }
+
+  const widthValue = `${currentWidth}px`
 
   return (
     <AnimatePresence>
@@ -488,7 +572,7 @@ export function ArtifactPanel() {
         animate={{ width: widthValue, opacity: 1 }}
         exit={{ width: 0, opacity: 0 }}
         transition={{ duration: isResizing ? 0 : 0.2, ease: 'easeInOut' }}
-        className="flex-shrink-0 border-l border-border bg-card/95 backdrop-blur-md flex flex-col overflow-hidden h-full relative z-20"
+        className="hidden md:flex flex-shrink-0 border-l border-border bg-card/95 backdrop-blur-md flex-col overflow-hidden h-full relative z-20"
       >
         {/* Resize Handle */}
         {!isMobile && (

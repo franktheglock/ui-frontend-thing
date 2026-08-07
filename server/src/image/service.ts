@@ -829,11 +829,14 @@ export async function saveImageGenerationRecord(params: {
   model: string
   images: GeneratedImage[]
   requestParams: Record<string, unknown>
+  userId?: string
 }) {
   const db = await getDb()
   const id = uuidv4()
   const createdAt = Date.now()
 
+  // attach user_id if column exists
+  try { const cols = await db.all(`PRAGMA table_info(image_generations)`); const hasUser = cols.some((c:any)=>c.name==='user_id'); if (hasUser && (params as any).userId) { await db.run(`INSERT INTO image_generations (id, prompt, provider_id, model, images, params, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, params.prompt, params.providerId, params.model, JSON.stringify(params.images), JSON.stringify(params.requestParams), createdAt, (params as any).userId); return id; } } catch {}
   await db.run(
     `INSERT INTO image_generations (id, prompt, provider_id, model, images, params, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -849,9 +852,12 @@ export async function saveImageGenerationRecord(params: {
   return id
 }
 
-export async function listImageGenerationHistory(limit = 48): Promise<ImageGenerationRecord[]> {
+export async function listImageGenerationHistory(limit = 48, userId?: string): Promise<ImageGenerationRecord[]> {
   const db = await getDb()
-  const rows = await db.all(
+  const rows = userId
+    ? await db.all('SELECT * FROM image_generations WHERE user_id = ? ORDER BY created_at DESC LIMIT ?', userId,
+    Math.min(Math.max(limit, 1), 200))
+    : await db.all(
     'SELECT * FROM image_generations ORDER BY created_at DESC LIMIT ?',
     Math.min(Math.max(limit, 1), 200)
   ) as Array<Record<string, unknown>>

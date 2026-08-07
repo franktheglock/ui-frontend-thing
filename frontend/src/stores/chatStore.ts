@@ -157,7 +157,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
   loadSessions: async () => {
     try {
-      const res = await fetch('/api/chat/sessions')
+      const res = await fetch('/api/chat/sessions', { credentials: 'include' })
       if (!res.ok) return
       const sessions: any[] = await res.json()
 
@@ -234,6 +234,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     try {
       await fetch('/api/chat/sessions', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: session.id,
@@ -256,7 +257,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     const session = get().sessions.find(s => s.id === id)
     if (session && session.messages.length === 0) {
       try {
-        const msgRes = await fetch(`/api/chat/sessions/${id}`)
+        const msgRes = await fetch(`/api/chat/sessions/${id}`, { credentials: 'include' })
         if (msgRes.ok) {
           const data = await msgRes.json()
           const messages = (data.messages || []).map((m: any) => ({
@@ -302,7 +303,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     }
 
     try {
-      await fetch(`/api/chat/sessions/${id}`, { method: 'DELETE' })
+      await fetch(`/api/chat/sessions/${id}`, { method: 'DELETE', credentials: 'include' })
     } catch (err) {
       console.error('[chatStore] Failed to delete session:', err)
     }
@@ -364,6 +365,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     try {
       await fetch(`/api/chat/sessions/${sessionId}/messages`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(message),
@@ -390,6 +392,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     try {
       await fetch(`/api/chat/sessions/${sessionId}/messages/${messageId}`, {
+        credentials: 'include',
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -590,6 +593,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   branchSession: async (sessionId, messageId) => {
     try {
       const res = await fetch(`/api/chat/sessions/${sessionId}/branch`, {
+        credentials: 'include',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messageId }),

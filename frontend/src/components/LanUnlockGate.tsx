@@ -18,13 +18,22 @@ export function LanUnlockGate({ children }: { children: React.ReactNode }) {
 
     async function probe() {
       try {
-        // A simple authenticated-ish probe: providers list is blocked without token when required
-        const res = await fetch('/api/providers')
+        // Probe LAN token requirement via a lightweight public endpoint that is NOT gated by cookie auth.
+        // /api/network is public (see security.isBootstrap) and returns 403 LAN_DISABLED when LAN is off.
+        // We must NOT probe /api/providers here - that is gated by cookie auth (LOGIN_REQUIRED) and would
+        // incorrectly trigger the LAN unlock screen for unauthenticated users.
+        const res = await fetch('/api/network', { credentials: 'include' })
         if (cancelled) return
-        if (res.status === 401) {
+        if (res.status === 401 || res.status === 403) {
           const body = await res.json().catch(() => ({}))
-          if (body?.code === 'AUTH_REQUIRED' || res.status === 401) {
+          // Only treat LAN-specific codes as needing unlock. Cookie auth uses LOGIN_REQUIRED which is handled by AuthGate.
+          const lanCodes = new Set(['AUTH_REQUIRED', 'TOKEN_MISSING', 'LAN_DISABLED'])
+          if (body?.code && lanCodes.has(body.code)) {
             setNeedsUnlock(true)
+          } else {
+            // Check if it's truly a LAN token error by also probing providers with token header missing case.
+            // For safety, don't block UI on generic 401 - let AuthGate handle login.
+            setNeedsUnlock(false)
           }
         } else {
           setNeedsUnlock(false)

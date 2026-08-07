@@ -1,6 +1,7 @@
 import { useState, useMemo, memo, useEffect } from 'react'
 import { X, Check, Plus, Trash2, ChevronDown, ChevronRight, Search, Pencil } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useAuthStore } from '../stores/authStore'
 import { useUIStore } from '../stores/uiStore'
 import { useChatStore } from '../stores/chatStore'
 import { cn } from '../lib/utils'
@@ -239,6 +240,18 @@ export function ModelSelector() {
     apiKey: '',
     models: '',
   })
+  const { useSimplifiedPicker } = useSettingsStore()
+  const { user } = useAuthStore()
+  const isAdmin = user?.role === 'admin'
+  const [aliases, setAliases] = useState<any[]>([])
+  useEffect(() => {
+    if (!modelSelectorOpen) return
+    if (!useSimplifiedPicker) return
+    fetch('/api/model-aliases-public', { credentials: 'include' }).then(r=>r.json()).then(j=> setAliases(Array.isArray(j)? j: [])).catch(()=>{})
+    // also try admin endpoint if admin
+    if (isAdmin) fetch('/api/model-aliases', { credentials: 'include' }).then(r=>r.ok?r.json():[]).then(j=> { if(Array.isArray(j) && j.length) setAliases(j)}).catch(()=>{})
+  }, [modelSelectorOpen, useSimplifiedPicker, isAdmin])
+
 
   const toggleProvider = (id: string) => {
     setOpenProviders(prev => {
@@ -247,6 +260,10 @@ export function ModelSelector() {
       else next.add(id)
       return next
     })
+  }
+
+  const handleSelectAlias = (alias: any) => {
+    handleSelect(alias.providerId || alias.provider_id, alias.model)
   }
 
   const handleSelect = (providerId: string, model: string) => {
@@ -375,6 +392,25 @@ export function ModelSelector() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {useSimplifiedPicker && !isAdmin ? (
+            <>
+              {aliases.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No models available. Admin has not configured simplified picker yet.</p>
+              ) : (
+                aliases.filter(a=> !searchQuery.trim() || a.displayName.toLowerCase().includes(searchQuery.toLowerCase()) || a.model.toLowerCase().includes(searchQuery.toLowerCase())).map((alias: any) => (
+                  <button
+                    key={alias.id}
+                    onClick={() => handleSelectAlias(alias)}
+                    className={"w-full text-left px-3 py-2.5 border rounded-sm text-sm flex items-center justify-between " + (selectedModel===alias.model && selectedProvider===(alias.providerId||alias.provider_id) ? "border-accent bg-accent/10" : "border-border bg-secondary/20 hover:bg-secondary/40")}
+                  >
+                    <div><div className="font-medium">{alias.displayName}</div><div className="text-xs text-muted-foreground">{alias.providerId || alias.provider_id} · {alias.model}</div></div>
+                    {selectedModel===alias.model && selectedProvider===(alias.providerId||alias.provider_id) && <Check className="w-4 h-4 text-accent"/>}
+                  </button>
+                ))
+              )}
+            </>
+          ) : (
+            <>
           {!providersLoaded && enabledProviders.length === 0 && (
             <p className="text-sm text-muted-foreground text-center py-8">
               Loading providers...
@@ -385,6 +421,19 @@ export function ModelSelector() {
             <p className="text-sm text-muted-foreground text-center py-8">
               No providers configured. Add one below.
             </p>
+          )}
+
+          {useSimplifiedPicker && isAdmin && aliases.length > 0 && (
+            <div className="space-y-2 mb-3">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">Aliases (simplified picker)</p>
+              {aliases.map((alias: any)=>(
+                <button key={alias.id} onClick={()=>handleSelectAlias(alias)} className={"w-full text-left px-3 py-2 border rounded-sm text-sm flex items-center justify-between " + (selectedModel===alias.model && selectedProvider===(alias.providerId||alias.provider_id) ? "border-accent bg-accent/10" : "border-border bg-secondary/20")}>
+                  <div><div className="font-medium">{alias.displayName}</div><div className="text-xs text-muted-foreground">{alias.providerId||alias.provider_id} · {alias.model}</div></div>
+                  {selectedModel===alias.model && selectedProvider===(alias.providerId||alias.provider_id) && <Check className="w-4 h-4 text-accent"/>}
+                </button>
+              ))}
+              <div className="border-t pt-2" />
+            </div>
           )}
 
           {enabledProviders.map((provider) => (
@@ -401,14 +450,16 @@ export function ModelSelector() {
               onToggle={() => toggleProvider(provider.id)}
             />
           ))}
+            </>
+          )}
 
-          <button
+          {(!useSimplifiedPicker || isAdmin) && <button
             onClick={() => setNewProviderOpen(!newProviderOpen)}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-dashed border-border rounded-sm text-sm text-muted-foreground hover:border-accent hover:text-accent transition-colors"
           >
             <Plus className="w-4 h-4" />
             Add Provider
-          </button>
+          </button>}
 
           {newProviderOpen && (
             <div className="space-y-3 border border-border rounded-sm p-3 animate-in fade-in slide-in-from-top-2 duration-150">

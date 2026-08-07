@@ -46,6 +46,8 @@ export class WebSearchTool extends BaseTool {
           return await this.searchExa(query, numResults, config, startIndex)
         case 'tavily':
           return await this.searchTavily(query, numResults, config, startIndex)
+        case 'tinyfish':
+          return await this.searchTinyfish(query, numResults, config, startIndex)
         default:
           return await this.searchSearxNG(query, numResults, config, startIndex)
       }
@@ -225,5 +227,44 @@ export class WebSearchTool extends BaseTool {
     return results.map((r: any, i: number) =>
       `${i + 1 + startIndex}. ${r.title}\n   ${r.content || r.snippet || ''}\n   URL: ${r.url}`
     ).join('\n\n')
+  }
+
+  private async searchTinyfish(query: string, numResults: number, config: Record<string, string>, startIndex: number): Promise<string> {
+    const apiKey = config.tinyfishApiKey || config.tinyfish_api_key || process.env.TINYFISH_API_KEY
+    if (!apiKey) throw new Error('TinyFish API Key not configured in settings or environment (get one at https://agent.tinyfish.ai/api-keys)')
+
+    const url = `https://api.search.tinyfish.ai?query=${encodeURIComponent(query)}`
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS)
+    let response: Response
+    try {
+      response = await fetch(url, {
+        headers: {
+          'X-API-Key': apiKey,
+          'Accept': 'application/json',
+        },
+        signal: controller.signal,
+      })
+    } catch (error: any) {
+      if (error.name === 'AbortError') throw new Error(`TinyFish request timed out after ${SEARCH_TIMEOUT_MS / 1000}s`)
+      throw error
+    } finally {
+      clearTimeout(timeout)
+    }
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      throw new Error(`TinyFish search failed (${response.status} ${response.statusText}) ${text.slice(0, 200)}`)
+    }
+    const data = await response.json() as any
+    // TinyFish returns { results: [{title, url, snippet/content}, ...] } or { data: [...] } — handle both
+    const raw = Array.isArray(data.results) ? data.results : Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : []
+    const results = raw.slice(0, numResults)
+    if (results.length === 0) return 'No results found for this query.'
+    return results.map((r: any, i: number) => {
+      const title = r.title || r.name || 'Untitled'
+      const snippet = r.snippet || r.content || r.description || r.text || ''
+      const link = r.url || r.link || r.href || ''
+      return `${i + 1 + startIndex}. ${title}\n   ${snippet}\n   URL: ${link}`
+    }).join('\n\n')
   }
 }

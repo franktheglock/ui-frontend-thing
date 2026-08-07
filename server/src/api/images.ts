@@ -3,6 +3,9 @@ import { loadImageSettings, saveImageSettings, sanitizeImageSettings } from '../
 import { deleteImageGenerationHistoryItem, editImage, generateImages, listImageGenerationHistory, listImageProviderModels, saveImageGenerationRecord } from '../image/service'
 
 const router = Router()
+import { requireAuth } from "../middleware/auth";
+router.use(requireAuth as any);
+function getUserId(req: any): string { return req.user?.id as string; }
 
 router.get('/settings', async (_req, res) => {
   res.json({ settings: sanitizeImageSettings(await loadImageSettings()) })
@@ -13,9 +16,10 @@ router.patch('/settings', async (req, res) => {
   res.json({ settings: sanitizeImageSettings(next) })
 })
 
-router.get('/history', async (req, res) => {
+router.get('/history', async (req: any, res) => {
   const limit = Number(req.query.limit) || 48
-  res.json({ history: await listImageGenerationHistory(limit) })
+  const userId = getUserId(req)
+  res.json({ history: await listImageGenerationHistory(limit, userId) })
 })
 
 router.delete('/history/:recordId/images/:imageId', async (req, res) => {
@@ -146,10 +150,12 @@ router.post('/providers/local/unload', async (_req, res) => {
   }
 })
 
-router.post('/generate', async (req, res) => {
+router.post('/generate', async (req: any, res) => {
   try {
     const generated = await generateImages(req.body || {})
+    const __uid = getUserId(req);
     await saveImageGenerationRecord({
+      userId: __uid,
       prompt: String(req.body?.prompt || ''),
       providerId: generated.provider.id,
       model: generated.model,
@@ -169,10 +175,12 @@ router.post('/generate', async (req, res) => {
   }
 })
 
-router.post('/edit', async (req, res) => {
+router.post('/edit', async (req: any, res) => {
   try {
     const edited = await editImage(req.body || {})
+    const __uid2 = getUserId(req);
     await saveImageGenerationRecord({
+      userId: __uid2,
       prompt: String(req.body?.prompt || ''),
       providerId: edited.provider.id,
       model: edited.model,

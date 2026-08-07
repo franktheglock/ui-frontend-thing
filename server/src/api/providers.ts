@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { getDb } from '../db'
 import { createProviderFromConfig, getProvider } from '../providers'
+import { requireAdmin } from '../middleware/auth'
 import { resolveApiKeyUpdate, sanitizeProvider } from '../utils/providers'
 
 const router = Router()
@@ -19,13 +20,32 @@ const DEFAULT_PROVIDER_IDS = new Set([
   'hermes-agent',
 ])
 
-router.get('/', async (_req, res) => {
+router.get('/', async (req: any, res) => {
   const db = await getDb()
   const providers = await db.all('SELECT * FROM providers')
-  res.json(providers.map((p: any) => sanitizeProvider(p)))
+  // Filter by allowed_providers for non-admin & handle simplified alias mode
+  let filtered = providers.map((p: any) => sanitizeProvider(p))
+  try {
+    const user: any = (req as any).user
+    if (user && user.role !== 'admin') {
+      const allowed: string[] | null = user.allowed_providers
+      if (Array.isArray(allowed) && allowed.length > 0) {
+        filtered = filtered.filter((pr: any) => allowed.includes(pr.id))
+      }
+    }
+    // If simplified picker enabled, hide raw providers unless admin explicitly wants them
+    const row = await db.get('SELECT value FROM app_settings WHERE id = ?', 'global') as any
+    const settings = row?.value ? JSON.parse(row.value) : {}
+    if (settings.useSimplifiedPicker && user?.role !== 'admin') {
+      // keep providers but frontend will prefer aliases; do not hide completely
+    }
+  } catch {}
+  res.json(filtered)
 })
 
-router.post('/', async (req, res) => {
+router.post('/', async (req: any, res) => {
+  // Only admin can create providers
+  if ((req as any).user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' })
   const db = await getDb()
   const { id, name, type, baseUrl, apiKey, models, enabled, config } = req.body
   await db.run(
@@ -55,7 +75,8 @@ router.post('/', async (req, res) => {
   }))
 })
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', async (req: any, res) => {
+  if ((req as any).user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' })
   const db = await getDb()
   // Get current provider values to allow partial updates
   const current = await db.get('SELECT * FROM providers WHERE id = ?', req.params.id) as any
@@ -95,7 +116,8 @@ router.patch('/:id', async (req, res) => {
   res.json({ success: true, provider: sanitizeProvider(updated) })
 })
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', async (req: any, res) => {
+  if ((req as any).user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' })
   const db = await getDb()
   await db.run('DELETE FROM providers WHERE id = ?', req.params.id)
 

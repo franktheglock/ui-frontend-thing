@@ -77,6 +77,9 @@ const upload = multer({
 })
 
 const router = Router()
+import { requireAuth } from "../middleware/auth";
+router.use(requireAuth as any);
+function getUserId(req: any): string { return req.user?.id as string; }
 
 function sanitizeFileStem(value: string) {
   return value
@@ -140,7 +143,7 @@ function getMimeType(filename: string): string {
 }
 
 // POST /api/upload — upload files with dedup by SHA-256 hash
-router.post('/', upload.array('files', 10), (req, res) => {
+router.post('/', upload.array('files', 10), async (req, res) => {
   const files = req.files as Express.Multer.File[]
   if (!files || files.length === 0) {
     return res.status(400).json({ error: 'No files uploaded' })
@@ -180,6 +183,18 @@ router.post('/', upload.array('files', 10), (req, res) => {
     }
   })
 
+    // Record uploads ownership (best-effort)
+    try {
+      const db = await getDb()
+      const userId = getUserId(req as any)
+      const now = Date.now()
+      for (const att of attachments) {
+        const fname = att.url ? String(att.url).split('/').pop() : ''
+        try {
+          await db.run('INSERT OR IGNORE INTO user_uploads (id, user_id, filename, original_name, mime_type, size, url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', uuidv4(), userId, fname || att.url, att.name, att.mimeType, 0, att.url, now)
+        } catch {}
+      }
+    } catch {}
   res.json({ attachments })
 })
 

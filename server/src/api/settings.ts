@@ -23,6 +23,7 @@ const DEFAULT_SHARED_SETTINGS = {
   maxToolTurns: 0,
   memoryEnabled: true,
   setupComplete: false,
+  useSimplifiedPicker: false,
 };
 
 const SYNCABLE_KEYS = new Set(Object.keys(DEFAULT_SHARED_SETTINGS));
@@ -36,12 +37,15 @@ function mergeSettings(
   const migratedIncoming: Record<string, unknown> = {
     ...incoming,
     setupComplete:
-      incoming.setupComplete === undefined
-        ? !!(
-            typeof incoming.selectedProvider === "string" &&
-            incoming.selectedProvider
-          )
-        : incoming.setupComplete !== false,
+      incoming.setupComplete !== undefined
+        ? incoming.setupComplete !== false
+        : typeof (base as Record<string, unknown>).setupComplete === "boolean"
+          ? (base as Record<string, unknown>).setupComplete as boolean
+          : !!(
+              typeof (incoming.selectedProvider ?? (base as Record<string, unknown>).selectedProvider) ===
+                "string" &&
+              (incoming.selectedProvider ?? (base as Record<string, unknown>).selectedProvider)
+            ),
   };
 
   return {
@@ -103,7 +107,11 @@ router.get("/", async (_req, res) => {
   res.json(await loadSharedSettings());
 });
 
-router.patch("/", async (req, res) => {
+router.patch("/", async (req: any, res) => {
+  // Only admin can toggle simplified picker
+  if (req.body && (req.body.useSimplifiedPicker !== undefined) && req.user?.role !== "admin") {
+    return res.status(403).json({ error: "Admin only to change simplified picker" });
+  }
   const current = await loadSharedSettings();
   const incoming = Object.fromEntries(
     Object.entries(req.body || {}).filter(([key]) => SYNCABLE_KEYS.has(key)),
