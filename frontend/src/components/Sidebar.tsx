@@ -265,10 +265,11 @@ export function Sidebar() {
                 const { selectedModel, selectedProvider } = useSettingsStore.getState()
                 setCurrentView('chat')
                 navigate(getPathnameForView('chat'))
-                // If there's already an untitled empty chat, reuse it
-                const existing = useChatStore.getState().sessions.find(s => s.title === 'New Chat' && s.messages.length === 0 && s.provider !== 'hermes-agent')
+                // If there's already an untitled empty draft chat, reuse it — only pending (not-yet-persisted) empties are truly empty
+                const state = useChatStore.getState()
+                const existing = state.sessions.find(s => s.title === 'New Chat' && s.messages.length === 0 && state.pendingSessions[s.id] && s.provider !== 'hermes-agent')
                 if (existing) {
-                  useChatStore.getState().setCurrentSession(existing.id)
+                  state.setCurrentSession(existing.id)
                 } else {
                   await createSession(selectedModel, selectedProvider, currentProjectId, { persist: false })
                 }
